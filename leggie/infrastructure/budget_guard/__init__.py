@@ -45,6 +45,10 @@ class BudgetGuard:
         "anthropic/claude-opus-4-20250514": 15.00,
         "openai/gpt-4o": 2.50,
         "openai/gpt-4o-mini": 0.15,
+        "openai/gpt-5.6-luna": 3.00,
+        "openai/gpt-5.6-luna-pro": 15.00,
+        "openai/gpt-5.6-terra": 2.00,
+        "openai/gpt-5.6-terra-pro": 10.00,
     }
 
     def __init__(self, max_tokens: int = 500_000, max_cost: float = 5.0) -> None:

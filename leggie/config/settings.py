@@ -29,9 +29,9 @@ class CascadeSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LEGGIE_CASCADE_", env_file=".env", extra="ignore")
 
     rules_path: str = Field(default="config/routes.yaml", description="Path to routing rules YAML")
-    free_model: str = "google/gemini-2.5-flash"
-    budget_model: str = "anthropic/claude-sonnet-4-20250514"
-    premium_model: str = "anthropic/claude-opus-4-20250514"
+    free_model: str = "google/gemini-2.5-flash:free"
+    budget_model: str = "openai/gpt-5.6-luna"
+    premium_model: str = "openai/gpt-5.6-luna-pro"
     confidence_floor: float = Field(default=0.6, ge=0.0, le=1.0)
     premium_fallback_enabled: bool = True
 

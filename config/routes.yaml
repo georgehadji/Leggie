@@ -8,23 +8,23 @@
 routes:
   # ── Core analysis tasks ──────────────────────────────────────────
   lens_analysis:
-    model: "anthropic/claude-sonnet-4-20250514:thinking"
+    model: "openai/gpt-5.6-luna:thinking"
     tier: "budget"
     max_tokens: 4096
     cascade: true
     cascade_models:
       free: "google/gemini-2.5-flash:free"
-      budget: "anthropic/claude-sonnet-4-20250514:thinking"
-      premium: "anthropic/claude-opus-4-20250514:thinking"
+      budget: "openai/gpt-5.6-luna:thinking"
+      premium: "openai/gpt-5.6-luna-pro:thinking"
 
   verbalized_sampling:
-    model: "anthropic/claude-sonnet-4-20250514"
+    model: "openai/gpt-5.6-luna"
     tier: "budget"
     max_tokens: 8192
     cascade: true
     cascade_models:
-      budget: "anthropic/claude-sonnet-4-20250514"
-      premium: "anthropic/claude-opus-4-20250514"
+      budget: "openai/gpt-5.6-luna"
+      premium: "openai/gpt-5.6-luna-pro"
 
   adversarial_critic:
     model: "google/gemini-2.5-flash"
@@ -33,7 +33,7 @@ routes:
     cascade: true
     cascade_models:
       free: "google/gemini-2.5-flash:free"
-      budget: "anthropic/claude-sonnet-4-20250514"
+      budget: "openai/gpt-5.6-terra"
 
   # ── Simple / cheap tasks ─────────────────────────────────────────
   classification:
@@ -43,7 +43,7 @@ routes:
     cascade: true
     cascade_models:
       free: "google/gemini-2.5-flash:free"
-      budget: "anthropic/claude-sonnet-4-20250514"
+      budget: "openai/gpt-5.6-terra"
 
   summarization:
     model: "google/gemini-2.5-flash:free"
@@ -52,23 +52,23 @@ routes:
     cascade: false
     cascade_models:
       free: "google/gemini-2.5-flash:free"
-      budget: "anthropic/claude-sonnet-4-20250514"
-      premium: "anthropic/claude-opus-4-20250514"
+      budget: "openai/gpt-5.6-luna"
+      premium: "openai/gpt-5.6-luna-pro"
 
   # ── Quality-critical tasks ───────────────────────────────────────
   evidence_verification:
-    model: "anthropic/claude-opus-4-20250514:thinking"
+    model: "openai/gpt-5.6-terra-pro:thinking"
     tier: "premium"
     max_tokens: 2048
     cascade: true
     cascade_models:
-      premium: "anthropic/claude-opus-4-20250514:thinking"
+      premium: "openai/gpt-5.6-terra-pro:thinking"
 
   report_generation:
-    model: "anthropic/claude-sonnet-4-20250514:extended"
+    model: "openai/gpt-5.6-luna:extended"
     tier: "budget"
     max_tokens: 8192
     cascade: true
     cascade_models:
-      budget: "anthropic/claude-sonnet-4-20250514:extended"
-      premium: "anthropic/claude-opus-4-20250514:extended"
+      budget: "openai/gpt-5.6-luna:extended"
+      premium: "openai/gpt-5.6-luna-pro:extended"

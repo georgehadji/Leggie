@@ -76,4 +76,4 @@ class StaticRouter(RouterPort):
             ModelTier.FREE: "google/gemini-2.5-flash:free",
             ModelTier.BUDGET: "anthropic/claude-sonnet-4-20250514",
             ModelTier.PREMIUM: "anthropic/claude-opus-4-20250514",
-        }.get(tier, "anthropic/claude-sonnet-4-20250514")
+        }.get(tier, "openai/gpt-5.6-luna")
