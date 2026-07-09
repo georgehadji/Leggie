@@ -27,37 +27,42 @@ def make_finding(
 
 
 class TestNumericGate:
-    def test_neutral_for_non_numeric(self):
+    @pytest.mark.asyncio
+    async def test_neutral_for_non_numeric(self):
         gate = NumericGate()
         f = make_finding(finding_type=FindingType.CONSTITUTIONAL)
-        v = gate.examine(f)
+        v = await gate.examine(f)
         assert v.verdict == "neutral"
 
-    def test_neutral_for_numeric(self):
+    @pytest.mark.asyncio
+    async def test_neutral_for_numeric(self):
         gate = NumericGate()
         f = make_finding(finding_type=FindingType.NUMERIC)
-        v = gate.examine(f)
+        v = await gate.examine(f)
         assert v.verdict == "neutral"  # Deferred to Phase 4
 
 
 class TestFactualGate:
-    def test_supports_constitutional_rule(self):
+    @pytest.mark.asyncio
+    async def test_supports_constitutional_rule(self):
         gate = FactualGate()
         f = make_finding(rule="Το Άρθρο 43 του Συντάγματος ορίζει")
-        v = gate.examine(f)
+        v = await gate.examine(f)
         assert v.verdict == "supports"
         assert v.confidence_adjustment > 0
 
-    def test_neutral_no_rule_ref(self):
+    @pytest.mark.asyncio
+    async def test_neutral_no_rule_ref(self):
         gate = FactualGate()
         f = make_finding(rule="Some generic statement without references")
-        v = gate.examine(f)
+        v = await gate.examine(f)
         assert v.verdict == "neutral"
 
-    def test_neutral_for_economic_type(self):
+    @pytest.mark.asyncio
+    async def test_neutral_for_economic_type(self):
         gate = FactualGate()
         f = make_finding(finding_type=FindingType.ECONOMIC)
-        v = gate.examine(f)
+        v = await gate.examine(f)
         assert v.verdict == "neutral"
 
 

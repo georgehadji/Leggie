@@ -49,13 +49,23 @@ class ConstitutionalLens(Lens):
     def _candidate_to_finding(self, c: IRACCandidate, article: Article) -> Finding:
         prompt_hash = hashlib.sha256(f"constitutional:{article.id}:{c.issue}".encode()).hexdigest()[:12]
         sev_map = {s.value: s for s in Severity}
+        # Validate verbatim quote (F3)
+        valid_quote = False
+        evidence_list = []
+        if c.verbatim_quote:
+            from leggie.application.services.cove_verifier import _normalize
+            valid_quote = _normalize(c.verbatim_quote) in _normalize(article.raw_text)
+            evidence_list = [Evidence(text_excerpt=c.verbatim_quote, verdict="supports", citation=None)]
+        if not valid_quote and c.verbatim_quote:
+            evidence_list = [Evidence(text_excerpt=c.verbatim_quote, verdict="neutral",
+                                      source_document="quote-not-verified-as-substring")]
         return Finding(
             finding_type=FindingType.CONSTITUTIONAL,
             irac=IRAC(issue=c.issue, rule=c.rule, application=c.application, conclusion=c.conclusion),
             severity=sev_map.get(c.severity, Severity.MEDIUM),
             confidence=Confidence.from_score(c.probability, provenance="llm-constitutional"),
             lens=self.name(), model=self._model, prompt_hash=prompt_hash,
-            evidence=[Evidence(text_excerpt=c.verbatim_quote, verdict="supports")] if c.verbatim_quote else [],
+            evidence=evidence_list,
         )
 
     def _analyze_regex(self, article: Article) -> list[Finding]:

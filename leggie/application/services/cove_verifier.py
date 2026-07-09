@@ -36,15 +36,27 @@ class CoVeResult:
     failed_count: int = 0
 
 
-class CoVeVerifier:
-    """Chain-of-Verification evidence loop.
+def _normalize(text: str) -> str:
+    """Normalize text for substring matching: strip, lowercase, collapse whitespace."""
+    import re
+    return re.sub(r"\s+", " ", text.strip().lower())
 
-    Factored variant: verification questions answered independently,
-    blind to the draft, preventing rubber-stamping.
-    """
+
+class CoVeVerifier:
+    """Chain-of-Verification evidence loop."""
 
     def __init__(self, citation_parser=None) -> None:
         self._citation_parser = citation_parser
+
+    def validate_quote(self, quote: str, source_text: str) -> bool:
+        """F3: Validate that the quote is a real substring of the source.
+
+        Returns True if the normalized quote appears in the normalized source.
+        This is the cheapest anti-hallucination gate.
+        """
+        if not quote or not source_text:
+            return False
+        return _normalize(quote) in _normalize(source_text)
 
     async def verify(self, finding: Finding) -> CoVeResult:
         """Run the full Chain-of-Verification on a finding.
