@@ -1,8 +1,7 @@
 """Tests for Blackboard — schema-grounded aggregation."""
 
-import pytest
 from leggie.application.blackboard import Blackboard, BlackboardEntry
-from leggie.domain.models import Finding, IRAC, Confidence, FindingType
+from leggie.domain.models import IRAC, Confidence, Finding, FindingType
 
 
 def make_finding(issue: str = "test") -> Finding:

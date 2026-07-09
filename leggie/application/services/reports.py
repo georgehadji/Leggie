@@ -12,8 +12,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-from leggie.application.agents.improver import ImprovementEngine, Suggestion
-from leggie.domain.models import Document, Finding, FindingType, Severity
+from leggie.application.agents.improver import Suggestion
+from leggie.domain.models import Document, Finding, Severity
 
 
 @dataclass
@@ -154,7 +154,6 @@ class ExecutiveSummaryRenderer(ReportRenderer):
         })
 
         # Findings summary by severity
-        severity_order = ["critical", "high", "medium", "low", "info"]
         critical = [f for f in findings if f.severity.value == "critical"]
         high = [f for f in findings if f.severity.value == "high"]
         medium = [f for f in findings if f.severity.value == "medium"]

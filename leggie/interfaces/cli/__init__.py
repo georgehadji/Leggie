@@ -46,17 +46,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _build_mediator():
     """Build and configure the CQRS mediator with all handlers."""
-    from leggie.application.cqrs.mediator import Mediator
     from leggie.application.cqrs.commands.cli_commands import (
-        ParseDocumentCommand,
         AnalyzeBillCommand,
         EvalGoldSetCommand,
+        ParseDocumentCommand,
     )
     from leggie.application.cqrs.handlers.cli_handlers import (
-        ParseDocumentHandler,
         AnalyzeBillHandler,
         EvalGoldSetHandler,
+        ParseDocumentHandler,
     )
+    from leggie.application.cqrs.mediator import Mediator
 
     mediator = Mediator()
     mediator.register_command_handler(ParseDocumentCommand, ParseDocumentHandler())

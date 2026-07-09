@@ -67,6 +67,9 @@ indent-style = "space"
 [tool.mypy]
 strict = true
 python_version = "3.12"
+
+[tool.bandit]
+exclude_dirs = ["tests", ".reasonix", "graphify-out"]
 disable_error_code = ["import-untyped"]
 
 [tool.pytest.ini_options]

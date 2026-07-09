@@ -10,7 +10,13 @@ import re
 
 from leggie.application.agents.lens import Lens
 from leggie.domain.models import (
-    Article, Confidence, Evidence, Finding, FindingType, IRAC, Severity,
+    IRAC,
+    Article,
+    Confidence,
+    Evidence,
+    Finding,
+    FindingType,
+    Severity,
 )
 
 _GDPR_PATTERNS = [

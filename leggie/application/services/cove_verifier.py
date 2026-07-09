@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from leggie.domain.models import Citation, CitationScheme, Finding
+from leggie.domain.models import Citation, Finding
 
 
 @dataclass

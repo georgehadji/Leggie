@@ -1,12 +1,17 @@
 """Tests for CQRS Mediator — command/query dispatch with behaviors."""
 
 import pytest
+
 from leggie.application.cqrs.base import (
-    Command, CommandHandler, CommandResult,
-    Query, QueryHandler, QueryResult,
+    Command,
+    CommandHandler,
+    CommandResult,
     IPipelineBehavior,
+    Query,
+    QueryHandler,
+    QueryResult,
 )
-from leggie.application.cqrs.mediator import Mediator, HandlerNotRegisteredError
+from leggie.application.cqrs.mediator import HandlerNotRegisteredError, Mediator
 
 
 class TestCommand(Command):

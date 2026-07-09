@@ -9,9 +9,9 @@ Each gate returns a verdict: supports, refutes, or neutral.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from leggie.domain.models import Finding, FindingType, Severity
+from leggie.domain.models import Finding, FindingType
 
 
 @dataclass

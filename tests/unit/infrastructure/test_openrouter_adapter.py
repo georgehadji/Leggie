@@ -1,13 +1,15 @@
 """Tests for OpenRouter LLM adapter — mock HTTP."""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from leggie.application.ports.llm import LLMRequest, LLMResponse
+from leggie.application.ports.llm import LLMRequest
 from leggie.infrastructure.llm import (
-    LLMAdapter, LLMConfigurationError, LLMError, OpenRouterProvider,
+    LLMAdapter,
+    LLMConfigurationError,
+    OpenRouterProvider,
 )
 
 
@@ -67,12 +69,11 @@ class TestOpenRouterAPIMock:
             }
         )
 
-        prov = OpenRouterProvider(api_key="sk-test")
+        OpenRouterProvider(api_key="sk-test")
         # Build request body from provider generate
-        request = LLMRequest(prompt="Analyze this bill", system_prompt="You are a legal analyst", seed=42)
+        LLMRequest(prompt="Analyze this bill", system_prompt="You are a legal analyst", seed=42)
 
         # Manually simulate what generate() does with the response
-        from leggie.domain.models import ModelTier
 
         # Parse the mock response the same way generate() would
         data = mock_response.json()

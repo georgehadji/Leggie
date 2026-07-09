@@ -9,10 +9,9 @@ Phase 2: simple composite scoring. Phase 3+: LLM-boosted rerank.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from leggie.domain.models import Finding
-
 
 _SEVERITY_WEIGHTS = {
     "critical": 1.0,

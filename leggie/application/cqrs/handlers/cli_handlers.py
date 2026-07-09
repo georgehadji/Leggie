@@ -79,7 +79,7 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
 
     async def handle(self, command: EvalGoldSetCommand) -> CommandResult[list]:
         try:
-            from leggie.infrastructure.persistence.eval_harness import GoldSet, EvalScorer
+            from leggie.infrastructure.persistence.eval_harness import EvalScorer, GoldSet
 
             gold_set = GoldSet(command.gold_set_path)
             scorer = EvalScorer(gold_set)

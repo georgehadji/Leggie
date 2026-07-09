@@ -5,9 +5,7 @@ Each command maps to a CLI action, keeping the interface layer thin.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from leggie.application.cqrs.base import Command, CommandResult, CommandHandler
+from leggie.application.cqrs.base import Command
 
 
 class ParseDocumentCommand(Command):

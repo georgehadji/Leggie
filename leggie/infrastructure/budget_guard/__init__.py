@@ -109,3 +109,21 @@ class BudgetGuard:
         """Estimate cost for a model call."""
         rate = self.COST_PER_1M_TOKENS.get(model, 3.0)
         return rate * (prompt_tokens + completion_tokens) / 1_000_000
+
+    def save_state(self) -> dict:
+        """Serialize budget state for checkpointing."""
+        return {
+            "max_tokens": self._state.max_tokens,
+            "max_cost": self._state.max_cost,
+            "tokens_used": self._state.tokens_used,
+            "cost_used": self._state.cost_used,
+            "degraded": self._state.degraded,
+            "degrade_level": self._state.degrade_level,
+        }
+
+    def load_state(self, state: dict) -> None:
+        """Restore budget state from a checkpoint."""
+        self._state.tokens_used = state.get("tokens_used", 0)
+        self._state.cost_used = state.get("cost_used", 0.0)
+        self._state.degraded = state.get("degraded", False)
+        self._state.degrade_level = state.get("degrade_level", 0)

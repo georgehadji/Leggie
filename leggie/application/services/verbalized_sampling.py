@@ -10,7 +10,7 @@ Phase 2: Template Method skeleton. Phase 3+: LLM-backed implementation.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from leggie.domain.models import Article, Finding
 

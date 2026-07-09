@@ -2,7 +2,11 @@
 
 from leggie.domain.clustering import cluster, deduplicate, merge_findings
 from leggie.domain.models import (
-    Finding, IRAC, Confidence, FindingType, Severity,
+    IRAC,
+    Confidence,
+    Finding,
+    FindingType,
+    Severity,
 )
 
 

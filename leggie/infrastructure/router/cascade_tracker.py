@@ -7,7 +7,7 @@ for observability and future RouteLLM training data.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -24,7 +24,7 @@ class CascadeDecision:
     estimated_cost: float
     failure_reason: str | None = None
     escalated_to: str | None = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class CascadeTracker:

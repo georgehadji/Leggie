@@ -10,25 +10,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from leggie.application.agents.orchestrator import Orchestrator
 from leggie.application.agents.improver import ImprovementEngine
+from leggie.application.agents.orchestrator import Orchestrator
 from leggie.application.agents.skeptic import CalibratedSkeptic
-from leggie.application.services.reports import ExecutiveSummaryRenderer, ArticleByArticleRenderer
 from leggie.application.services.cove_verifier import CoVeVerifier
+from leggie.application.services.reports import ArticleByArticleRenderer, ExecutiveSummaryRenderer
 from leggie.application.services.rerank import CompositeReranker
-from leggie.domain.clustering import deduplicate
 from leggie.application.workflow.flow_state_machine import FlowStateMachine
-from leggie.application.workflow.stage import Stage, StageContext, StageResult
 from leggie.domain.models import (
-    Confidence,
     Document,
     Event,
     EventType,
-    Evidence,
     Finding,
-    FindingType,
-    IRAC,
-    Severity,
     WorkflowState,
 )
 
@@ -82,7 +75,7 @@ class BillAnalysisFlow:
         self._transition(WorkflowState.PLANNING, "parse_completed")
 
         # 3. Decompose / Plan
-        tasks = self._orchestrator.decompose(self._doc)
+        self._orchestrator.decompose(self._doc)
         self._transition(WorkflowState.EXECUTING, "plan_approved")
 
         # 4. Execute — analyze through lenses

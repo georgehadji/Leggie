@@ -1,7 +1,8 @@
 """Tests for Stage lifecycle — Template Method pattern."""
 
 import pytest
-from leggie.application.workflow.stage import Stage, StageContext, StageResult
+
+from leggie.application.workflow.stage import Stage, StageContext
 
 
 class SimpleStage(Stage):

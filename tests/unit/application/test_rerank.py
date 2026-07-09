@@ -1,8 +1,9 @@
 """Tests for Rerank service — scoring and ordering findings."""
 
 import pytest
+
 from leggie.application.services.rerank import CompositeReranker, ScoredFinding
-from leggie.domain.models import Finding, IRAC, Confidence, FindingType, Severity
+from leggie.domain.models import IRAC, Confidence, Finding, FindingType, Severity
 
 
 def make_finding(

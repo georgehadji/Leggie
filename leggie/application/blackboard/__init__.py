@@ -10,7 +10,7 @@ react to new postings → Controller schedules bounded rounds.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 
 from leggie.domain.models import Finding
@@ -22,7 +22,7 @@ class BlackboardEntry:
     finding: Finding
     agent_id: str
     round_number: int = 0
-    posted_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    posted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -31,7 +31,7 @@ class BlackboardRound:
     """A round of contributions to the blackboard."""
     round_number: int
     entries: list[BlackboardEntry] = field(default_factory=list)
-    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     completed: bool = False
 
 

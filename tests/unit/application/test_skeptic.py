@@ -1,10 +1,14 @@
 """Tests for Calibrated Skeptic — adversarial critic with typed gates."""
 
 import pytest
+
 from leggie.application.agents.skeptic import (
-    CalibratedSkeptic, NumericGate, TemporalGate, FactualGate, SkepticVerdict,
+    CalibratedSkeptic,
+    FactualGate,
+    NumericGate,
+    SkepticVerdict,
 )
-from leggie.domain.models import Finding, IRAC, Confidence, FindingType, Severity
+from leggie.domain.models import IRAC, Confidence, Finding, FindingType, Severity
 
 
 def make_finding(

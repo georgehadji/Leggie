@@ -1,10 +1,17 @@
 """Tests for domain/scoring — pure severity/novelty/confidence functions."""
 
-from leggie.domain.scoring import (
-    score_severity, score_novelty, combine_confidence, confidence_from_verification,
-)
 from leggie.domain.models import (
-    Finding, IRAC, Confidence, FindingType, Severity, ConfidenceGrade,
+    IRAC,
+    Confidence,
+    Finding,
+    FindingType,
+    Severity,
+)
+from leggie.domain.scoring import (
+    combine_confidence,
+    confidence_from_verification,
+    score_novelty,
+    score_severity,
 )
 
 

@@ -72,3 +72,19 @@ class TestBudgetGuard:
         # Hand-calculate: Sonnet = $3/M tokens, 1000 tokens = $0.003
         cost = guard._estimate_cost("claude-sonnet-4-20250514", 500, 500)
         assert cost == pytest.approx(0.003, rel=0.1)
+
+    def test_save_load_state(self):
+        guard = BudgetGuard(max_tokens=100_000, max_cost=5.0)
+        guard.record_usage(prompt_tokens=50_000, completion_tokens=20_000)
+        guard.apply_degrade()
+
+        state = guard.save_state()
+        assert state["tokens_used"] == 70_000
+        assert state["degraded"] is True
+
+        # Load into a fresh guard with same capacities
+        guard2 = BudgetGuard(max_tokens=100_000, max_cost=5.0)
+        guard2.load_state(state)
+        assert guard2.remaining_tokens == guard.remaining_tokens
+        assert guard2._state.degraded is True
+        assert guard2._state.tokens_used == 70_000

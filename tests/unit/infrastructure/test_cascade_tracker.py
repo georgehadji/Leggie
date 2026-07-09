@@ -68,7 +68,7 @@ class TestCascadeTracker:
 
     def test_get_decisions_limit(self):
         tracker = CascadeTracker()
-        for i in range(10):
+        for _i in range(10):
             tracker.record("test", "budget", "sonnet", True, 1000, 1000, 0.01)
 
         decisions = tracker.get_decisions(limit=3)

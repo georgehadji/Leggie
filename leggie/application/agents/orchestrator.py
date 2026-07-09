@@ -21,7 +21,6 @@ from leggie.application.agents.legal_coherence_lens import LegalCoherenceLens
 from leggie.application.agents.lens import Lens
 from leggie.domain.models import Article, Document, Finding, LensTask
 
-
 # All 5 lenses for Phase 2 Ensemble
 _DEFAULT_LENSES: dict[str, type[Lens]] = {
     "constitutional": ConstitutionalLens,

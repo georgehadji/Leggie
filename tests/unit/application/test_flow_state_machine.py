@@ -1,6 +1,5 @@
 """Tests for the Flow State Machine — pure state transitions."""
 
-import pytest
 from leggie.application.workflow.flow_state_machine import FlowStateMachine
 from leggie.domain.models import WorkflowState
 

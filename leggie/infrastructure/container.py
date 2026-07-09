@@ -17,13 +17,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.event_bus import EventBusPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.ports.state import StatePort
-from leggie.application.ports.retrieval import RetrievalPort
-from leggie.application.ports.blackboard import BlackboardPort
-from leggie.application.ports.citation_parser import CitationParserPort
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +110,6 @@ class Container:
         self.register(CitationParserPort, lambda: GreekCitationParser())
 
         # In-memory state (file-based later)
-        from leggie.infrastructure.persistence import InMemoryEventBus
         self.register(StatePort, lambda: InMemoryEventBus())
 
         # Budget guard

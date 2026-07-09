@@ -8,13 +8,18 @@ Phase 2+ will add Verbalized Sampling (O3).
 from __future__ import annotations
 
 import re
-from typing import Pattern
+from re import Pattern
 
 from leggie.application.agents.lens import Lens
 from leggie.domain.models import (
-    Article, Confidence, Evidence, Finding, FindingType, IRAC, Severity,
+    IRAC,
+    Article,
+    Confidence,
+    Evidence,
+    Finding,
+    FindingType,
+    Severity,
 )
-
 
 # Constitutional keywords and patterns
 _DELEGATION_PATTERNS: list[Pattern] = [

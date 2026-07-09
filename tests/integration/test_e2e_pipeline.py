@@ -4,9 +4,8 @@ Tests the complete flow: real bill text → ingest → parse → 5 lenses →
 Skeptic → CoVe → reports. No mocks, real file I/O.
 """
 
-import pytest
-from pathlib import Path
 
+import pytest
 
 REAL_BILL = """
 ΣΧΕΔΙΟ ΝΟΜΟΥ

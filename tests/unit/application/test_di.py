@@ -1,16 +1,17 @@
 """Tests for DI Container — service-locator pattern."""
 
 import pytest
-from leggie.infrastructure.container import Container, BindingNotFoundError
-from leggie.application.ports.llm import LLMPort
-from leggie.application.ports.event_bus import EventBusPort
-from leggie.application.ports.router import RouterPort
+
 from leggie.application.ports.citation_parser import CitationParserPort
+from leggie.application.ports.event_bus import EventBusPort
+from leggie.application.ports.llm import LLMPort
+from leggie.application.ports.router import RouterPort
+from leggie.infrastructure.container import BindingNotFoundError, Container
 
 
 class FakeLLM(LLMPort):
     async def generate(self, request):
-        from leggie.application.ports.llm import LLMResponse, LLMRequest
+        from leggie.application.ports.llm import LLMResponse
         return LLMResponse(content="fake", model="fake", tier_used=None, usage={})
 
     async def generate_structured(self, request, schema):

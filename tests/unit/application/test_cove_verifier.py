@@ -1,10 +1,16 @@
 """Tests for CoVe evidence loop — Chain of Verification."""
 
 import pytest
-from leggie.application.services.cove_verifier import CoVeVerifier, VerificationQuestion
+
+from leggie.application.services.cove_verifier import CoVeVerifier
 from leggie.domain.models import (
-    Finding, IRAC, Confidence, Evidence, Citation,
-    CitationScheme, FindingType,
+    IRAC,
+    Citation,
+    CitationScheme,
+    Confidence,
+    Evidence,
+    Finding,
+    FindingType,
 )
 
 

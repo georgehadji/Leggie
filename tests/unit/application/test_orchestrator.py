@@ -1,9 +1,9 @@
 """Tests for Orchestrator — article decomposition and lens dispatch."""
 
 import pytest
-from leggie.application.agents.orchestrator import Orchestrator
-from leggie.domain.models import Article, Document, FindingType
 
+from leggie.application.agents.orchestrator import Orchestrator
+from leggie.domain.models import Article, Document
 
 SAMPLE_DOC = Document(
     title="Test Bill",

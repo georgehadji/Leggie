@@ -1,11 +1,12 @@
 """Tests for Verbalized Sampling service — Template Method pattern."""
 
 import pytest
-from leggie.application.services.verbalized_sampling import (
-    VerbalizedSampling, VSSample,
-)
-from leggie.domain.models import Article, Finding, IRAC, Confidence, FindingType
 
+from leggie.application.services.verbalized_sampling import (
+    VerbalizedSampling,
+    VSSample,
+)
+from leggie.domain.models import IRAC, Article, Confidence, Finding, FindingType
 
 SAMPLE_ARTICLE = Article(id="1", raw_text="Άρθρο 1: Δοκιμαστικό άρθρο.")
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from leggie.domain.models import WorkflowState
 
-
 # State transition rules: (current_state, event_type) → next_state
 # event_type strings describe what happened to trigger the transition.
 _TRANSITION_TABLE: dict[tuple[WorkflowState, str], WorkflowState] = {

@@ -1,9 +1,9 @@
 """Tests for Constitutional Lens — pattern-based legal analysis."""
 
 import pytest
+
 from leggie.application.agents.constitutional_lens import ConstitutionalLens
 from leggie.domain.models import Article, FindingType
-
 
 SAMPLE_ARTICLE = Article(
     id="1",

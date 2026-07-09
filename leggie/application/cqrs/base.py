@@ -6,11 +6,10 @@ Adapted from weebot's application/cqrs/base.py.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from dataclasses import dataclass
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
-
 
 TCommand = TypeVar("TCommand", bound="Command")
 TQuery = TypeVar("TQuery", bound="Query")
@@ -18,7 +17,7 @@ TResult = TypeVar("TResult")
 
 
 @dataclass(frozen=True)
-class CommandResult(Generic[TResult]):
+class CommandResult[TResult]:
     """Result of executing a command."""
     success: bool
     data: TResult | None = None
@@ -26,7 +25,7 @@ class CommandResult(Generic[TResult]):
 
 
 @dataclass(frozen=True)
-class QueryResult(Generic[TResult]):
+class QueryResult[TResult]:
     """Result of executing a query."""
     success: bool
     data: TResult | None = None
@@ -41,14 +40,14 @@ class Query(BaseModel, ABC):
     """Base class for all queries (CQRS query side)."""
 
 
-class CommandHandler(ABC, Generic[TCommand, TResult]):
+class CommandHandler[TCommand: "Command", TResult](ABC):
     """Handles a single command type."""
 
     @abstractmethod
     async def handle(self, command: TCommand) -> CommandResult[TResult]: ...
 
 
-class QueryHandler(ABC, Generic[TQuery, TResult]):
+class QueryHandler[TQuery: "Query", TResult](ABC):
     """Handles a single query type."""
 
     @abstractmethod

@@ -1,12 +1,12 @@
 """Tests for all 4 new Phase 2 lenses."""
 
 import pytest
-from leggie.application.agents.legal_coherence_lens import LegalCoherenceLens
-from leggie.application.agents.economic_lens import EconomicLens
-from leggie.application.agents.implementation_lens import ImplementationLens
-from leggie.application.agents.eu_gdpr_lens import EUGDPRLens
-from leggie.domain.models import Article, FindingType
 
+from leggie.application.agents.economic_lens import EconomicLens
+from leggie.application.agents.eu_gdpr_lens import EUGDPRLens
+from leggie.application.agents.implementation_lens import ImplementationLens
+from leggie.application.agents.legal_coherence_lens import LegalCoherenceLens
+from leggie.domain.models import Article, FindingType
 
 VAGUE_ARTICLE = Article(id="1", raw_text=(
     "Άρθρο 1: Ο αρμόδιος φορέας λαμβάνει κατάλληλα μέτρα "
