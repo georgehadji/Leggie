@@ -42,9 +42,15 @@ class LLMAdapter:
 
     async def generate_structured(self, request, schema):
         import json
-        response = await self.generate(request)
+        from dataclasses import replace
+        req = replace(request, response_format={"type": "json_object"})
+        response = await self.generate(req)
         try:
-            obj = schema(**json.loads(response.content))
+            data = json.loads(response.content)
+            # Handle model returning "issues" instead of "findings"
+            if isinstance(data, dict) and "issues" in data and "findings" not in data:
+                data["findings"] = data.pop("issues")
+            obj = schema(**data)
             return obj, response
         except Exception as e:
             raise LLMError(f"Failed to parse structured response: {e}")

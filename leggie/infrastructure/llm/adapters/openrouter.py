@@ -71,6 +71,8 @@ class OpenRouterProvider(BaseLLMProvider):
             body["seed"] = request.seed
         if ":thinking" in model:
             body["include_reasoning"] = True
+        if request.response_format:
+            body["response_format"] = request.response_format
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(

@@ -62,16 +62,31 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
         try:
             from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
 
-            flow = BillAnalysisFlow()
-            findings = await flow.run(command.file_path)
+            # Try to inject LLM port if key is configured
+            llm = _try_get_llm()
+            findings, reports = await BillAnalysisFlow(llm=llm).run(command.file_path)
 
-            summary = f"Analysis complete: {len(findings)} finding(s) found"
+            from leggie.domain.models import WorkflowState
+            summary = f"Analysis complete: {len(findings)} finding(s), {len(reports)} report(s)"
             for f in findings:
-                summary += f"\n  - [{f.finding_type.value}] {f.irac.issue[:80]}"
+                summary += f"\n  - [{f.finding_type.value}:{f.severity.value}] {f.irac.issue[:80]}"
 
             return CommandResult(success=True, data=summary)
         except Exception as e:
             return CommandResult(success=False, error=str(e))
+
+
+def _try_get_llm():
+    """Try to build an LLM port from settings. Returns None if no API key."""
+    from leggie.config.settings import get_settings
+    s = get_settings()
+    if not s.llm.openrouter_api_key:
+        return None
+    from leggie.infrastructure.llm import LLMAdapter
+    return LLMAdapter(
+        openrouter_key=s.llm.openrouter_api_key,
+        default_model=s.llm.openrouter_default_model,
+    )
 
 
 class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):

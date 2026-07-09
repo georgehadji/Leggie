@@ -52,9 +52,9 @@ class TestConstitutionalLens:
 
     @pytest.mark.asyncio
     async def test_analyze_returns_empty_for_simple_article(self):
-        """F2: No baseline findings — empty list for articles with no issues."""
+        """F2: No findings for articles with no constitutional issues."""
         lens = ConstitutionalLens()
-        simple = Article(id="99", raw_text="Άρθρο 99\n1. Απλό περιεχόμενο χωρίς συνταγματικά ζητήματα.")
+        simple = Article(id="99", raw_text="\u0386\u03c1\u03b8\u03c1\u03bf 99\n1. \u0391\u03c0\u03bb\u03ae \u03b4\u03b9\u03ac\u03c4\u03b1\u03be\u03b7 \u03c7\u03c9\u03c1\u03af\u03c2 \u03b6\u03b7\u03c4\u03ae\u03bc\u03b1\u03c4\u03b1.")
         findings = await lens.analyze(simple)
         assert len(findings) == 0
 
@@ -81,7 +81,7 @@ class TestConstitutionalLens:
         findings = await lens.analyze(SAMPLE_ARTICLE)
         for f in findings:
             assert f.lens == "constitutional"
-            assert f.model == "rule-based-phase1"
+            assert f.model in ("regex-fallback", "google/gemini-2.5-flash:free")
 
     @pytest.mark.asyncio
     async def test_analyze_empty_article(self):

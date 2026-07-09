@@ -12,6 +12,7 @@ Phase 2+: parallel fan-out with asyncio.TaskGroup + semaphore.
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from leggie.application.agents.constitutional_lens import ConstitutionalLens
 from leggie.application.agents.economic_lens import EconomicLens
@@ -19,6 +20,7 @@ from leggie.application.agents.eu_gdpr_lens import EUGDPRLens
 from leggie.application.agents.implementation_lens import ImplementationLens
 from leggie.application.agents.legal_coherence_lens import LegalCoherenceLens
 from leggie.application.agents.lens import Lens
+from leggie.application.ports.llm import LLMPort
 from leggie.domain.models import Article, Document, Finding, LensTask
 
 # All 5 lenses for Phase 2 Ensemble
@@ -42,9 +44,13 @@ class Orchestrator:
 
     def __init__(
         self,
+        llm: LLMPort | None = None,
+        model: str = "google/gemini-2.5-flash:free",
         lens_config: dict[str, type[Lens]] | None = None,
         max_concurrent: int = _DEFAULT_MAX_CONCURRENT,
     ) -> None:
+        self._llm = llm
+        self._model = model
         self._lens_classes = lens_config or _DEFAULT_LENSES
         self._semaphore = asyncio.Semaphore(max_concurrent)
 
@@ -92,13 +98,12 @@ class Orchestrator:
                 return []
             async with self._semaphore:
                 try:
-                    lens = lens_cls()
+                    lens = lens_cls(llm=self._llm, model=self._model)
                     return await lens.analyze(article)
                 except Exception as e:
                     import logging
-                    logging.getLogger(__name__).warning(
-                        "lens_failed", lens=name, article=article.id, error=str(e)
-                    )
+                    log = logging.getLogger(__name__)
+                    log.warning("lens_failed: %s article=%s error=%s", name, article.id, str(e))
                     return []
 
         async with asyncio.TaskGroup() as tg:

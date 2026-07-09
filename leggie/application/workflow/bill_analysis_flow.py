@@ -52,12 +52,14 @@ class BillAnalysisFlow:
         orchestrator: Orchestrator | None = None,
         skeptic: CalibratedSkeptic | None = None,
         cove: CoVeVerifier | None = None,
+        llm: LLMPort | None = None,
         ingester: IngestPort | None = None,
         parser: ParsePort | None = None,
     ) -> None:
         self._fsm = FlowStateMachine()
         self._state = WorkflowState.IDLE
-        self._orchestrator = orchestrator or Orchestrator()
+        self._llm = llm
+        self._orchestrator = orchestrator or Orchestrator(llm=llm)
         self._reranker = CompositeReranker()
         self._skeptic = skeptic or CalibratedSkeptic()
         self._cove = cove or CoVeVerifier()
