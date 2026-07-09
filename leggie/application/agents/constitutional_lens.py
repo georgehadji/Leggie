@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Pattern
+from re import Pattern
 
 from leggie.application.agents.lens import Lens
 from leggie.application.ports.llm import LLMPort

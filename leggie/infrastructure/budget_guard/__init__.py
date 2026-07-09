@@ -143,7 +143,7 @@ class BudgetGuard:
         p = Path(path)
         if not p.exists():
             return None
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             state = json.load(f)
         guard = cls(max_tokens=state["max_tokens"], max_cost=state["max_cost"])
         guard.load_state(state)

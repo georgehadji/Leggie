@@ -93,7 +93,7 @@ class DocumentParser:
         return text.strip()
 
     def _extract_articles(self, text: str) -> list[Article]:
-        """Extract articles using line-anchored heading detection.
+        r"""Extract articles using line-anchored heading detection.
 
         F0.1: Line-anchor headings via ^ with re.MULTILINE.
         F0.2: Number constrained to \d+[Α-Ωα-ω]? (no multi-token garbage).
@@ -139,10 +139,7 @@ class DocumentParser:
             last_num = num_int
 
             # Content: from this heading start to next heading start (or end)
-            if i + 1 < len(candidates):
-                content_end = candidates[i + 1]["start"]
-            else:
-                content_end = len(text)
+            content_end = candidates[i + 1]["start"] if i + 1 < len(candidates) else len(text)
             raw = text[cand["start"]:content_end].strip()
 
             paragraphs = self._extract_paragraphs(raw)

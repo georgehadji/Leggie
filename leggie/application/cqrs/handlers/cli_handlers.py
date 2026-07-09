@@ -103,7 +103,7 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
 
             results = []
             for bill_id in gold_set.bill_ids:
-                labels = gold_set.get_labels(bill_id)
+                gold_set.get_labels(bill_id)
                 # Try to find a bill file matching this bill_id
                 bill_path = _find_bill_file(bill_id, Path(command.gold_set_path).parent)
                 if bill_path and llm:
