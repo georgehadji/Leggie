@@ -302,58 +302,6 @@ class OpenRouterProvider(BaseLLMProvider):
     async def count_tokens(self, text: str, model: str | None = None) -> int:
         # OpenRouter doesn't have a token-count endpoint; estimate
         return len(text) // 4 + 1
-    """Google Gemini provider adapter."""
-
-    def __init__(self, api_key: str, default_model: str = "gemini-2.5-pro") -> None:
-        if not api_key:
-            raise LLMConfigurationError("Google API key not configured")
-        self._api_key = api_key
-        self._default_model = default_model
-
-    async def generate(self, request: LLMRequest) -> LLMResponse:
-        try:
-            import httpx
-        except ImportError:
-            raise LLMError("httpx not installed")
-
-        model = request.model or self._default_model
-        start = time.monotonic()
-
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self._api_key}"
-        body: dict[str, Any] = {
-            "contents": [{"parts": [{"text": request.prompt}]}],
-            "generationConfig": {
-                "maxOutputTokens": request.max_tokens,
-                "temperature": request.temperature,
-            },
-        }
-
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(url, json=body)
-            elapsed = (time.monotonic() - start) * 1000
-
-        if resp.status_code == 429:
-            raise LLMRateLimitError(f"Google rate limited: {resp.text}")
-        if resp.status_code != 200:
-            raise LLMError(f"Google API error {resp.status_code}: {resp.text}")
-
-        data = resp.json()
-        candidates = data.get("candidates", [])
-        content = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "") if candidates else ""
-
-        usage = data.get("usageMetadata", {})
-        return LLMResponse(
-            content=content,
-            model=model,
-            tier_used=ModelTier.BUDGET,
-            usage={"prompt_tokens": usage.get("promptTokenCount", 0), "completion_tokens": usage.get("candidatesTokenCount", 0)},
-            latency_ms=elapsed,
-        )
-
-    async def count_tokens(self, text: str, model: str | None = None) -> int:
-        # Google's token counting requires an API call
-        # Simplified fallback: estimate (4 chars ≈ 1 token for Greek/English)
-        return len(text) // 4 + 1
 
 
 # ── Decorators ──────────────────────────────────────────────────────────────────
