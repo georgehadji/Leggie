@@ -127,3 +127,23 @@ class BudgetGuard:
         self._state.cost_used = state.get("cost_used", 0.0)
         self._state.degraded = state.get("degraded", False)
         self._state.degrade_level = state.get("degrade_level", 0)
+
+    def to_file(self, path: str) -> None:
+        """Persist budget state to a JSON file."""
+        import json
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.save_state(), f, indent=2)
+
+    @classmethod
+    def from_file(cls, path: str) -> BudgetGuard | None:
+        """Load budget state from a JSON file. Returns None if file missing."""
+        import json
+        from pathlib import Path
+        p = Path(path)
+        if not p.exists():
+            return None
+        with open(p, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        guard = cls(max_tokens=state["max_tokens"], max_cost=state["max_cost"])
+        guard.load_state(state)
+        return guard

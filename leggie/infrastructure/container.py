@@ -19,7 +19,9 @@ from typing import Any
 
 from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.event_bus import EventBusPort
+from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
+from leggie.application.ports.parse import ParsePort
 from leggie.application.ports.router import RouterPort
 from leggie.application.ports.state import StatePort
 
@@ -111,6 +113,12 @@ class Container:
 
         # In-memory state (file-based later)
         self.register(StatePort, lambda: InMemoryEventBus())
+
+        # Ingest / Parse adapters
+        from leggie.infrastructure.ingest_adapter import IngestAdapter
+        from leggie.infrastructure.parse_adapter import ParseAdapter
+        self.register(IngestPort, lambda: IngestAdapter())
+        self.register(ParsePort, lambda: ParseAdapter())
 
         # Budget guard
         from leggie.config.settings import get_settings

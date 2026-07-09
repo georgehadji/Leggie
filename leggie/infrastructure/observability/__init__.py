@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import logging
 import sys
+from contextvars import ContextVar
 from typing import Any
+from uuid import uuid4
 
 import structlog
 
@@ -45,6 +47,35 @@ def configure_logging(level: str | None = None) -> None:
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Get a structured logger for the given module name."""
     return structlog.get_logger(name or __name__)
+
+
+# ── Trace ID context ──────────────────────────────────────────────
+
+
+def _get_default_trace_id() -> str:
+    return str(uuid4())
+
+
+_trace_id: ContextVar[str] = ContextVar("trace_id", default="")
+
+
+def get_trace_id() -> str:
+    """Get the current trace ID, generating one if not set."""
+    tid = _trace_id.get()
+    if not tid:
+        tid = _get_default_trace_id()
+        set_trace_id(tid)
+    return tid
+
+
+def set_trace_id(tid: str) -> None:
+    """Set the current trace ID for the context."""
+    _trace_id.set(tid)
+
+
+def bind_trace_id(logger: structlog.stdlib.BoundLogger) -> structlog.stdlib.BoundLogger:
+    """Bind the current trace ID to a logger."""
+    return logger.bind(trace_id=get_trace_id())
 
 
 class Timer:

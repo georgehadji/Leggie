@@ -14,6 +14,27 @@ class TestGetLogger:
         assert logger is not None
 
 
+class TestTraceContext:
+    def test_get_trace_id_default(self):
+        from leggie.infrastructure.observability import get_trace_id, set_trace_id
+        set_trace_id("test-123")
+        assert get_trace_id() == "test-123"
+
+    def test_get_trace_id_generates(self):
+        from leggie.infrastructure.observability import get_trace_id, set_trace_id
+        set_trace_id("")  # Reset
+        tid = get_trace_id()
+        assert isinstance(tid, str)
+        assert len(tid) > 20
+
+    def test_bind_trace_id(self):
+        from leggie.infrastructure.observability import get_logger, bind_trace_id, set_trace_id
+        set_trace_id("trace-abc")
+        logger = bind_trace_id(get_logger())
+        assert "trace_id" in logger._context
+        assert logger._context["trace_id"] == "trace-abc"
+
+
 class TestTimer:
     @pytest.mark.asyncio
     async def test_timer_context(self):

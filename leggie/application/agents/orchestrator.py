@@ -91,8 +91,15 @@ class Orchestrator:
             if lens_cls is None:
                 return []
             async with self._semaphore:
-                lens = lens_cls()
-                return await lens.analyze(article)
+                try:
+                    lens = lens_cls()
+                    return await lens.analyze(article)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "lens_failed", lens=name, article=article.id, error=str(e)
+                    )
+                    return []
 
         async with asyncio.TaskGroup() as tg:
             tasks = [tg.create_task(_run_lens(name)) for name in lens_names]

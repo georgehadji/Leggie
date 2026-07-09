@@ -26,6 +26,18 @@ from leggie.domain.models import (
 )
 
 
+def _lazy_ingest_adapter() -> IngestPort:
+    """Lazy factory for IngestAdapter to avoid top-level infra import."""
+    from leggie.infrastructure.ingest_adapter import IngestAdapter
+    return IngestAdapter()
+
+
+def _lazy_parse_adapter() -> ParsePort:
+    """Lazy factory for ParseAdapter to avoid top-level infra import."""
+    from leggie.infrastructure.parse_adapter import ParseAdapter
+    return ParseAdapter()
+
+
 class BillAnalysisFlow:
     """End-to-end bill analysis workflow.
 
@@ -35,7 +47,14 @@ class BillAnalysisFlow:
     Phase 2: parallel lens execution + reranking.
     """
 
-    def __init__(self, orchestrator: Orchestrator | None = None, skeptic: CalibratedSkeptic | None = None, cove: CoVeVerifier | None = None) -> None:
+    def __init__(
+        self,
+        orchestrator: Orchestrator | None = None,
+        skeptic: CalibratedSkeptic | None = None,
+        cove: CoVeVerifier | None = None,
+        ingester: IngestPort | None = None,
+        parser: ParsePort | None = None,
+    ) -> None:
         self._fsm = FlowStateMachine()
         self._state = WorkflowState.IDLE
         self._orchestrator = orchestrator or Orchestrator()
@@ -43,6 +62,8 @@ class BillAnalysisFlow:
         self._skeptic = skeptic or CalibratedSkeptic()
         self._cove = cove or CoVeVerifier()
         self._improver = ImprovementEngine()
+        self._ingester = ingester or _lazy_ingest_adapter()
+        self._parser = parser or _lazy_parse_adapter()
         self._reports: list = []
         self._suggestions: list = []
         self._events: list[Event] = []
@@ -62,7 +83,13 @@ class BillAnalysisFlow:
         Returns:
             (findings, reports) tuple.
         """
+        from leggie.infrastructure.observability import get_logger, set_trace_id, bind_trace_id
+        import uuid
         file_path = Path(file_path)
+        trace_id = str(uuid.uuid4())
+        set_trace_id(trace_id)
+        logger = bind_trace_id(get_logger(__name__))
+        logger.info("flow.started", bill_path=str(file_path))
 
         # 1. Ingest
         self._transition(WorkflowState.INGESTING, "ingest_started")
@@ -166,15 +193,10 @@ class BillAnalysisFlow:
     # ── Private helpers ─────────────────────────────────────────────
 
     async def _do_ingest(self, file_path: Path) -> str:
-        """Ingest file content."""
-        from leggie.infrastructure.ingest import IngestorFactory
-        return await IngestorFactory.ingest(file_path)
+        return await self._ingester.ingest(file_path)
 
     def _do_parse(self, text: str, file_path: Path) -> Document:
-        """Parse document text into structured form."""
-        from leggie.infrastructure.parse import DocumentParser
-        parser = DocumentParser()
-        return parser.parse(text, title=file_path.stem, source_format=file_path.suffix.lstrip("."))
+        return self._parser.parse(text, title=file_path.stem, source_format=file_path.suffix.lstrip("."))
 
     def _transition(self, target: WorkflowState, event: str) -> None:
         """Transition the FSM, tracking current state."""

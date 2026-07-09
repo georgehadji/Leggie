@@ -88,3 +88,19 @@ class TestBudgetGuard:
         assert guard2.remaining_tokens == guard.remaining_tokens
         assert guard2._state.degraded is True
         assert guard2._state.tokens_used == 70_000
+
+    def test_to_from_file(self, tmp_path):
+        guard = BudgetGuard(max_tokens=100_000, max_cost=5.0)
+        guard.record_usage(prompt_tokens=30_000, completion_tokens=10_000)
+
+        path = str(tmp_path / "budget_checkpoint.json")
+        guard.to_file(path)
+
+        loaded = BudgetGuard.from_file(path)
+        assert loaded is not None
+        assert loaded.remaining_tokens == guard.remaining_tokens
+        assert loaded._state.cost_used == guard._state.cost_used
+
+    def test_from_file_missing(self):
+        loaded = BudgetGuard.from_file("/nonexistent/path.json")
+        assert loaded is None
