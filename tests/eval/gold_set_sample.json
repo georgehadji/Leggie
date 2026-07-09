@@ -1,0 +1,48 @@
+{
+  "bill_sample_001": [
+    {
+      "article_id": "1",
+      "finding_type": "constitutional",
+      "description": "Proposed delegation of legislative authority to the executive exceeds constitutional limits under Article 43 of the Constitution",
+      "severity": "critical",
+      "citation_text": "\u03a3\u03cd\u03bd\u03c4\u03b1\u03b3\u03bc\u03b1 \u0386\u03c1\u03b8\u03c1\u03bf 43"
+    },
+    {
+      "article_id": "3",
+      "finding_type": "eu_compliance",
+      "description": "Definition of 'electronic communications service' diverges from Directive 2018/1972/EU Article 2(4)",
+      "severity": "high",
+      "citation_text": "CELEX:32018L1972"
+    },
+    {
+      "article_id": "5",
+      "finding_type": "implementation",
+      "description": "Implementation timeline of 30 days is insufficient for the required administrative restructuring",
+      "severity": "medium",
+      "citation_text": null
+    }
+  ],
+  "bill_sample_002": [
+    {
+      "article_id": "2",
+      "finding_type": "temporal",
+      "description": "Transition period of 15 days for environmental compliance certifications is impractical",
+      "severity": "high",
+      "citation_text": null
+    },
+    {
+      "article_id": "4",
+      "finding_type": "obligation_entitlement",
+      "description": "New reporting obligation on small businesses creates disproportionate administrative burden without exemption threshold",
+      "severity": "medium",
+      "citation_text": "\u03a6\u0395\u039a \u0391 137/2023"
+    },
+    {
+      "article_id": "7",
+      "finding_type": "numeric",
+      "description": "Fine calculation base of \u20ac500,000 contradicts existing framework's cap of \u20ac100,000 in \u039d. 4635/2019",
+      "severity": "high",
+      "citation_text": "\u039d. 4635/2019"
+    }
+  ]
+}

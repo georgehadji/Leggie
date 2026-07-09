@@ -1,0 +1,143 @@
+"""Configuration module — pydantic-settings, 12-factor, validated at startup.
+
+All settings are loaded from environment variables / .env files at startup
+and validated. Secrets from env/secret-manager only.
+"""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class LLMSettings(BaseSettings):
+    """LLM provider configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="LEGGIE_LLM_", env_file=".env", extra="ignore")
+
+    # Anthropic
+    anthropic_api_key: str = Field(default="", description="Anthropic API key")
+    anthropic_default_model: str = "claude-sonnet-4-20250514"
+
+    # OpenAI
+    openai_api_key: str = Field(default="", description="OpenAI API key")
+    openai_default_model: str = "gpt-4o"
+
+    # Google
+    google_api_key: str = Field(default="", description="Google AI API key")
+    google_default_model: str = "gemini-2.5-pro"
+
+    # Default provider
+    default_provider: Literal["anthropic", "openai", "google"] = "anthropic"
+
+
+class CascadeSettings(BaseSettings):
+    """Model cascade / router configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="LEGGIE_CASCADE_", env_file=".env", extra="ignore")
+
+    rules_path: str = Field(default="config/routes.yaml", description="Path to routing rules YAML")
+    free_model: str = "claude-haiku-3-5-sonnet-20241022"
+    budget_model: str = "claude-sonnet-4-20250514"
+    premium_model: str = "claude-opus-4-20250514"
+    confidence_floor: float = Field(default=0.6, ge=0.0, le=1.0)
+    premium_fallback_enabled: bool = True
+
+
+class BudgetSettings(BaseSettings):
+    """Budget guard configuration — token/$ ceiling per run."""
+
+    model_config = SettingsConfigDict(env_prefix="LEGGIE_BUDGET_", env_file=".env", extra="ignore")
+
+    max_tokens_per_run: int = Field(default=500_000, ge=1_000)
+    max_cost_per_run: float = Field(default=5.0, ge=0.0)  # USD
+    degrade_on_budget_warning: bool = True
+    degrade_strategy: Literal["fewer_paths", "fewer_lenses", "cheaper_tier"] = "fewer_paths"
+
+
+class RetrievalSettings(BaseSettings):
+    """Retrieval configuration — corpora, embeddings, hybrid parameters."""
+
+    model_config = SettingsConfigDict(env_prefix="LEGGIE_RETRIEVAL_", env_file=".env", extra="ignore")
+
+    embed_model: str = "spyrosbriakos/greek_legal_bert_v2"
+    dense_top_k: int = 10
+    sparse_top_k: int = 10
+    hybrid_top_k: int = 10
+    rrf_constant: int = Field(default=60, ge=1)
+    max_concurrent_cellar: int = Field(default=4, ge=1, le=10)
+    cellar_timeout_seconds: int = 60
+
+
+class IngestSettings(BaseSettings):
+    """Ingest configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="LEGGIE_INGEST_", env_file=".env", extra="ignore")
+
+    max_file_size_mb: int = Field(default=50, ge=1)
+    temp_dir: str = Field(default="/tmp/leggie_ingest")
+    ocr_enabled: bool = False
+
+
+class PersistenceSettings(BaseSettings):
+    """Persistence configuration — SQLite/WAL."""
+
+    model_config = SettingsConfigDict(env_prefix="LEGGIE_DB_", env_file=".env", extra="ignore")
+
+    url: str = Field(default="sqlite:///leggie.db")
+    echo: bool = False
+    wal_mode: bool = True
+
+
+class Settings(BaseSettings):
+    """Top-level configuration — loads all sub-settings and top-level vars."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="LEGGIE_",
+        env_file=".env",
+        env_nested_delimiter="__",
+        extra="ignore",
+    )
+
+    # Application
+    app_name: str = "Leggie"
+    app_version: str = "0.1.0"
+    debug: bool = False
+    log_level: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+    seed: int = Field(default=42, description="Global random seed for reproducibility")
+
+    # Sub-settings
+    llm: LLMSettings = Field(default_factory=LLMSettings)
+    cascade: CascadeSettings = Field(default_factory=CascadeSettings)
+    budget: BudgetSettings = Field(default_factory=BudgetSettings)
+    retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
+    ingest: IngestSettings = Field(default_factory=IngestSettings)
+    persistence: PersistenceSettings = Field(default_factory=PersistenceSettings)
+
+    @field_validator("seed")
+    @classmethod
+    def seed_non_negative(cls, v: int) -> int:
+        if v < 0:
+            return 42
+        return v
+
+
+# Global singleton — lazy-loaded
+_settings: Settings | None = None
+
+
+def get_settings() -> Settings:
+    """Get the global Settings singleton, loading on first call."""
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
+
+
+def reload_settings() -> Settings:
+    """Force-reload settings (useful for testing)."""
+    global _settings
+    _settings = Settings()
+    return _settings

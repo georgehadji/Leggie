@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+eval_results.json
+
+# Environment
+.env
+.env.local
+
+# Reasonix / AutoResearch state
+.reasonix/
+
+# Graphify output (large generated files)
+graphify-out/
+
+# OS
+.DS_Store
+Thumbs.db
