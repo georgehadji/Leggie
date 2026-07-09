@@ -77,19 +77,27 @@ class BillAnalysisFlow:
     def findings(self) -> list[Finding]:
         return list(self._findings)
 
-    async def run(self, file_path: str | Path) -> tuple[list[Finding], list]:
+    async def run(self, file_path: str | Path, output_dir: str | Path = "Outputs") -> tuple[list[Finding], list]:
         """Run the full analysis workflow on a bill file.
+
+        Args:
+            file_path: Path to the bill file (PDF/DOCX/HTML/TXT).
+            output_dir: Directory to save reports and findings. Defaults to "Outputs".
 
         Returns:
             (findings, reports) tuple.
         """
         from leggie.infrastructure.observability import get_logger, set_trace_id, bind_trace_id
         import uuid
+        import json
         file_path = Path(file_path)
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        bill_name = file_path.stem
         trace_id = str(uuid.uuid4())
         set_trace_id(trace_id)
         logger = bind_trace_id(get_logger(__name__))
-        logger.info("flow.started", bill_path=str(file_path))
+        logger.info("flow.started", bill_path=str(file_path), trace_id=trace_id)
 
         # 1. Ingest
         self._transition(WorkflowState.INGESTING, "ingest_started")
@@ -168,6 +176,38 @@ class BillAnalysisFlow:
             exec_summary = await ExecutiveSummaryRenderer().render(self._doc, self._findings, self._suggestions)
             article_by_article = await ArticleByArticleRenderer().render(self._doc, self._findings, self._suggestions)
             self._reports = [exec_summary, article_by_article]
+
+            # Auto-save reports and findings to output directory
+            import json
+            exec_path = output_path / f"{bill_name}_executive_summary.md"
+            art_path = output_path / f"{bill_name}_article_by_article.md"
+            findings_path = output_path / f"{bill_name}_findings.json"
+
+            exec_path.write_text(exec_summary.to_markdown(), encoding="utf-8")
+            art_path.write_text(article_by_article.to_markdown(), encoding="utf-8")
+
+            findings_data = []
+            for f in self._findings:
+                findings_data.append({
+                    "id": str(f.id),
+                    "type": f.finding_type.value,
+                    "severity": f.severity.value,
+                    "confidence": f.confidence.score,
+                    "lens": f.lens,
+                    "issue": f.irac.issue,
+                    "rule": f.irac.rule,
+                    "conclusion": f.irac.conclusion,
+                    "evidence": [e.text_excerpt for e in f.evidence if e.text_excerpt],
+                })
+            with open(findings_path, "w", encoding="utf-8") as f:
+                json.dump(findings_data, f, indent=2, ensure_ascii=False)
+
+            logger.info(
+                "flow.outputs_saved",
+                executive_summary=str(exec_path),
+                article_by_article=str(art_path),
+                findings=str(findings_path),
+            )
 
         # 10. Done
         self._record_event(EventType.WORKFLOW_COMPLETED, {

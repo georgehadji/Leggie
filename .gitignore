@@ -34,6 +34,9 @@ eval_results.json
 # Graphify output (large generated files)
 graphify-out/
 
+# Outputs (generated reports)
+Outputs/
+
 # OS
 .DS_Store
 Thumbs.db
