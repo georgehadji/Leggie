@@ -5,8 +5,6 @@ All functions are pure: no I/O, injected similarity function.
 
 from __future__ import annotations
 
-from collections import defaultdict
-
 from leggie.domain.models import Finding
 
 

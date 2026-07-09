@@ -1,7 +1,9 @@
 """Tests for rate limiter — token-bucket."""
 
 import time
+
 import pytest
+
 from leggie.infrastructure.rate_limiter import RateLimiter
 
 
