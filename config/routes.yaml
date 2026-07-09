@@ -2,19 +2,20 @@
 # Maps task_type → {model, tier, max_tokens, cascade_models}
 #
 # Models use OpenRouter IDs (openrouter.ai).
+# Variants: :thinking (chain-of-thought), :free (free tier), :extended (large context)
 # Cascade: on low confidence / failure, escalates FREE → BUDGET → PREMIUM
 
 routes:
-  # Core analysis tasks
+  # ── Core analysis tasks ──────────────────────────────────────────
   lens_analysis:
-    model: "anthropic/claude-sonnet-4-20250514"
+    model: "anthropic/claude-sonnet-4-20250514:thinking"
     tier: "budget"
     max_tokens: 4096
     cascade: true
     cascade_models:
-      free: "google/gemini-2.5-flash"
-      budget: "anthropic/claude-sonnet-4-20250514"
-      premium: "anthropic/claude-opus-4-20250514"
+      free: "google/gemini-2.5-flash:free"
+      budget: "anthropic/claude-sonnet-4-20250514:thinking"
+      premium: "anthropic/claude-opus-4-20250514:thinking"
 
   verbalized_sampling:
     model: "anthropic/claude-sonnet-4-20250514"
@@ -31,42 +32,43 @@ routes:
     max_tokens: 2048
     cascade: true
     cascade_models:
-      free: "google/gemini-2.5-flash"
+      free: "google/gemini-2.5-flash:free"
       budget: "anthropic/claude-sonnet-4-20250514"
 
-  # Simple / cheap tasks
+  # ── Simple / cheap tasks ─────────────────────────────────────────
   classification:
-    model: "google/gemini-2.5-flash"
+    model: "google/gemini-2.5-flash:free"
     tier: "free"
     max_tokens: 1024
     cascade: true
     cascade_models:
-      free: "google/gemini-2.5-flash"
+      free: "google/gemini-2.5-flash:free"
       budget: "anthropic/claude-sonnet-4-20250514"
 
   summarization:
-    model: "google/gemini-2.5-flash"
+    model: "google/gemini-2.5-flash:free"
     tier: "free"
     max_tokens: 2048
     cascade: false
     cascade_models:
-      free: "google/gemini-2.5-flash"
+      free: "google/gemini-2.5-flash:free"
       budget: "anthropic/claude-sonnet-4-20250514"
       premium: "anthropic/claude-opus-4-20250514"
 
+  # ── Quality-critical tasks ───────────────────────────────────────
   evidence_verification:
-    model: "anthropic/claude-opus-4-20250514"
+    model: "anthropic/claude-opus-4-20250514:thinking"
     tier: "premium"
     max_tokens: 2048
     cascade: true
     cascade_models:
-      premium: "anthropic/claude-opus-4-20250514"
+      premium: "anthropic/claude-opus-4-20250514:thinking"
 
   report_generation:
-    model: "anthropic/claude-sonnet-4-20250514"
+    model: "anthropic/claude-sonnet-4-20250514:extended"
     tier: "budget"
     max_tokens: 8192
     cascade: true
     cascade_models:
-      budget: "anthropic/claude-sonnet-4-20250514"
-      premium: "anthropic/claude-opus-4-20250514"
+      budget: "anthropic/claude-sonnet-4-20250514:extended"
+      premium: "anthropic/claude-opus-4-20250514:extended"

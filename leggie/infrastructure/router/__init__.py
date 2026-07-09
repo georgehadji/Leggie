@@ -73,7 +73,7 @@ class StaticRouter(RouterPort):
 
     def _default_for_tier(self, tier: ModelTier) -> str:
         return {
-            ModelTier.FREE: "claude-haiku-3-5-sonnet-20241022",
-            ModelTier.BUDGET: "claude-sonnet-4-20250514",
-            ModelTier.PREMIUM: "claude-opus-4-20250514",
-        }.get(tier, "claude-sonnet-4-20250514")
+            ModelTier.FREE: "google/gemini-2.5-flash:free",
+            ModelTier.BUDGET: "anthropic/claude-sonnet-4-20250514",
+            ModelTier.PREMIUM: "anthropic/claude-opus-4-20250514",
+        }.get(tier, "anthropic/claude-sonnet-4-20250514")

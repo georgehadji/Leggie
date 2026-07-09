@@ -220,6 +220,12 @@ class OpenRouterProvider(BaseLLMProvider):
 
     Uses OpenAI-compatible chat completions API with the OpenRouter base URL.
     Models are prefixed: anthropic/claude-sonnet-4, google/gemini-2.5-pro, etc.
+
+    OpenRouter-specific features:
+      - Prompt caching via transforms: ["cache"] (O6 cost optimization)
+      - Reasoning tokens for :thinking variants
+      - Provider fallback handled server-side
+      - App attribution via HTTP-Referer + X-Title
     """
 
     def __init__(self, api_key: str, base_url: str = "https://openrouter.ai/api/v1",
@@ -255,9 +261,15 @@ class OpenRouterProvider(BaseLLMProvider):
             "max_tokens": request.max_tokens,
             "messages": messages,
             "temperature": request.temperature if request.temperature is not None else 0.7,
+            # OpenRouter prompt caching — caches invariant context across API calls (O6)
+            "transforms": ["cache"],
         }
         if request.seed is not None:
             body["seed"] = request.seed
+
+        # Enable reasoning tokens for :thinking models
+        if ":thinking" in model:
+            body["include_reasoning"] = True
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(

@@ -36,15 +36,15 @@ class BudgetState:
 class BudgetGuard:
     """Budget guard — monitors and enforces token/$ ceilings per run."""
 
-    # Approximate cost per 1M tokens (USD) by provider/tier
+    # Approximate cost per 1M tokens (USD) via OpenRouter pricing
     COST_PER_1M_TOKENS: dict[str, float] = {
-        "claude-haiku-3-5-sonnet-20241022": 0.80,
-        "claude-sonnet-4-20250514": 3.00,
-        "claude-opus-4-20250514": 15.00,
-        "gpt-4o": 2.50,
-        "gpt-4o-mini": 0.15,
-        "gemini-2.5-pro": 1.25,
-        "gemini-2.5-flash": 0.15,
+        "google/gemini-2.5-flash": 0.15,
+        "google/gemini-2.5-flash:free": 0.0,
+        "google/gemini-2.5-pro": 1.25,
+        "anthropic/claude-sonnet-4-20250514": 3.00,
+        "anthropic/claude-opus-4-20250514": 15.00,
+        "openai/gpt-4o": 2.50,
+        "openai/gpt-4o-mini": 0.15,
     }
 
     def __init__(self, max_tokens: int = 500_000, max_cost: float = 5.0) -> None:
