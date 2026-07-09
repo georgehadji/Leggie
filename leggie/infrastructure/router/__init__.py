@@ -34,7 +34,7 @@ class StaticRouter(RouterPort):
         rule = self._rules.get("routes", {}).get(task_type, {})
         if not rule:
             # Default fallback
-            return RouteResult(model="claude-sonnet-4-20250514", tier=ModelTier.BUDGET, max_tokens=4096)
+            return RouteResult(model="google/gemini-2.5-flash", tier=ModelTier.BUDGET, max_tokens=4096)
 
         tier_str = rule.get("tier", "budget")
         tier = ModelTier(tier_str)
@@ -73,7 +73,7 @@ class StaticRouter(RouterPort):
 
     def _default_for_tier(self, tier: ModelTier) -> str:
         return {
-            ModelTier.FREE: "google/gemini-2.5-flash:free",
-            ModelTier.BUDGET: "anthropic/claude-sonnet-4-20250514",
-            ModelTier.PREMIUM: "anthropic/claude-opus-4-20250514",
-        }.get(tier, "openai/gpt-5.6-luna")
+            ModelTier.FREE: "google/gemini-2.5-flash-lite",
+            ModelTier.BUDGET: "google/gemini-2.5-flash",
+            ModelTier.PREMIUM: "google/gemini-2.5-pro",
+        }.get(tier, "google/gemini-2.5-flash")

@@ -20,7 +20,7 @@ class LLMSettings(BaseSettings):
     # OpenRouter — single API key for all providers
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_default_model: str = "anthropic/claude-sonnet-4-20250514"
+    openrouter_default_model: str = "google/gemini-2.5-flash"
 
 
 class CascadeSettings(BaseSettings):
@@ -29,9 +29,9 @@ class CascadeSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LEGGIE_CASCADE_", env_file=".env", extra="ignore")
 
     rules_path: str = Field(default="config/routes.yaml", description="Path to routing rules YAML")
-    free_model: str = "google/gemini-2.5-flash:free"
-    budget_model: str = "openai/gpt-5.6-luna"
-    premium_model: str = "openai/gpt-5.6-luna-pro"
+    free_model: str = "google/gemini-2.5-flash-lite"
+    budget_model: str = "google/gemini-2.5-flash"
+    premium_model: str = "google/gemini-2.5-pro"
     confidence_floor: float = Field(default=0.6, ge=0.0, le=1.0)
     premium_fallback_enabled: bool = True
 

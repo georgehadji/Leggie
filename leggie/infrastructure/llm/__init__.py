@@ -25,7 +25,7 @@ class LLMAdapter:
         self,
         openrouter_key: str = "",
         openrouter_base_url: str = "https://openrouter.ai/api/v1",
-        default_model: str = "openai/gpt-5.6-luna",
+        default_model: str = "google/gemini-2.5-flash",
     ) -> None:
         if not openrouter_key:
             raise LLMConfigurationError("OpenRouter API key not configured")
@@ -42,11 +42,22 @@ class LLMAdapter:
 
     async def generate_structured(self, request, schema):
         import json
+        import re
         from dataclasses import replace
         req = replace(request, response_format={"type": "json_object"})
         response = await self.generate(req)
         try:
-            data = json.loads(response.content)
+            content = response.content.strip()
+            # Strip markdown code fences if present (```json ... ```)
+            fence = re.search(r"```(?:json)?\s*(.*?)```", content, re.DOTALL)
+            if fence:
+                content = fence.group(1).strip()
+            data = json.loads(content)
+            # Models often return a bare array; wrap it into the schema's
+            # single list-typed field (e.g. LensFindings.findings).
+            if isinstance(data, list):
+                list_field = next(iter(schema.model_fields), None)
+                data = {list_field: data} if list_field else {}
             # Handle model returning "issues" instead of "findings"
             if isinstance(data, dict) and "issues" in data and "findings" not in data:
                 data["findings"] = data.pop("issues")

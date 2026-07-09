@@ -20,7 +20,7 @@ from leggie.domain.models.structured_output import IRACCandidate, LensFindings
 class ConstitutionalLens(Lens):
     """Constitutional lens — uses LLM when available, regex fallback otherwise."""
 
-    def __init__(self, llm: LLMPort | None = None, model: str = "openai/gpt-4o-mini") -> None:
+    def __init__(self, llm: LLMPort | None = None, model: str = "google/gemini-2.5-flash") -> None:
         super().__init__(llm=llm, model=model)
 
     def name(self) -> str:

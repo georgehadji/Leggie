@@ -38,17 +38,18 @@ class BudgetGuard:
 
     # Approximate cost per 1M tokens (USD) via OpenRouter pricing
     COST_PER_1M_TOKENS: dict[str, float] = {
-        "google/gemini-2.5-flash": 0.15,
-        "google/gemini-2.5-flash:free": 0.0,
+        "google/gemini-2.5-flash-lite": 0.10,
+        "google/gemini-2.5-flash": 0.30,
         "google/gemini-2.5-pro": 1.25,
-        "anthropic/claude-sonnet-4-20250514": 3.00,
-        "anthropic/claude-opus-4-20250514": 15.00,
-        "openai/gpt-4o": 2.50,
+        "google/gemini-3-flash-preview": 0.43,
+        "google/gemini-3.1-pro-preview": 2.00,
+        "anthropic/claude-haiku-4.5": 1.00,
+        "anthropic/claude-sonnet-4.6": 3.00,
+        "anthropic/claude-opus-4.8": 15.00,
         "openai/gpt-4o-mini": 0.15,
-        "openai/gpt-5.6-luna": 3.00,
-        "openai/gpt-5.6-luna-pro": 15.00,
-        "openai/gpt-5.6-terra": 2.00,
-        "openai/gpt-5.6-terra-pro": 10.00,
+        "openai/gpt-5-mini": 0.27,
+        "openai/gpt-5.4": 2.50,
+        "deepseek/deepseek-v3.2": 0.28,
     }
 
     def __init__(self, max_tokens: int = 500_000, max_cost: float = 5.0) -> None:

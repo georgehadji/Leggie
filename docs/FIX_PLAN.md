@@ -204,3 +204,31 @@ F0 Parser  ──►  F1 LLM wiring  ──►  F2 Noise  ──►  F3 Evidence
 ```
 
 F0 is the unblocker and needs no key. F1 is the value unlock. F2/F3 convert raw model output into a clean, trustworthy report. F4 makes it cheap and adds the adversarial layer. Do not skip F0 — a real LLM over phantom segments is still garbage.
+
+---
+
+## Part 7 — Model VFM (value-for-money) selection
+
+Research basis: **GreekMMLU** (arXiv 2602.05150) — frontier ≫ open-weight on Greek; Greek-adapted models help. **GreekBarBench** (arXiv 2505.17267) — Greek legal reasoning is hard (best < 95th-pct expert), citations must be checked deterministically. → **Greek competence is the binding constraint, not raw intelligence.** All ids below are **verified real** on `openrouter.ai/api/v1/models`.
+
+| Task | Model (real id) | ~$/1M in | Cascade → | Rationale |
+|---|---|---|---|---|
+| lens_analysis (cost driver) | `google/gemini-2.5-flash` | 0.30 | `google/gemini-2.5-pro` | Greek-capable, cheap, fast; 80% of spend |
+| verbalized_sampling | `google/gemini-2.5-flash` | 0.30 | `gemini-2.5-pro` | diversity, one call |
+| adversarial_critic (skeptic) | `anthropic/claude-sonnet-4.6` | 3.0 | `claude-opus-4.8` | must catch errors lens missed |
+| evidence_verification | `google/gemini-2.5-pro` | 1.25 | — | quality-critical, low volume |
+| report_generation | `google/gemini-2.5-pro` | 1.25 | — | long-ctx Greek prose, 2 calls |
+| classification / summarization | `google/gemini-2.5-flash-lite` | 0.10 | `gemini-2.5-flash` | trivial, high volume |
+| embeddings (retrieval) | `greek_legal_bert_v2` + `BGE-M3` | — | — | domain + general multilingual |
+
+**Cheap open alt:** `deepseek/deepseek-v3.2` ($0.28) — near-frontier open weights, but verify Greek legal quality before trusting on the lens pass.
+
+**Codified** in `config/routes.yaml` + `settings.py` cascade tiers (FREE `gemini-2.5-flash-lite` → BUDGET `gemini-2.5-flash` → PREMIUM `gemini-2.5-pro`).
+
+**⚠ Invalid-id trap (found in verification):** placeholder ids (`openai/gpt-5.6-luna`, `…-terra`) and suffixed/date-stamped ids (`…-flash:free`, `claude-sonnet-4-20250514`) **404/400 on OpenRouter** → the resilience stack silently regex-falls-back → the whole report is garbage with no error. **Every model id must be validated against the live `/models` list.**
+
+### Bake-off protocol (before locking the lens model)
+Run the 5-model shortlist through the eval harness on the 2–3 gold bills; pick per-stage by measured precision/recall/cost. Eval-driven, matches the architecture.
+- Candidates: `google/gemini-2.5-flash` · `google/gemini-3-flash-preview` · `deepseek/deepseek-v3.2` · `anthropic/claude-sonnet-4.6` · `openai/gpt-5-mini`
+- Metrics: precision / recall / F1 / RDI (already in the harness) + $/bill from the budget guard.
+- Winner = best F1 within the cost ceiling; escalate-on-signal to the premium tier for the rest.

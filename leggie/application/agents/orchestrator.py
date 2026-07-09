@@ -45,7 +45,7 @@ class Orchestrator:
     def __init__(
         self,
         llm: LLMPort | None = None,
-        model: str = "google/gemini-2.5-flash:free",
+        model: str = "google/gemini-2.5-flash",
         lens_config: dict[str, type[Lens]] | None = None,
         max_concurrent: int = _DEFAULT_MAX_CONCURRENT,
     ) -> None:

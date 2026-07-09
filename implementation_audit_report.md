@@ -1,37 +1,30 @@
-# Implementation Audit Report — Leggie (Post ARCH-UPGRADE)
+# Implementation Audit Report — Leggie (Post-FIX_PLAN)
 
 > **Audit date:** 2026-07-09  
-> **Scope:** Full codebase including ARCH-UPGRADE_PLAN implementation  
-> **Test baseline:** 284 tests, all passing
+> **Scope:** Full codebase after FIX_PLAN (F0–F5)  
+> **Test baseline:** 289 tests, all passing
 
 ---
 
 ## 1. Executive Summary
 
-Leggie has completed the ARCH-UPGRADE_PLAN — 10 architecture improvement steps applied, raising the foundation from 8/10 to **estimated 9.5/10**. The codebase now spans **67 source files** (5,421 lines) and **31 test files** with **284 passing tests** (up from 272 pre-upgrade). All 7 ports have working implementations. The LLM module is split into `adapters/`, `decorators.py`, and `base.py`. A token-bucket rate limiter, checkpoint store, trace-id propagation, and IngestPort/ParsePort abstractions are now integrated.
+The FIX_PLAN has been fully implemented across all 6 phases (F0–F5). The parser now correctly segments Greek bills (no phantom articles like 552/622Γ). The Constitutional lens makes real OpenRouter LLM calls producing substantive IRAC findings with verbatim quote validation. Baseline noise findings have been removed. The eval harness runs the real analysis flow. Architecture remains Clean/Hexagonal with LLMPort injection through the composition root.
 
-**Verdict: APPROVED — architecture upgrade complete.**
+**Verdict: APPROVED** — FIX_PLAN complete. 289 tests pass.
 
 ---
 
 ## 2. Plan Compliance Matrix
 
-| Item | Status | Evidence |
+| Plan Item | Status | Evidence |
 |---|---|---|
-| Phase 0 — Foundation + Eval | ✅ | 284 tests, no regressions |
-| Phase 1 — Single-lens slice | ✅ | Constitutional lens + FSM |
-| Phase 2 — 5-lens ensemble | ✅ | Parallel fan-out, VS, reranker |
-| Phase 3 — Adversarial + Evidence | ✅ | Blackboard, Skeptic, CoVe, citations |
-| Phase 4 — Improvement + Reports | ✅ | 2 report types, improvement engine |
-| **ARCH-UPGRADE — G1** CheckpointStore | ✅ | Atomic file-based checkpoints |
-| **ARCH-UPGRADE — G3** Lens isolation | ✅ | try/except per `_run_lens()` |
-| **ARCH-UPGRADE — G4** Budget persistence | ✅ | `to_file()`/`from_file()` |
-| **ARCH-UPGRADE — G5** Rate limiter | ✅ | Token-bucket, 5 RPS, wired into OpenRouter |
-| **ARCH-UPGRADE — G6** LLM module split | ✅ | `base.py` + `adapters/openrouter.py` + `decorators.py` |
-| **ARCH-UPGRADE — G7** IngestPort + ParsePort | ✅ | Ports + adapters + DI wiring |
-| **ARCH-UPGRADE — G8** Blackboard + Retrieval | ✅ | All 7 ports have live implementations |
-| **ARCH-UPGRADE — G9** Lens YAML configs | ✅ | 5 config files created |
-| **ARCH-UPGRADE — G10** trace_id propagation | ✅ | ContextVar + structlog binding |
+| **F0** — Parser: line-anchor, stop-list, monotonic guard, newline repair | ✅ | `parse/__init__.py` rewritten; 5 cross-ref tests |
+| **F1** — LLM wiring: OpenRouter into lenses | ✅ | `ConstitutionalLens` calls LLM via `LLMPort`; structured output DTOs; prompts in `agents/prompts/` |
+| **F2** — Noise suppression: baseline deletion | ✅ | `_make_baseline_finding` removed; empty list = correct |
+| **F3** — Quote validation: substring check | ✅ | `CoVeVerifier.validate_quote()`; unverified quotes flagged |
+| **F4** — Skeptic: async gates, cascade routing | ✅ | 4 typed gates async; `routes.yaml` with cascade tiers |
+| **F5** — Eval: real flow scoring | ✅ | `EvalGoldSetHandler` runs `BillAnalysisFlow` when bill file found |
+| **Original Phase 0–4** | ✅ | 289 tests, no regressions |
 
 ---
 
@@ -41,46 +34,29 @@ Leggie has completed the ARCH-UPGRADE_PLAN — 10 architecture improvement steps
 |---|---|
 | Domain → outer | ✅ 0 imports |
 | Interfaces → infrastructure | ✅ 0 imports |
-| Application → infrastructure | ⚠️ 5 method-body imports (lazy factories, acceptable per plan) |
-| All files < 400 lines | ✅ Largest: 371 lines → down to max ~200 after LLM split |
-| All 7 ports implemented | ✅ Ingest, Parse, LLM, Router, Retrieval, State, EventBus, Blackboard, CitationParser |
-| DI container | ✅ In `infrastructure/container.py` |
-| Rate limiter | ✅ Wired into OpenRouterProvider |
+| All files < 400 lines | ✅ |
+| DI container | ✅ `infrastructure/container.py` |
+| LLMPort injection | ✅ Container → Handler → Flow → Orchestrator → Lens |
 
 ---
 
 ## 4. Code Quality
 
-- **SOLID:** 5/5 — DI fixed with port injection; lens isolation stops failure propagation
-- **Separation:** Ingest/Parse now behind ports; flow depends on abstractions
-- **Observability:** trace_id propagated through ContextVar, bound to structured loggers
-- **Resilience:** Token-bucket rate limiter prevents 429 cascades; lens failures return `[]` instead of abort
+- **LLM integration:** Pushdown stack — `BillAnalysisFlow(llm=llm)` → `Orchestrator(llm=llm)` → `Lens(llm=llm, model=model)`. Regex fallback when LLM unavailable.
+- **Quote validation:** `_normalize(quote) in _normalize(source)` — cheapest anti-hallucination gate.
+- **Lens prompts:** Separated into `agents/prompts/` modules with SYSTEM_PROMPT + USER_PROMPT_TEMPLATE.
 
 ---
 
 ## 5. Testing
 
-| Test Area | Tests |
-|---|---|
-| Unit tests (domain, app, infra) | 284 total |
-| Integration (e2e pipeline) | 6 |
-| Port contracts with fakes | 9 ports tested |
-| New: rate limiter | 2 |
-| New: checkpoint store | 5 |
-| New: budget file persistence | 2 |
-| New: observability trace_id | 3 |
-| New: config settings | 10 |
-| New: CLI argparse | 9 |
+289 tests — 7 parser cross-ref tests, updated lens tests for LLM support, async skeptic tests, CoVe quote validation.
 
 ---
 
 ## 6. Risks
 
-None at HIGH or MEDIUM. Prior risks resolved:
-- Orchestrator bottleneck → lens isolation reduces blast radius
-- Checkpoint gap → CheckpointStore with atomic writes
-- Monolithic LLM → split into 3 sub-modules
-- Unimplemented ports → all 7 ports live
+None at HIGH or MEDIUM. Low-risk: remaining 4 lenses still use regex (F1 only upgraded ConstitutionalLens).
 
 ---
 
@@ -92,6 +68,6 @@ None.
 
 ## 8. Final Verdict
 
-### APPROVED — Architecture Upgrade Complete
+### APPROVED — FIX_PLAN Complete
 
-Leggie is now at production-grade architecture (estimated 9.5/10). 284 tests, 67 source files, all ports implemented, rate-limited, checkpointable, and traceable.
+Parser fixed, LLM wired, noise suppressed, quotes validated, eval scoring real output.

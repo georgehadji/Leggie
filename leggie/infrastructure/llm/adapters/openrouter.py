@@ -27,7 +27,7 @@ class OpenRouterProvider(BaseLLMProvider):
     """
 
     def __init__(self, api_key: str, base_url: str = "https://openrouter.ai/api/v1",
-                 default_model: str = "openai/gpt-5.6-luna",
+                 default_model: str = "google/gemini-2.5-flash",
                  rate_limiter: RateLimiter | None = None) -> None:
         if not api_key:
             from leggie.infrastructure.llm.base import LLMConfigurationError

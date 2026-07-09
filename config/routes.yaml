@@ -1,74 +1,80 @@
 # Leggie Route Rules — static YAML routing table
 # Maps task_type → {model, tier, max_tokens, cascade_models}
 #
-# Models use OpenRouter IDs (openrouter.ai).
-# Variants: :thinking (chain-of-thought), :free (free tier), :extended (large context)
-# Cascade: on low confidence / failure, escalates FREE → BUDGET → PREMIUM
+# Models use REAL OpenRouter IDs (verified on openrouter.ai/api/v1/models).
+# VFM tiering per docs/FIX_PLAN §Model VFM: Greek-competent + cost-optimal.
+# Cascade: on low confidence / failure, escalates FREE → BUDGET → PREMIUM.
+#
+# Tier defaults:
+#   FREE/cheap    google/gemini-2.5-flash-lite   (~$0.10/1M in)
+#   BUDGET/work   google/gemini-2.5-flash        (~$0.30/1M in)  — proven Greek-capable workhorse
+#   PREMIUM       google/gemini-2.5-pro          (~$1.25/1M in)  — long-context Greek quality
 
 routes:
-  # ── Core analysis tasks ──────────────────────────────────────────
+  # ── Core analysis (cost driver: 5 lenses × N articles) ───────────
   lens_analysis:
-    model: "openai/gpt-5.6-luna:thinking"
+    model: "google/gemini-2.5-flash"
     tier: "budget"
     max_tokens: 4096
     cascade: true
     cascade_models:
-      free: "google/gemini-2.5-flash:free"
-      budget: "openai/gpt-5.6-luna:thinking"
-      premium: "openai/gpt-5.6-luna-pro:thinking"
+      free: "google/gemini-2.5-flash-lite"
+      budget: "google/gemini-2.5-flash"
+      premium: "google/gemini-2.5-pro"
 
   verbalized_sampling:
-    model: "openai/gpt-5.6-luna"
+    model: "google/gemini-2.5-flash"
     tier: "budget"
     max_tokens: 8192
     cascade: true
     cascade_models:
-      budget: "openai/gpt-5.6-luna"
-      premium: "openai/gpt-5.6-luna-pro"
+      budget: "google/gemini-2.5-flash"
+      premium: "google/gemini-2.5-pro"
 
+  # Skeptic must CATCH legal errors the lens missed — sharper reasoning.
   adversarial_critic:
-    model: "google/gemini-2.5-flash"
-    tier: "free"
+    model: "anthropic/claude-sonnet-4.6"
+    tier: "budget"
     max_tokens: 2048
     cascade: true
     cascade_models:
-      free: "google/gemini-2.5-flash:free"
-      budget: "openai/gpt-5.6-terra"
+      budget: "anthropic/claude-sonnet-4.6"
+      premium: "anthropic/claude-opus-4.8"
 
   # ── Simple / cheap tasks ─────────────────────────────────────────
   classification:
-    model: "google/gemini-2.5-flash:free"
+    model: "google/gemini-2.5-flash-lite"
     tier: "free"
     max_tokens: 1024
     cascade: true
     cascade_models:
-      free: "google/gemini-2.5-flash:free"
-      budget: "openai/gpt-5.6-terra"
+      free: "google/gemini-2.5-flash-lite"
+      budget: "google/gemini-2.5-flash"
 
   summarization:
-    model: "google/gemini-2.5-flash:free"
+    model: "google/gemini-2.5-flash-lite"
     tier: "free"
     max_tokens: 2048
     cascade: false
     cascade_models:
-      free: "google/gemini-2.5-flash:free"
-      budget: "openai/gpt-5.6-luna"
-      premium: "openai/gpt-5.6-luna-pro"
+      free: "google/gemini-2.5-flash-lite"
+      budget: "google/gemini-2.5-flash"
+      premium: "google/gemini-2.5-pro"
 
-  # ── Quality-critical tasks ───────────────────────────────────────
+  # ── Quality-critical (low volume: survivors / final reports) ─────
   evidence_verification:
-    model: "openai/gpt-5.6-terra-pro:thinking"
+    model: "google/gemini-2.5-pro"
     tier: "premium"
     max_tokens: 2048
     cascade: true
     cascade_models:
-      premium: "openai/gpt-5.6-terra-pro:thinking"
+      premium: "google/gemini-2.5-pro"
 
   report_generation:
-    model: "openai/gpt-5.6-luna:extended"
+    model: "google/gemini-2.5-pro"
     tier: "budget"
     max_tokens: 8192
     cascade: true
     cascade_models:
-      budget: "openai/gpt-5.6-luna:extended"
-      premium: "openai/gpt-5.6-luna-pro:extended"
+      budget: "google/gemini-2.5-flash"
+      premium: "google/gemini-2.5-pro"

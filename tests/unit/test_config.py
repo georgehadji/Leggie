@@ -31,7 +31,8 @@ class TestLLMSettings:
 
     def test_default_model(self):
         s = LLMSettings()
-        assert "claude-sonnet-4" in s.openrouter_default_model
+        # Must be a real, working OpenRouter id (no :free suffix, no invalid date-stamped id)
+        assert s.openrouter_default_model == "google/gemini-2.5-flash"
 
     def test_base_url(self):
         s = LLMSettings()
