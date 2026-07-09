@@ -17,7 +17,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from leggie.application.ports.blackboard import BlackboardPort
 from leggie.application.ports.citation_parser import CitationParserPort
+from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.event_bus import EventBusPort
 from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
@@ -119,6 +121,16 @@ class Container:
         from leggie.infrastructure.parse_adapter import ParseAdapter
         self.register(IngestPort, lambda: IngestAdapter())
         self.register(ParsePort, lambda: ParseAdapter())
+
+        # Rate limiter for LLM calls
+        from leggie.infrastructure.rate_limiter import RateLimiter
+        self.register_instance("rate_limiter", RateLimiter(max_rate=5.0))
+
+        # Blackboard / Retrieval
+        from leggie.infrastructure.blackboard_adapter import BlackboardAdapter
+        from leggie.infrastructure.retrieval_adapter import SimpleRetrievalAdapter
+        self.register(BlackboardPort, lambda: BlackboardAdapter())
+        self.register(RetrievalPort, lambda: SimpleRetrievalAdapter())
 
         # Budget guard
         from leggie.config.settings import get_settings
