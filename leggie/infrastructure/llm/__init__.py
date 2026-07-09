@@ -17,6 +17,75 @@ from leggie.infrastructure.llm.base import (
 )
 from leggie.infrastructure.llm.decorators import with_cache, with_retry
 
+# Offline allowlist of known-valid OpenRouter model IDs (fallback when API unreachable)
+_OFFLINE_MODEL_ALLOWLIST: set[str] = {
+    # Google
+    "google/gemini-2.5-flash",
+    "google/gemini-2.5-flash-lite",
+    "google/gemini-2.5-pro",
+    "google/gemini-3-flash-preview",
+    # Anthropic
+    "anthropic/claude-sonnet-4",
+    "anthropic/claude-sonnet-4.6",
+    "anthropic/claude-opus-4",
+    "anthropic/claude-opus-4.8",
+    # DeepSeek
+    "deepseek/deepseek-v3.2",
+    # OpenAI
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+    "openai/gpt-5-mini",
+    # Meta
+    "meta-llama/llama-3.3-70b",
+    # Mistral
+    "mistral/mistral-large-2411",
+    # Qwen
+    "qwen/qwen-2.5-72b",
+}
+
+
+async def validate_model_ids(
+    api_key: str,
+    model_ids: list[str],
+    base_url: str = "https://openrouter.ai/api/v1",
+    use_live: bool = True,
+) -> list[str]:
+    """Validate model IDs against the OpenRouter catalog.
+
+    Args:
+        api_key: OpenRouter API key for querying /models.
+        model_ids: List of model IDs to validate.
+        base_url: OpenRouter base URL.
+        use_live: If True, query the live /models endpoint; fall back to offline allowlist.
+
+    Returns:
+        List of invalid model IDs (empty means all are valid).
+    """
+    if not model_ids:
+        return []
+
+    if use_live and api_key:
+        try:
+            import httpx
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "HTTP-Referer": "https://github.com/georgehadji/Leggie",
+            }
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(f"{base_url}/models", headers=headers)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                live_ids = {m.get("id", "") for m in data.get("data", [])}
+                return [m for m in model_ids if m not in live_ids]
+            # Fall back to allowlist
+        except Exception:
+            pass
+
+    # Fallback: check against offline allowlist
+    return [m for m in model_ids if m not in _OFFLINE_MODEL_ALLOWLIST]
+
+
 # Legacy adapter — uses OpenRouter as primary provider
 class LLMAdapter:
     """Concrete LLM adapter — uses OpenRouter as primary provider."""
@@ -26,9 +95,17 @@ class LLMAdapter:
         openrouter_key: str = "",
         openrouter_base_url: str = "https://openrouter.ai/api/v1",
         default_model: str = "google/gemini-2.5-flash",
+        validate_on_init: bool = True,
     ) -> None:
         if not openrouter_key:
             raise LLMConfigurationError("OpenRouter API key not configured")
+        # Quick offline allowlist check at init time (FX3)
+        if validate_on_init and default_model and default_model not in _OFFLINE_MODEL_ALLOWLIST:
+            raise LLMConfigurationError(
+                f"Unknown model ID '{default_model}'. "
+                f"This model is not in the known allowlist. "
+                f"Check config/settings.py or LEGGIE_LLM__OPENROUTER_DEFAULT_MODEL env var."
+            )
         from leggie.infrastructure.rate_limiter import RateLimiter
         self._provider: BaseLLMProvider = OpenRouterProvider(
             api_key=openrouter_key,
@@ -36,6 +113,26 @@ class LLMAdapter:
             default_model=default_model,
             rate_limiter=RateLimiter(max_rate=5.0),
         )
+        self._default_model = default_model
+        self._openrouter_key = openrouter_key
+        self._openrouter_base_url = openrouter_base_url
+
+    async def validate_default_model(self) -> None:
+        """Validate that the configured default model exists on OpenRouter.
+
+        Raises LLMConfigurationError with a clear message if invalid.
+        """
+        invalid = await validate_model_ids(
+            api_key=self._openrouter_key,
+            model_ids=[self._default_model],
+            base_url=self._openrouter_base_url,
+        )
+        if invalid:
+            raise LLMConfigurationError(
+                f"Invalid model ID '{self._default_model}'. "
+                f"This model was not found in the OpenRouter catalog. "
+                f"Check config/settings.py or LEGGIE_LLM__OPENROUTER_DEFAULT_MODEL env var."
+            )
 
     async def generate(self, request):
         return await self._provider.generate(request)
