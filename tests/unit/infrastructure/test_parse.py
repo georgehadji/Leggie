@@ -83,6 +83,49 @@ class TestDocumentParser:
         assert len(doc.articles) == 0
 
 
+class TestCrossRefRejection:
+    """F0: Parser rejects in-body cross-references as article headings."""
+
+    def test_rejects_code_ref(self, parser):
+        """'του άρθρου 552 ΚΠολΔ' should not become article 552."""
+        text = "Άρθρο 1\nΠεριεχόμενο\nΤο άρθρο 552 του ΚΠολΔ εφαρμόζεται.\n"
+        doc = parser.parse(text)
+        nums = [a.id for a in doc.articles]
+        assert "1" in nums
+        assert "552" not in nums
+
+    def test_rejects_law_ref(self, parser):
+        """'του ν. 4635/2019' reference should not become article 4635."""
+        text = "Άρθρο 1\nΠεριεχόμενο\nΣύμφωνα με το άρθρο 43 του ν. 4635/2019.\n"
+        doc = parser.parse(text)
+        nums = [a.id for a in doc.articles]
+        assert "1" in nums
+        assert "4635" not in nums
+        assert "43" not in nums
+
+    def test_rejects_directive_ref(self, parser):
+        text = "Άρθρο 1\nΠεριεχόμενο\nΚατά το άρθρο 14 της Οδηγίας 2024/1069.\n"
+        doc = parser.parse(text)
+        nums = [a.id for a in doc.articles]
+        assert "14" not in nums
+        assert "1" in nums
+
+    def test_accepts_legitimate_article(self, parser):
+        """A real article heading should still be detected."""
+        text = "Άρθρο 1 – Σκοπός\nΚείμενο του άρθρου\nΆρθρο 2 – Ορισμοί\nΚείμενο του άρθρου\n"
+        doc = parser.parse(text)
+        nums = [a.id for a in doc.articles]
+        assert nums == ["1", "2"]
+
+    def test_rejects_monotonic_jump(self, parser):
+        """Large jump (1→552→59) means 552 is a cross-reference."""
+        text = "Άρθρο 1\nΠεριεχόμενο\nΤο άρθρο 552 ΚΠολΔ\nΆρθρο 2\nΠεριεχόμενο\n"
+        doc = parser.parse(text)
+        nums = [a.id for a in doc.articles]
+        assert "552" not in nums
+        assert nums == ["1", "2"]
+
+
 class TestCitationExtraction:
     def test_extract_fek_citation(self, parser):
         text = "Όπως ορίζεται στο ΦΕΚ Α 137/2023"

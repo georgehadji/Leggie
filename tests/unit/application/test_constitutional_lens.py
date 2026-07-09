@@ -51,10 +51,12 @@ class TestConstitutionalLens:
         assert len(constitutional) >= 1
 
     @pytest.mark.asyncio
-    async def test_analyze_returns_baseline_for_simple_article(self):
+    async def test_analyze_returns_empty_for_simple_article(self):
+        """F2: No baseline findings — empty list for articles with no issues."""
         lens = ConstitutionalLens()
-        findings = await lens.analyze(SIMPLE_ARTICLE)
-        assert len(findings) >= 1  # Baseline finding always returned
+        simple = Article(id="99", raw_text="Άρθρο 99\n1. Απλό περιεχόμενο χωρίς συνταγματικά ζητήματα.")
+        findings = await lens.analyze(simple)
+        assert len(findings) == 0
 
     @pytest.mark.asyncio
     async def test_finding_has_irac(self):

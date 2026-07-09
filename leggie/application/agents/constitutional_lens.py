@@ -91,11 +91,7 @@ class ConstitutionalLens(Lens):
             if match:
                 findings.append(self._make_procedure_finding(article, match))
 
-        # If no patterns matched but article has content, emit a single
-        # low-confidence info finding to satisfy Phase 1 exit gate
-        if not findings and len(text) > 50:
-            findings.append(self._make_baseline_finding(article))
-
+        # If no patterns matched, return empty (no noise — FIX_PLAN F2)
         return findings
 
     def _make_delegation_finding(self, article: Article, match: re.Match) -> Finding:
@@ -183,7 +179,10 @@ class ConstitutionalLens(Lens):
         )
 
     def _make_baseline_finding(self, article: Article) -> Finding:
-        """Baseline finding for Phase 1 exit gate."""
+        """Baseline finding for Phase 1 exit gate.
+
+        DEPRECATED by FIX_PLAN F2 — kept for reference, no longer called.
+        """
         return Finding(
             finding_type=FindingType.CONSTITUTIONAL,
             irac=IRAC(

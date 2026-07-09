@@ -55,7 +55,7 @@ class TestOrchestrator:
     async def test_analyze_document_returns_findings(self):
         orch = Orchestrator()
         findings = await orch.analyze_document(SAMPLE_DOC)
-        assert len(findings) >= 5  # Multiple findings across 5 lenses and 3 articles
+        assert len(findings) >= 2  # Articles with constitutional/EU triggers
 
     @pytest.mark.asyncio
     async def test_analyze_with_unknown_lens_skips(self):
