@@ -1,72 +1,72 @@
 # Leggie Route Rules — static YAML routing table
 # Maps task_type → {model, tier, max_tokens, cascade_models}
 #
+# Models use OpenRouter IDs (openrouter.ai).
 # Cascade: on low confidence / failure, escalates FREE → BUDGET → PREMIUM
 
 routes:
-  # ███ Core analysis tasks ███
+  # Core analysis tasks
   lens_analysis:
-    model: "claude-sonnet-4-20250514"
+    model: "anthropic/claude-sonnet-4-20250514"
     tier: "budget"
     max_tokens: 4096
     cascade: true
     cascade_models:
-      budget: "claude-sonnet-4-20250514"
-      premium: "claude-opus-4-20250514"
-      free: "claude-haiku-3-5-sonnet-20241022"
+      free: "google/gemini-2.5-flash"
+      budget: "anthropic/claude-sonnet-4-20250514"
+      premium: "anthropic/claude-opus-4-20250514"
 
   verbalized_sampling:
-    model: "claude-sonnet-4-20250514"
+    model: "anthropic/claude-sonnet-4-20250514"
     tier: "budget"
     max_tokens: 8192
     cascade: true
     cascade_models:
-      budget: "claude-sonnet-4-20250514"
-      premium: "claude-opus-4-20250514"
+      budget: "anthropic/claude-sonnet-4-20250514"
+      premium: "anthropic/claude-opus-4-20250514"
 
   adversarial_critic:
-    model: "claude-sonnet-4-20250514"
-    tier: "budget"
+    model: "google/gemini-2.5-flash"
+    tier: "free"
     max_tokens: 2048
     cascade: true
     cascade_models:
-      budget: "claude-sonnet-4-20250514"
-      premium: "claude-opus-4-20250514"
+      free: "google/gemini-2.5-flash"
+      budget: "anthropic/claude-sonnet-4-20250514"
 
-  # ███ Simple / cheap tasks ███
+  # Simple / cheap tasks
   classification:
-    model: "claude-haiku-3-5-sonnet-20241022"
+    model: "google/gemini-2.5-flash"
     tier: "free"
     max_tokens: 1024
     cascade: true
     cascade_models:
-      free: "claude-haiku-3-5-sonnet-20241022"
-      budget: "claude-sonnet-4-20250514"
+      free: "google/gemini-2.5-flash"
+      budget: "anthropic/claude-sonnet-4-20250514"
 
   summarization:
-    model: "claude-haiku-3-5-sonnet-20241022"
+    model: "google/gemini-2.5-flash"
     tier: "free"
     max_tokens: 2048
     cascade: false
     cascade_models:
-      free: "claude-haiku-3-5-sonnet-20241022"
-      budget: "claude-sonnet-4-20250514"
-      premium: "claude-opus-4-20250514"
+      free: "google/gemini-2.5-flash"
+      budget: "anthropic/claude-sonnet-4-20250514"
+      premium: "anthropic/claude-opus-4-20250514"
 
-  # ███ Quality-critical tasks ███
   evidence_verification:
-    model: "claude-opus-4-20250514"
+    model: "anthropic/claude-opus-4-20250514"
     tier: "premium"
     max_tokens: 2048
     cascade: true
     cascade_models:
-      premium: "claude-opus-4-20250514"
+      premium: "anthropic/claude-opus-4-20250514"
 
   report_generation:
-    model: "claude-sonnet-4-20250514"
+    model: "anthropic/claude-sonnet-4-20250514"
     tier: "budget"
     max_tokens: 8192
     cascade: true
     cascade_models:
-      budget: "claude-sonnet-4-20250514"
-      premium: "claude-opus-4-20250514"
+      budget: "anthropic/claude-sonnet-4-20250514"
+      premium: "anthropic/claude-opus-4-20250514"

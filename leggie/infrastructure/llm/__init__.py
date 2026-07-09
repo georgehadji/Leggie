@@ -215,7 +215,81 @@ class OpenAIProvider(BaseLLMProvider):
         return resp.json().get("usage", {}).get("prompt_tokens", 0)
 
 
-class GoogleProvider(BaseLLMProvider):
+class OpenRouterProvider(BaseLLMProvider):
+    """OpenRouter provider adapter — single API for all models.
+
+    Uses OpenAI-compatible chat completions API with the OpenRouter base URL.
+    Models are prefixed: anthropic/claude-sonnet-4, google/gemini-2.5-pro, etc.
+    """
+
+    def __init__(self, api_key: str, base_url: str = "https://openrouter.ai/api/v1",
+                 default_model: str = "anthropic/claude-sonnet-4-20250514") -> None:
+        if not api_key:
+            raise LLMConfigurationError("OpenRouter API key not configured")
+        self._api_key = api_key
+        self._base_url = base_url
+        self._default_model = default_model
+
+    async def generate(self, request: LLMRequest) -> LLMResponse:
+        try:
+            import httpx
+        except ImportError:
+            raise LLMError("httpx not installed")
+
+        model = request.model or self._default_model
+        start = time.monotonic()
+
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "HTTP-Referer": "https://github.com/georgehadji/Leggie",
+            "X-Title": "Leggie",
+            "content-type": "application/json",
+        }
+        messages: list[dict] = []
+        if request.system_prompt:
+            messages.append({"role": "system", "content": request.system_prompt})
+        messages.append({"role": "user", "content": request.prompt})
+
+        body: dict[str, Any] = {
+            "model": model,
+            "max_tokens": request.max_tokens,
+            "messages": messages,
+            "temperature": request.temperature if request.temperature is not None else 0.7,
+        }
+        if request.seed is not None:
+            body["seed"] = request.seed
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{self._base_url}/chat/completions",
+                headers=headers,
+                json=body,
+            )
+            elapsed = (time.monotonic() - start) * 1000
+
+        if resp.status_code == 429:
+            raise LLMRateLimitError(f"OpenRouter rate limited: {resp.text}")
+        if resp.status_code != 200:
+            raise LLMError(f"OpenRouter API error {resp.status_code}: {resp.text}")
+
+        data = resp.json()
+        choice = data.get("choices", [{}])[0]
+        content = choice.get("message", {}).get("content", "")
+        usage = data.get("usage", {})
+        return LLMResponse(
+            content=content,
+            model=model,
+            tier_used=ModelTier.BUDGET,
+            usage={
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+            },
+            latency_ms=elapsed,
+        )
+
+    async def count_tokens(self, text: str, model: str | None = None) -> int:
+        # OpenRouter doesn't have a token-count endpoint; estimate
+        return len(text) // 4 + 1
     """Google Gemini provider adapter."""
 
     def __init__(self, api_key: str, default_model: str = "gemini-2.5-pro") -> None:
@@ -303,43 +377,25 @@ def with_cache(max_size: int = 100) -> Callable:
 
 
 class LLMAdapter(LLMPort):
-    """Concrete LLM adapter — selects provider based on config."""
+    """Concrete LLM adapter — uses OpenRouter as primary provider."""
 
     def __init__(
         self,
-        anthropic_key: str = "",
-        openai_key: str = "",
-        google_key: str = "",
-        default_provider: str = "anthropic",
+        openrouter_key: str = "",
+        openrouter_base_url: str = "https://openrouter.ai/api/v1",
+        default_model: str = "anthropic/claude-sonnet-4-20250514",
     ) -> None:
-        self._providers: dict[str, BaseLLMProvider] = {}
-        if anthropic_key:
-            self._providers["anthropic"] = AnthropicProvider(anthropic_key)
-        if openai_key:
-            self._providers["openai"] = OpenAIProvider(openai_key)
-        if google_key:
-            self._providers["google"] = GoogleProvider(google_key)
-        self._default_provider = default_provider
-
-    def _get_provider(self, model: str | None) -> BaseLLMProvider:
-        """Determine which provider to use based on model name or default."""
-        provider_name = self._default_provider
-        if model:
-            for prov in ["anthropic", "openai", "google"]:
-                if prov in model.lower():
-                    provider_name = prov
-                    break
-        if provider_name not in self._providers:
-            available = list(self._providers.keys())
-            if not available:
-                raise LLMConfigurationError("No LLM providers configured")
-            provider_name = available[0]
-        return self._providers[provider_name]
+        if not openrouter_key:
+            raise LLMConfigurationError("OpenRouter API key not configured")
+        self._provider: BaseLLMProvider = OpenRouterProvider(
+            api_key=openrouter_key,
+            base_url=openrouter_base_url,
+            default_model=default_model,
+        )
 
     @with_retry()
     async def generate(self, request: LLMRequest) -> LLMResponse:
-        provider = self._get_provider(request.model)
-        return await provider.generate(request)
+        return await self._provider.generate(request)
 
     async def generate_structured(self, request: LLMRequest, schema: type) -> tuple[Any, LLMResponse]:
         response = await self.generate(request)
@@ -352,5 +408,4 @@ class LLMAdapter(LLMPort):
             raise LLMError(f"Failed to parse structured response: {e}")
 
     async def count_tokens(self, text: str, model: str | None = None) -> int:
-        provider = self._get_provider(model)
-        return await provider.count_tokens(text, model)
+        return await self._provider.count_tokens(text, model)

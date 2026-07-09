@@ -91,16 +91,15 @@ class Container:
         from leggie.infrastructure.persistence import InMemoryEventBus
         self.register(EventBusPort, lambda: InMemoryEventBus())
 
-        # LLM adapter (lazy — needs API keys from settings)
+        # LLM adapter (OpenRouter — single API key for all providers)
         def _create_llm() -> LLMPort:
             from leggie.config.settings import get_settings
             from leggie.infrastructure.llm import LLMAdapter
             s = get_settings()
             return LLMAdapter(
-                anthropic_key=s.llm.anthropic_api_key,
-                openai_key=s.llm.openai_api_key,
-                google_key=s.llm.google_api_key,
-                default_provider=s.llm.default_provider,
+                openrouter_key=s.llm.openrouter_api_key,
+                openrouter_base_url=s.llm.openrouter_base_url,
+                default_model=s.llm.openrouter_default_model,
             )
         self.register(LLMPort, _create_llm)
 

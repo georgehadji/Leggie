@@ -13,24 +13,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class LLMSettings(BaseSettings):
-    """LLM provider configuration."""
+    """LLM provider configuration via OpenRouter."""
 
     model_config = SettingsConfigDict(env_prefix="LEGGIE_LLM_", env_file=".env", extra="ignore")
 
-    # Anthropic
-    anthropic_api_key: str = Field(default="", description="Anthropic API key")
-    anthropic_default_model: str = "claude-sonnet-4-20250514"
-
-    # OpenAI
-    openai_api_key: str = Field(default="", description="OpenAI API key")
-    openai_default_model: str = "gpt-4o"
-
-    # Google
-    google_api_key: str = Field(default="", description="Google AI API key")
-    google_default_model: str = "gemini-2.5-pro"
-
-    # Default provider
-    default_provider: Literal["anthropic", "openai", "google"] = "anthropic"
+    # OpenRouter — single API key for all providers
+    openrouter_api_key: str = Field(default="", description="OpenRouter API key")
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_default_model: str = "anthropic/claude-sonnet-4-20250514"
 
 
 class CascadeSettings(BaseSettings):
@@ -39,9 +29,9 @@ class CascadeSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LEGGIE_CASCADE_", env_file=".env", extra="ignore")
 
     rules_path: str = Field(default="config/routes.yaml", description="Path to routing rules YAML")
-    free_model: str = "claude-haiku-3-5-sonnet-20241022"
-    budget_model: str = "claude-sonnet-4-20250514"
-    premium_model: str = "claude-opus-4-20250514"
+    free_model: str = "google/gemini-2.5-flash"
+    budget_model: str = "anthropic/claude-sonnet-4-20250514"
+    premium_model: str = "anthropic/claude-opus-4-20250514"
     confidence_floor: float = Field(default=0.6, ge=0.0, le=1.0)
     premium_fallback_enabled: bool = True
 
