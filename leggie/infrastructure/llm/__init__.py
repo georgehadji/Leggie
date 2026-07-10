@@ -170,7 +170,7 @@ class LLMAdapter:
         except Exception as e:
             raise LLMError(f"Failed to parse structured response: {e}")
 
-    _IRAC_ALIASES = {
+    _IRAC_ALIASES: dict[str, list[str]] = {
         "issue": ["issue", "title", "finding", "summary", "concern", "constitutional_concern", "analysis"],
         "rule": ["rule", "constitutional_provision", "rule_id", "legal_basis", "provision", "article"],
         "application": ["application", "analysis", "reasoning", "constitutional_concern"],
@@ -179,7 +179,7 @@ class LLMAdapter:
     }
 
     @classmethod
-    def _normalize_irac_item(cls, item):
+    def _normalize_irac_item(cls, item: object) -> object:
         if not isinstance(item, dict):
             return item
         normalized = dict(item)
