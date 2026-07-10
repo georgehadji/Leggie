@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from leggie.application.cqrs.base import CommandHandler, CommandResult
 from leggie.application.cqrs.commands.cli_commands import (
@@ -16,11 +17,16 @@ from leggie.application.cqrs.commands.cli_commands import (
     ParseDocumentCommand,
 )
 
+if TYPE_CHECKING:
+    from leggie.application.ports.llm import LLMPort
+    from leggie.application.ports.router import RouterPort
+    from leggie.infrastructure.budget_guard import BudgetGuard
 
-class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict]):
+
+class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]]):
     """Handle bill document parsing."""
 
-    async def handle(self, command: ParseDocumentCommand) -> CommandResult[dict]:
+    async def handle(self, command: ParseDocumentCommand) -> CommandResult[dict[str, Any]]:
         try:
             from leggie.infrastructure.ingest import IngestorFactory
             from leggie.infrastructure.parse import DocumentParser
@@ -64,9 +70,9 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
 
             # Try to inject LLM port if key is configured
             llm = _try_get_llm()
-            findings, reports = await BillAnalysisFlow(llm=llm).run(command.file_path)
+            router = _try_get_router()
+            findings, reports = await BillAnalysisFlow(llm=llm, router=router).run(command.file_path)
 
-            from leggie.domain.models import WorkflowState
             summary = f"Analysis complete: {len(findings)} finding(s), {len(reports)} report(s)"
             for f in findings:
                 summary += f"\n  - [{f.finding_type.value}:{f.severity.value}] {f.irac.issue[:80]}"
@@ -76,30 +82,62 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             return CommandResult(success=False, error=str(e))
 
 
-def _try_get_llm():
+def _try_get_llm() -> LLMPort | None:
     """Try to build an LLM port from settings. Returns None if no API key."""
     from leggie.config.settings import get_settings
     s = get_settings()
     if not s.llm.openrouter_api_key:
         return None
     from leggie.infrastructure.llm import LLMAdapter
-    return LLMAdapter(
+    from leggie.infrastructure.llm.decorators import BudgetGuardDecorator
+    # validate_on_init=True (default) checks against offline allowlist at init
+    adapter: LLMPort = LLMAdapter(
         openrouter_key=s.llm.openrouter_api_key,
         default_model=s.llm.openrouter_default_model,
     )
+    # Wrap with budget guard if configured (EN2)
+    budget_guard = _try_get_budget_guard()
+    if budget_guard:
+        adapter = BudgetGuardDecorator(adapter, budget_guard)
+    return adapter
 
 
-class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
+def _try_get_router() -> RouterPort | None:
+    """Try to build a StaticRouter from settings. Returns None if routes YAML missing."""
+    from pathlib import Path
+    routes_path = Path("config/routes.yaml")
+    if not routes_path.exists():
+        return None
+    from leggie.infrastructure.router import StaticRouter
+    return StaticRouter(rules_path=str(routes_path))
+
+
+def _try_get_budget_guard() -> BudgetGuard | None:
+    """Try to build a BudgetGuard from settings. Returns None if budget disabled."""
+    from leggie.config.settings import get_settings
+    s = get_settings()
+    if s.budget.max_cost_per_run <= 0:
+        return None
+    from leggie.infrastructure.budget_guard import BudgetGuard
+    return BudgetGuard(
+        max_tokens=s.budget.max_tokens_per_run,
+        max_cost=s.budget.max_cost_per_run,
+    )
+
+
+class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
     """Handle gold-set evaluation."""
 
-    async def handle(self, command: EvalGoldSetCommand) -> CommandResult[list]:
+    async def handle(self, command: EvalGoldSetCommand) -> CommandResult[list[Any]]:
         try:
             import json
             from pathlib import Path
+
             from leggie.infrastructure.persistence.eval_harness import EvalScorer, GoldSet
 
             gold_set = GoldSet(command.gold_set_path)
             llm = _try_get_llm()
+            router = _try_get_router()
 
             results = []
             for bill_id in gold_set.bill_ids:
@@ -108,7 +146,7 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
                 bill_path = _find_bill_file(bill_id, Path(command.gold_set_path).parent)
                 if bill_path and llm:
                     from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
-                    flow = BillAnalysisFlow(llm=llm)
+                    flow = BillAnalysisFlow(llm=llm, router=router)
                     findings, _ = await flow.run(bill_path)
                 else:
                     findings = []

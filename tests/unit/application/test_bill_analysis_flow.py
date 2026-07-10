@@ -3,7 +3,15 @@
 import pytest
 
 from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
-from leggie.domain.models import WorkflowState
+from leggie.domain.models import (
+    IRAC,
+    Confidence,
+    EventType,
+    Finding,
+    FindingType,
+    Severity,
+    WorkflowState,
+)
 
 SAMPLE_BILL = """
 ΣΧΕΔΙΟ ΝΟΜΟΥ
@@ -93,3 +101,91 @@ class TestBillAnalysisFlow:
         flow = BillAnalysisFlow()
         await flow.run(sample_bill_file)
         assert len(flow.suggestions) > 0
+
+
+def _make_finding(issue: str, confidence: float = 0.8, finding_type=None,
+                  lens: str = "test", severity: str = "medium") -> Finding:
+    return Finding(
+        finding_type=finding_type or FindingType.CONSTITUTIONAL,
+        irac=IRAC(issue=issue, rule="r", application="a", conclusion="c"),
+        confidence=Confidence.from_score(confidence),
+        severity=Severity(severity),
+        lens=lens,
+        model="test",
+    )
+
+
+class TestDedupInFlow:
+    """Tests for _dedup_findings (FX2)."""
+
+    def test_dedup_removes_near_duplicates(self):
+        flow = BillAnalysisFlow(dedup_threshold=0.5)
+        f1 = _make_finding("Άρθρο 1: alpha beta gamma", confidence=0.9)
+        f2 = _make_finding("Άρθρο 1: alpha beta delta", confidence=0.7)
+        f3 = _make_finding("Άρθρο 2: different topic", confidence=0.8)
+        result = flow._dedup_findings([f1, f2, f3])
+        assert len(result) == 2
+        scores = [r.confidence.score for r in result]
+        assert 0.9 in scores  # kept higher confidence
+
+    def test_dedup_respects_article_boundary(self):
+        flow = BillAnalysisFlow(dedup_threshold=0.5)
+        f1 = _make_finding("Άρθρο 1: delegation limits exceeded", confidence=0.9)
+        f2 = _make_finding("Άρθρο 5: delegation limits exceeded", confidence=0.8)
+        result = flow._dedup_findings([f1, f2])
+        assert len(result) == 2  # Different articles, both kept
+
+    def test_dedup_respects_different_types(self):
+        flow = BillAnalysisFlow(dedup_threshold=0.5)
+        f1 = _make_finding("alpha beta", finding_type=FindingType.CONSTITUTIONAL)
+        f2 = _make_finding("alpha beta", finding_type=FindingType.ECONOMIC)
+        result = flow._dedup_findings([f1, f2])
+        assert len(result) == 2
+
+    def test_dedup_empty_list(self):
+        flow = BillAnalysisFlow()
+        assert flow._dedup_findings([]) == []
+
+    def test_dedup_idempotent(self):
+        flow = BillAnalysisFlow(dedup_threshold=0.5)
+        findings = [
+            _make_finding("Άρθρο 1: alpha beta", confidence=0.9),
+            _make_finding("Άρθρο 1: alpha beta gamma", confidence=0.7),
+            _make_finding("Άρθρο 3: zeta", confidence=0.8),
+        ]
+        first = flow._dedup_findings(findings)
+        second_pass = flow._dedup_findings(first)
+        assert len(first) == len(second_pass)
+
+
+class TestDegradationEvent:
+    """Tests for degradation callback wiring (FX5)."""
+
+    def test_degradation_records_event(self):
+        from leggie.domain.models import Event
+        events: list[Event] = []
+
+        def record(e: Event) -> None:
+            events.append(e)
+
+        flow = BillAnalysisFlow(on_degradation=record)
+        flow._on_degradation(Event(
+            event_type=EventType.DEGRADED,
+            aggregate_id="test:lens:article:1",
+            data={"lens": "constitutional", "error": "test error"},
+        ))
+        assert len(events) == 1
+        assert events[0].event_type == EventType.DEGRADED
+        assert "test error" in events[0].data["error"]
+
+    def test_default_degradation_uses_record_event(self):
+        flow = BillAnalysisFlow()
+        from leggie.domain.models import Event
+        flow._on_degradation(Event(
+            event_type=EventType.DEGRADED,
+            aggregate_id="test",
+            data={"test": True},
+        ))
+        log = flow.get_event_log()
+        assert len(log) == 1
+        assert log[0].event_type == EventType.DEGRADED

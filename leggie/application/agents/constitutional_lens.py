@@ -11,6 +11,7 @@ import hashlib
 import logging
 import re
 from re import Pattern
+from typing import Any
 
 from leggie.application.agents.lens import Lens
 from leggie.application.ports.llm import LLMPort
@@ -35,7 +36,7 @@ class ConstitutionalLens(Lens):
 
     def __init__(self, llm: LLMPort | None = None,
                  model: str = "google/gemini-2.5-flash",
-                 **kwargs) -> None:
+                 **kwargs: Any) -> None:
         super().__init__(llm=llm, model=model, **kwargs)
 
     def name(self) -> str:
@@ -157,14 +158,14 @@ class ConstitutionalLens(Lens):
         return findings
 
 
-_DELEGATION_PATTERNS: list[Pattern] = [
+_DELEGATION_PATTERNS: list[Pattern[str]] = [
     re.compile(r"(?:εξουσιοδότηση|εξουσιοδοτεί|νομοθετική\s+εξουσιοδότηση)", re.UNICODE | re.IGNORECASE),
     re.compile(r"(?:έκδοση\s+π\.δ\.|προεδρικό\s+διάταγμα|υπουργική\s+απόφαση)", re.UNICODE | re.IGNORECASE),
 ]
-_RETROACTIVE_PATTERNS: list[Pattern] = [
+_RETROACTIVE_PATTERNS: list[Pattern[str]] = [
     re.compile(r"(?:αναδρομική\s+ισχύ|αναδρομικά|από\s+την\s+έναρξη\s+ισχύος)", re.UNICODE | re.IGNORECASE),
 ]
-_RIGHTS_PATTERNS: list[Pattern] = [
+_RIGHTS_PATTERNS: list[Pattern[str]] = [
     re.compile(r"(?:περιορισμός\s+(?:θεμελιώδους|δικαιώματος)|προσβολή|παραβίαση\s+δικαιώματος)", re.UNICODE | re.IGNORECASE),
     re.compile(r"(?:προσωπικά\s+δεδομένα|απόρρητο|ιδιωτικότητα|ελευθερία\s+της\s+έκφρασης)", re.UNICODE | re.IGNORECASE),
 ]

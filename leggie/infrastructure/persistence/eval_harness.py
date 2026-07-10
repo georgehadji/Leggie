@@ -136,7 +136,7 @@ class GoldSet:
 
     def save(self, path: str) -> None:
         """Save gold labels to a JSON file."""
-        data: dict[str, list[dict]] = {}
+        data: dict[str, list[dict[str, Any]]] = {}
         for bill_id, labels in self._labels.items():
             data[bill_id] = [
                 {

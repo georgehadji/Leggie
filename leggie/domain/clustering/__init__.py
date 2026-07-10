@@ -5,12 +5,14 @@ All functions are pure: no I/O, injected similarity function.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from leggie.domain.models import Finding
 
 
 def cluster(
     findings: list[Finding],
-    similarity_fn: callable,
+    similarity_fn: Callable[[Finding, Finding], float],
     threshold: float = 0.85,
 ) -> list[list[Finding]]:
     """Group findings into clusters by semantic similarity.
@@ -42,7 +44,7 @@ def cluster(
 
 def deduplicate(
     findings: list[Finding],
-    similarity_fn: callable,
+    similarity_fn: Callable[[Finding, Finding], float],
     threshold: float = 0.90,
     keep: str = "highest_confidence",
 ) -> list[Finding]:
@@ -83,7 +85,7 @@ def deduplicate(
 def merge_findings(
     findings_a: list[Finding],
     findings_b: list[Finding],
-    similarity_fn: callable,
+    similarity_fn: Callable[[Finding, Finding], float],
     threshold: float = 0.85,
 ) -> list[Finding]:
     """Merge two lists of findings, deduplicating across both."""

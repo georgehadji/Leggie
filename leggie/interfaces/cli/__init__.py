@@ -9,6 +9,10 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from leggie.application.cqrs.mediator import Mediator
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -44,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _build_mediator():
+def _build_mediator() -> Mediator:
     """Build and configure the CQRS mediator with all handlers."""
     from leggie.application.cqrs.commands.cli_commands import (
         AnalyzeBillCommand,
@@ -92,7 +96,7 @@ async def main() -> int:
     return 0
 
 
-async def _handle_parse(args: argparse.Namespace, mediator) -> int:
+async def _handle_parse(args: argparse.Namespace, mediator: Mediator) -> int:
     """Handle the parse command via CQRS."""
     import json
 
@@ -114,7 +118,7 @@ async def _handle_parse(args: argparse.Namespace, mediator) -> int:
     return 0
 
 
-async def _handle_analyze(args: argparse.Namespace, mediator) -> int:
+async def _handle_analyze(args: argparse.Namespace, mediator: Mediator) -> int:
     """Handle the analyze command via CQRS."""
     from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
 
@@ -131,7 +135,7 @@ async def _handle_analyze(args: argparse.Namespace, mediator) -> int:
     return 0
 
 
-async def _handle_eval(args: argparse.Namespace, mediator) -> int:
+async def _handle_eval(args: argparse.Namespace, mediator: Mediator) -> int:
     """Handle the eval command via CQRS."""
     import json
 
@@ -147,7 +151,7 @@ async def _handle_eval(args: argparse.Namespace, mediator) -> int:
         print(f"Error: {result.error}", file=sys.stderr)
         return 1
 
-    for bill_result in result.data:
+    for bill_result in result.data or []:
         print(f"\n{bill_result['bill_id']}:")
         print(f"  Gold labels: {bill_result['total_gold']}")
         print(f"  Findings: {bill_result['total_findings']}")

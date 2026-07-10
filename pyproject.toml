@@ -87,20 +87,12 @@ branch = true
 fail_under = 80
 show_missing = true
 
-[tool.import-linter]
-root_package = "leggie"
-include_external_dependencies = false
+[tool.importlinter]
+root_packages = ["leggie"]
 
-[[tool.import-linter.contract_types]]
-name = "layer_dependencies"
+[[tool.importlinter.contracts]]
+name = "layer-dependencies"
 type = "layers"
-containers = [
-    "leggie.domain",
-    "leggie.application",
-    "leggie.infrastructure",
-    "leggie.interfaces",
-    "leggie.config",
-]
 layers = [
     "leggie.interfaces",
     "leggie.infrastructure",
@@ -109,16 +101,3 @@ layers = [
     "leggie.config",
 ]
 depend_inside = true
-forbidden_imports = [
-    {importer = "leggie.interfaces", import = "leggie.infrastructure"},
-    {importer = "leggie.interfaces", import = "leggie.domain"},
-    {importer = "leggie.infrastructure", import = "leggie.interfaces"},
-    {importer = "leggie.application", import = "leggie.infrastructure"},
-    {importer = "leggie.domain", import = "leggie.application"},
-    {importer = "leggie.domain", import = "leggie.infrastructure"},
-    {importer = "leggie.domain", import = "leggie.interfaces"},
-    {importer = "leggie.config", import = "leggie.domain"},
-    {importer = "leggie.config", import = "leggie.application"},
-    {importer = "leggie.config", import = "leggie.infrastructure"},
-    {importer = "leggie.config", import = "leggie.interfaces"},
-]

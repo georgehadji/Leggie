@@ -5,9 +5,9 @@ F4: Uses LLM when available for real adversarial review.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from leggie.domain.models import Finding, Confidence, FindingType
+from leggie.domain.models import Confidence, Finding, FindingType
 
 
 @dataclass

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from leggie.application.blackboard import Blackboard as BlackboardService
-from leggie.application.ports.blackboard import BlackboardPort, BlackboardEntry
-from leggie.domain.models import Finding
+from leggie.application.ports.blackboard import BlackboardEntry, BlackboardPort
 
 
 class BlackboardAdapter(BlackboardPort):

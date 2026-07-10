@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.domain.models import Citation, Finding
 
 
@@ -45,7 +46,7 @@ def _normalize(text: str) -> str:
 class CoVeVerifier:
     """Chain-of-Verification evidence loop."""
 
-    def __init__(self, citation_parser=None) -> None:
+    def __init__(self, citation_parser: CitationParserPort | None = None) -> None:
         self._citation_parser = citation_parser
 
     def validate_quote(self, quote: str, source_text: str) -> bool:

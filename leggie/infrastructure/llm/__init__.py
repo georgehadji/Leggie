@@ -6,6 +6,9 @@ Split into sub-modules per BUILD_PLAN §3:
   decorators.py       — retry, cache, and resilience decorators
 """
 
+from typing import Any
+
+from leggie.application.ports.llm import LLMPort, LLMRequest, LLMResponse
 from leggie.infrastructure.llm.adapters.openrouter import OpenRouterProvider
 from leggie.infrastructure.llm.base import (
     BaseLLMProvider,
@@ -87,7 +90,7 @@ async def validate_model_ids(
 
 
 # Legacy adapter — uses OpenRouter as primary provider
-class LLMAdapter:
+class LLMAdapter(LLMPort):
     """Concrete LLM adapter — uses OpenRouter as primary provider."""
 
     def __init__(
@@ -134,10 +137,11 @@ class LLMAdapter:
                 f"Check config/settings.py or LEGGIE_LLM__OPENROUTER_DEFAULT_MODEL env var."
             )
 
-    async def generate(self, request):
-        return await self._provider.generate(request)
+    async def generate(self, request: LLMRequest) -> LLMResponse:
+        response: LLMResponse = await self._provider.generate(request)
+        return response
 
-    async def generate_structured(self, request, schema):
+    async def generate_structured(self, request: LLMRequest, schema: type) -> tuple[Any, LLMResponse]:
         import json
         import re
         from dataclasses import replace
@@ -153,7 +157,8 @@ class LLMAdapter:
             # Models often return a bare array; wrap it into the schema's
             # single list-typed field (e.g. LensFindings.findings).
             if isinstance(data, list):
-                list_field = next(iter(schema.model_fields), None)
+                model_fields = getattr(schema, "model_fields", {})
+                list_field = next(iter(model_fields), None)
                 data = {list_field: data} if list_field else {}
             # Handle model returning "issues" instead of "findings"
             if isinstance(data, dict) and "issues" in data and "findings" not in data:
@@ -192,8 +197,9 @@ class LLMAdapter:
                     break
         return normalized
 
-    async def count_tokens(self, text, model=None):
-        return await self._provider.count_tokens(text, model)
+    async def count_tokens(self, text: str, model: str | None = None) -> int:
+        count: int = await self._provider.count_tokens(text, model)
+        return count
 
 __all__ = [
     "BaseLLMProvider",

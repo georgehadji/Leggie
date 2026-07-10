@@ -16,31 +16,31 @@ from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.domain.models import Citation, CitationScheme
 
 # Citation regex patterns
-FEK_PATTERN: Pattern = re.compile(
+FEK_PATTERN: Pattern[str] = re.compile(
     r"(?:ΦΕΚ|Φ\.?Ε\.?Κ\.?|Εφημερίδα.*?Κυβερνήσεως)\s+"
     r"(?:(?:Τεύχος\s+)?([ΑαΒβΓγΔδΕεΣστΤ]’?)\s+)?"
     r"(\d+)\s*[/\\]\s*(\d{4})",
     re.UNICODE,
 )
 
-CELEX_PATTERN: Pattern = re.compile(
+CELEX_PATTERN: Pattern[str] = re.compile(
     r"(?:CELEX|Celex|celex)[:\s]*(\d{4,5}[A-Z]{1,2}\d+)",
     re.UNICODE,
 )
 
-ECLI_PATTERN: Pattern = re.compile(
+ECLI_PATTERN: Pattern[str] = re.compile(
     r"(?:ECLI|Ecli|ecli)[:\s]*([A-Z]{2}:[A-Z\u0386-\u03CE]+:\d{4}:\d+)",
     re.UNICODE,
 )
 
-URL_PATTERN: Pattern = re.compile(
+URL_PATTERN: Pattern[str] = re.compile(
     r"(https?://(?:www\.)?(?:et\.gr|eur-lex\.europa\.eu|nomothesia\.gr|legislation\.gr|"
     r"hellenicparliament\.gr|diavgeia\.gov\.gr)/[^\s)]+)",
     re.UNICODE,
 )
 
 # Individual law references: Ν. ΧΧΧΧ/Έτος
-LAW_REF_PATTERN: Pattern = re.compile(
+LAW_REF_PATTERN: Pattern[str] = re.compile(
     r"Ν\.?\s*(\d+)\s*[/\\]\s*(\d{4})",
     re.UNICODE,
 )

@@ -7,8 +7,9 @@ Cascade escalates through FREE → BUDGET → PREMIUM on low confidence.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from leggie.application.ports.router import RouteResult, RouterPort
 from leggie.domain.models import ModelTier
@@ -22,7 +23,7 @@ class StaticRouter(RouterPort):
     def __init__(self, rules_path: str = "config/routes.yaml") -> None:
         self._rules = self._load_rules(rules_path)
 
-    def _load_rules(self, path: str) -> dict:
+    def _load_rules(self, path: str) -> dict[str, Any]:
         path_obj = Path(path)
         if not path_obj.exists():
             return {}  # No rules = passthrough default

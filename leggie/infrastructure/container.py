@@ -19,11 +19,11 @@ from typing import Any
 
 from leggie.application.ports.blackboard import BlackboardPort
 from leggie.application.ports.citation_parser import CitationParserPort
-from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.event_bus import EventBusPort
 from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
+from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.ports.state import StatePort
 
@@ -47,8 +47,8 @@ class Container:
         llm = container.get(LLMPort)
     """
 
-    _bindings: dict[type, Callable[[], Any]] = field(default_factory=dict)
-    _singletons: dict[type, Any] = field(default_factory=dict)
+    _bindings: dict[type | str, Callable[[], Any]] = field(default_factory=dict)
+    _singletons: dict[type | str, Any] = field(default_factory=dict)
 
     # ── registration ────────────────────────────────────────────────
 
@@ -56,13 +56,14 @@ class Container:
         """Register a lazy factory for *port_type*."""
         self._bindings[port_type] = factory
 
-    def register_instance(self, port_type: type, instance: Any) -> None:
-        """Register an already-created singleton."""
+    def register_instance(self, port_type: type | str, instance: Any) -> None:
+        """Register an already-created singleton. Accepts a type or a string
+        key for ad-hoc utilities (e.g. "rate_limiter") that have no port."""
         self._singletons[port_type] = instance
 
     # ── resolution ──────────────────────────────────────────────────
 
-    def get(self, port_type: type) -> Any:
+    def get(self, port_type: type | str) -> Any:
         """Resolve *port_type*, creating it once (singleton per type)."""
         if port_type in self._singletons:
             return self._singletons[port_type]
