@@ -72,13 +72,15 @@ class BlackboardAggregator:
     def events(self) -> list[Event]:
         return list(self._events)
 
-    async def aggregate(self, findings: list[Finding]) -> list[Finding]:
+    async def aggregate(
+        self, findings: list[Finding], article_index: dict[str, str] | None = None
+    ) -> list[Finding]:
         """Run the full aggregation pipeline via Blackboard rounds.
 
         Round 1: Post all findings → dedup observer collapses duplicates
         Round 2: Rerank observer scores survivors
         Round 3: Skeptic observer filters refuted
-        Round 4: CoVe observer verifies citations
+        Round 4: CoVe Chain-of-Verification revises or drops findings
         """
         if not findings:
             return []
@@ -139,9 +141,16 @@ class BlackboardAggregator:
         for f in survivors:
             board.post(f, agent_id="skeptic")
 
-        cove_results = await self._cove.verify_batch(survivors)
-        verified = [r.finding for r in cove_results]
+        cove_results = await self._cove.verify_batch(survivors, article_index)
+        verified = [r.finding for r in cove_results if not r.dropped]
+        dropped = sum(1 for r in cove_results if r.dropped)
         unverified = sum(1 for r in cove_results if not r.all_verified)
+        if dropped:
+            self._record_event(EventType.FINDING_REFUTED, {
+                "refuted": dropped,
+                "survivors": len(verified),
+                "stage": "cove",
+            })
         if unverified:
             self._record_event(EventType.CITATION_FAILED, {
                 "unverified": unverified,
@@ -150,6 +159,12 @@ class BlackboardAggregator:
             self._record_event(EventType.CITATION_VERIFIED, {
                 "verified": len(verified),
             })
+        if not verified:
+            self._record_event(EventType.AGGREGATION_COMPLETED, {
+                "rounds": board.round_count,
+                "final_findings": 0,
+            })
+            return []
 
         board.next_round()
         for f in verified:

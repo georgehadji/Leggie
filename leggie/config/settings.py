@@ -41,8 +41,12 @@ class BudgetSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="LEGGIE_BUDGET_", env_file=".env", extra="ignore")
 
-    max_tokens_per_run: int = Field(default=500_000, ge=1_000)
-    max_cost_per_run: float = Field(default=5.0, ge=0.0)  # USD
+    # Token cap is a hard safety ceiling only; cost cap is the intended governor.
+    # At the Greek models (~$0.30-1.25/1M) the $5 cost cap allows ~4-16M tokens, so
+    # the token ceiling must sit well above that or it throttles a full-bill run
+    # (5 lenses x N articles) long before the money budget is used.
+    max_tokens_per_run: int = Field(default=20_000_000, ge=1_000)
+    max_cost_per_run: float = Field(default=5.0, ge=0.0)  # USD — primary governor
     degrade_on_budget_warning: bool = True
     degrade_strategy: Literal["fewer_paths", "fewer_lenses", "cheaper_tier"] = "fewer_paths"
 

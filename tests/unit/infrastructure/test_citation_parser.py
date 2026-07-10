@@ -92,7 +92,10 @@ class TestGreekCitationParser:
             original_text="ΦΕΚ Α 137/2023",
         )
         resolved = await parser.resolve(cite)
-        assert resolved.resolved is True  # No index = assumed valid
+        # Fail closed: no index means nothing was actually checked, so it must
+        # not be reported as resolved.
+        assert resolved.resolved is False
+        assert "not independently verified" in (resolved.resolution_evidence or "")
 
     def test_build_index(self, parser):
         citations = [

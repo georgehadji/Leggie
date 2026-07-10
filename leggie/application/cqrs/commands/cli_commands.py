@@ -21,6 +21,7 @@ class AnalyzeBillCommand(Command):
     file_path: str
     output_path: str | None = None
     lenses: list[str] | None = None
+    checkpoint_path: str | None = None
 
 
 class EvalGoldSetCommand(Command):

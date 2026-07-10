@@ -110,3 +110,15 @@ _COST_PATTERNS = [
     re.compile(r"(?:δαπάνη|κόστος|επιβάρυνση|χρηματοδότηση|προϋπολογισμός)", re.UNICODE | re.IGNORECASE),
     re.compile(r"(?:τέλο[ςσ]|εισφορά|πρόστιμο|κύρωση|ποινή)", re.UNICODE | re.IGNORECASE),
 ]
+
+# Additional regex patterns for fallback coverage
+_UNFUNDED_PATTERNS = [
+    re.compile(r"(?:χωρίς\s+πρόβλεψη|δεν\s+προβλέπεται\s+δαπάνη|από\s+τον\s+κρατικό\s+προϋπολογισμό)", re.UNICODE | re.IGNORECASE),
+    re.compile(r"(?:καλύπτεται\s+από|βαρύνει\s+τον\s+κρατικό|επιβαρύνει\s+τον\s+προϋπολογισμό)", re.UNICODE | re.IGNORECASE),
+]
+
+_DISPROPORTIONATE_PATTERNS = [
+    re.compile(r"(?:πρόστιμο\s+έω[ςσ]\s+\d|ποινή\s+φυλάκισης|δυσανάλογη)", re.UNICODE | re.IGNORECASE),
+    re.compile(r"(?:κατάσχεσ[ηη]|αναστολή\s+λειτουργίας)", re.UNICODE | re.IGNORECASE),
+]
+

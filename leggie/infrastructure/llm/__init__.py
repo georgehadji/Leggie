@@ -177,6 +177,11 @@ class LLMAdapter(LLMPort):
 
         parser = StructuredResponseParser()
 
+        # Initialise response so the truncation-retry path (line 208)
+        # never references an unbound name when both json_schema and
+        # json_object modes fail before assigning it.
+        response: LLMResponse | None = None
+
         # ── Attempt 1: json_schema strict mode ────────────────────
         try:
             response_format = {

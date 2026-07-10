@@ -80,7 +80,9 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             llm = self._resolve_llm()
             router = self._resolve_router()
             cove = self._resolve_cove()
-            findings, reports = await BillAnalysisFlow(llm=llm, router=router, cove=cove).run(command.file_path)
+            findings, reports = await BillAnalysisFlow(llm=llm, router=router, cove=cove).run(
+                command.file_path, lenses=command.lenses, checkpoint_path=command.checkpoint_path
+            )
 
             summary = f"Analysis complete: {len(findings)} finding(s), {len(reports)} report(s)"
             for f in findings:
@@ -109,13 +111,17 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
         return _try_get_router()
 
     def _resolve_cove(self) -> CoVeVerifier:
-        """Resolve a CoVeVerifier with citation parser from container, or bare."""
-        if self._container is not None:
-            if self._container.has_binding(CitationParserPort):
-                parser = self._container.get(CitationParserPort)
-                if parser:
-                    return CoVeVerifier(citation_parser=parser)
-        return CoVeVerifier()
+        """Resolve a CoVeVerifier wired with LLM + router for factored CoVe.
+
+        LLM + router enable the full 4-step Chain-of-Verification; the citation
+        parser (when bound) adds deterministic citation resolution on top.
+        """
+        llm = self._resolve_llm()
+        router = self._resolve_router()
+        parser = None
+        if self._container is not None and self._container.has_binding(CitationParserPort):
+            parser = self._container.get(CitationParserPort) or None
+        return CoVeVerifier(citation_parser=parser, llm=llm, router=router)
 
 
 def _try_get_llm() -> LLMPort | None:

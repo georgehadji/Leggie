@@ -41,7 +41,9 @@ class TestLLMSettings:
 class TestBudgetSettings:
     def test_max_tokens_default(self):
         s = BudgetSettings()
-        assert s.max_tokens_per_run == 500_000
+        # Token cap is a hard safety ceiling only; the $ cost cap is the real
+        # governor. Kept well above what $5 buys so it never throttles a run first.
+        assert s.max_tokens_per_run == 20_000_000
 
     def test_max_cost_default(self):
         s = BudgetSettings()

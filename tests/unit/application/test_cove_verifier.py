@@ -2,6 +2,7 @@
 
 import pytest
 
+from leggie.application.ports.llm import LLMResponse
 from leggie.application.services.cove_verifier import CoVeVerifier
 from leggie.domain.models import (
     IRAC,
@@ -11,7 +12,44 @@ from leggie.domain.models import (
     Evidence,
     Finding,
     FindingType,
+    ModelTier,
 )
+from leggie.domain.models.structured_output import (
+    CoVeAnswerResponse,
+    CoVeCrossCheckResponse,
+    CoVeQuestionsResponse,
+)
+
+
+class FakeLLM:
+    """Scripted LLM: returns a canned object per requested schema."""
+
+    def __init__(self, responses: dict) -> None:
+        self._responses = responses
+        self.calls: list[str] = []
+
+    async def generate(self, request):  # pragma: no cover - unused
+        raise NotImplementedError
+
+    async def generate_structured(self, request, schema):
+        self.calls.append(schema.__name__)
+        obj = self._responses[schema.__name__]
+        resp = LLMResponse(content="", model="fake", tier_used=ModelTier.PREMIUM, usage={})
+        return obj, resp
+
+    async def count_tokens(self, text, model=None):  # pragma: no cover
+        return len(text) // 4
+
+
+def make_finding(conclusion: str = "conc", quote: str = "") -> Finding:
+    evidence = [Evidence(text_excerpt=quote, verdict="supports")] if quote else []
+    return Finding(
+        finding_type=FindingType.CONSTITUTIONAL,
+        irac=IRAC(issue="Άρθρο 5 test", rule="rule", application="app", conclusion=conclusion),
+        confidence=Confidence.from_score(0.6),
+        lens="test", model="test",
+        evidence=evidence,
+    )
 
 
 def make_finding_with_citations(citations: list[Citation] | None = None) -> Finding:
@@ -74,6 +112,105 @@ class TestCoVeVerifier:
         results = await verifier.verify_batch(findings)
         assert len(results) == 2
         assert results[0].all_verified is True
+
+    # ── LLM 4-step CoVe path ────────────────────────────────────────
+    @pytest.mark.asyncio
+    async def test_llm_consistent_keeps_finding(self):
+        llm = FakeLLM({
+            "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι προβλέπει;"]),
+            "CoVeAnswerResponse": CoVeAnswerResponse(answer="ok", supported_by_source=True),
+            "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                consistency="consistent", reason="r", keep=True),
+        })
+        verifier = CoVeVerifier(llm=llm)
+        result = await verifier.verify(make_finding(), source_text="πηγή")
+        assert result.dropped is False
+        assert result.consistency == "consistent"
+        assert result.all_verified is True
+
+    @pytest.mark.asyncio
+    async def test_llm_inconsistent_drops_finding(self):
+        llm = FakeLLM({
+            "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι προβλέπει;"]),
+            "CoVeAnswerResponse": CoVeAnswerResponse(answer="no", supported_by_source=False),
+            "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                consistency="inconsistent", reason="contradicted", keep=False),
+        })
+        verifier = CoVeVerifier(llm=llm)
+        result = await verifier.verify(make_finding(), source_text="πηγή")
+        assert result.dropped is True
+
+    @pytest.mark.asyncio
+    async def test_llm_fabricated_quote_dropped_without_calls(self):
+        llm = FakeLLM({})  # must not be called
+        verifier = CoVeVerifier(llm=llm)
+        finding = make_finding(quote="ΑΥΤΟ ΔΕΝ ΥΠΑΡΧΕΙ ΣΤΗΝ ΠΗΓΗ")
+        result = await verifier.verify(finding, source_text="εντελώς άλλο κείμενο")
+        assert result.dropped is True
+        assert result.consistency == "inconsistent"
+        assert llm.calls == []  # quote gate short-circuits
+
+    @pytest.mark.asyncio
+    async def test_llm_partially_consistent_revises(self):
+        llm = FakeLLM({
+            "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι;"]),
+            "CoVeAnswerResponse": CoVeAnswerResponse(answer="partial", supported_by_source=True),
+            "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                consistency="partially_consistent", reason="fix",
+                keep=True, revised_conclusion="διορθωμένο", confidence_adjustment=-0.2),
+        })
+        verifier = CoVeVerifier(llm=llm)
+        original = make_finding(conclusion="αρχικό")
+        result = await verifier.verify(original, source_text="πηγή")
+        assert result.dropped is False
+        assert result.finding.irac.conclusion == "διορθωμένο"
+        assert result.finding.confidence.score == pytest.approx(0.4, abs=0.01)
+        assert result.finding.version == original.version + 1
+
+    @pytest.mark.asyncio
+    async def test_llm_no_questions_passes_through(self):
+        llm = FakeLLM({
+            "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=[]),
+        })
+        verifier = CoVeVerifier(llm=llm)
+        result = await verifier.verify(make_finding(), source_text="πηγή")
+        assert result.dropped is False
+        assert result.all_verified is True
+        assert llm.calls == ["CoVeQuestionsResponse"]
+
+    @pytest.mark.asyncio
+    async def test_llm_citation_disproven_drops_without_llm_calls(self):
+        from leggie.infrastructure.citation import GreekCitationParser
+        parser = GreekCitationParser(resolution_index={"ΦΕΚ Α 1/2020"})  # our citation not in it
+        llm = FakeLLM({})  # must not be called — citation gate short-circuits
+        verifier = CoVeVerifier(llm=llm, citation_parser=parser)
+        finding = make_finding()
+        finding = finding.model_copy(update={"irac": IRAC(
+            issue=finding.irac.issue, rule="Βλ. ΦΕΚ Α 999/2023",
+            application=finding.irac.application, conclusion=finding.irac.conclusion,
+        )})
+        result = await verifier.verify(finding, source_text="πηγή")
+        assert result.dropped is True
+        assert llm.calls == []
+
+    @pytest.mark.asyncio
+    async def test_llm_citation_no_index_does_not_disprove(self):
+        from leggie.infrastructure.citation import GreekCitationParser
+        parser = GreekCitationParser()  # no index configured
+        llm = FakeLLM({
+            "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι;"]),
+            "CoVeAnswerResponse": CoVeAnswerResponse(answer="ok", supported_by_source=True),
+            "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                consistency="consistent", reason="r", keep=True),
+        })
+        verifier = CoVeVerifier(llm=llm, citation_parser=parser)
+        finding = make_finding()
+        finding = finding.model_copy(update={"irac": IRAC(
+            issue=finding.irac.issue, rule="Βλ. ΦΕΚ Α 999/2023",
+            application=finding.irac.application, conclusion=finding.irac.conclusion,
+        )})
+        result = await verifier.verify(finding, source_text="πηγή")
+        assert result.dropped is False  # unverifiable, not disproven — LLM decides
 
     @pytest.mark.asyncio
     async def test_plan_questions_from_text_excerpt(self):

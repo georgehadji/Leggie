@@ -34,6 +34,10 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("file", type=Path, help="Path to the bill file (PDF/DOCX/HTML/TXT)")
     analyze.add_argument("--output", "-o", type=Path, default=None, help="Output directory for reports")
     analyze.add_argument("--lenses", "-l", nargs="+", default=None, help="Lenses to apply (default: all 5)")
+    analyze.add_argument(
+        "--checkpoint", "-c", type=Path, default=None,
+        help="Path to persist/restore budget spend across runs (survives a crash mid-run)",
+    )
 
     # eval
     eval_cmd = subparsers.add_parser("eval", help="Run evaluation against gold set")
@@ -138,6 +142,7 @@ async def _handle_analyze(args: argparse.Namespace, mediator: Mediator) -> int:
         file_path=str(args.file),
         output_path=str(args.output) if args.output else None,
         lenses=args.lenses,
+        checkpoint_path=str(args.checkpoint) if args.checkpoint else None,
     )
     result = await mediator.send(cmd)
 
@@ -178,9 +183,25 @@ async def _handle_eval(args: argparse.Namespace, mediator: Mediator) -> int:
     return 0
 
 
+def _force_utf8_console() -> None:
+    """Force UTF-8 stdout/stderr so Greek output does not mojibake on Windows.
+
+    Windows consoles default to a legacy code page (e.g. cp1252) that cannot
+    encode Greek. Reconfigure the streams to UTF-8; harmless on POSIX.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8")
+            except (ValueError, OSError):
+                pass
+
+
 def entry_point() -> int:
     """Synchronous entry point for CLI."""
     import asyncio
+    _force_utf8_console()
     return asyncio.run(main())
 
 

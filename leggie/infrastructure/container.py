@@ -143,14 +143,7 @@ class Container:
         self.register(BlackboardPort, lambda: BlackboardAdapter())
         self.register(RetrievalPort, lambda: SimpleRetrievalAdapter())
 
-        # Budget guard
-        from leggie.config.settings import get_settings
-        from leggie.infrastructure.budget_guard import BudgetGuard
-
-        def _create_budget_guard() -> BudgetGuard:
-            s = get_settings()
-            return BudgetGuard(
-                max_tokens=s.budget.max_tokens_per_run,
-                max_cost=s.budget.max_cost_per_run,
-            )
-        self.register_instance("budget_guard", _create_budget_guard())
+        # Budget guard — the canonical BudgetGuard is created inside _create_llm()
+        # and wrapped in BudgetGuardDecorator. No separate singleton needed here;
+        # callers that need to introspect the guard should duck-type it from the
+        # LLMPort (see BillAnalysisFlow._budget_guard()).

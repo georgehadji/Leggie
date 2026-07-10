@@ -1,5 +1,7 @@
 """Tests for BillAnalysisFlow — end-to-end workflow."""
 
+import json
+
 import pytest
 
 from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
@@ -101,6 +103,68 @@ class TestBillAnalysisFlow:
         flow = BillAnalysisFlow()
         await flow.run(sample_bill_file)
         assert len(flow.suggestions) > 0
+
+
+class _LLMWithGuard:
+    """Duck-typed LLM stub exposing a real BudgetGuard, like BudgetGuardDecorator."""
+
+    def __init__(self, guard) -> None:
+        self.budget_guard = guard
+
+    async def generate(self, request):  # pragma: no cover - unused
+        raise NotImplementedError
+
+    async def generate_structured(self, request, schema):
+        from leggie.application.ports.llm import LLMResponse
+        from leggie.domain.models import ModelTier
+        return None, LLMResponse(content="", model="stub", tier_used=ModelTier.BUDGET, usage={})
+
+    async def count_tokens(self, text, model=None):  # pragma: no cover
+        return len(text) // 4
+
+
+class TestBudgetCheckpoint:
+    @pytest.mark.asyncio
+    async def test_checkpoint_written_and_reloaded(self, sample_bill_file, tmp_path):
+        from leggie.infrastructure.budget_guard import BudgetGuard
+
+        checkpoint = tmp_path / "run.checkpoint.json"
+        guard = BudgetGuard(max_tokens=1000, max_cost=1.0)
+        guard.record_usage(prompt_tokens=100, completion_tokens=50, model="google/gemini-2.5-flash")
+
+        flow = BillAnalysisFlow(llm=_LLMWithGuard(guard))
+        await flow.run(sample_bill_file, checkpoint_path=checkpoint)
+
+        assert checkpoint.exists()
+        saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+        assert saved["tokens_used"] == 150
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_restores_prior_spend(self, sample_bill_file, tmp_path):
+        from leggie.infrastructure.budget_guard import BudgetGuard
+
+        checkpoint = tmp_path / "run.checkpoint.json"
+        checkpoint.write_text(json.dumps({
+            "max_tokens": 1000, "max_cost": 1.0,
+            "tokens_used": 900, "cost_used": 0.5,
+            "degraded": False, "degrade_level": 0,
+        }), encoding="utf-8")
+
+        guard = BudgetGuard(max_tokens=1000, max_cost=1.0)
+        flow = BillAnalysisFlow(llm=_LLMWithGuard(guard))
+        await flow.run(sample_bill_file, checkpoint_path=checkpoint)
+
+        # Prior spend (900) plus whatever this run recorded must exceed the
+        # fresh-start baseline of 0 — proves the checkpoint was actually loaded.
+        assert guard.remaining_tokens <= 100
+
+    @pytest.mark.asyncio
+    async def test_no_checkpoint_path_is_noop(self, sample_bill_file):
+        from leggie.infrastructure.budget_guard import BudgetGuard
+        guard = BudgetGuard()
+        flow = BillAnalysisFlow(llm=_LLMWithGuard(guard))
+        findings, reports = await flow.run(sample_bill_file)
+        assert flow.state == WorkflowState.DONE
 
 
 def _make_finding(issue: str, confidence: float = 0.8, finding_type=None,

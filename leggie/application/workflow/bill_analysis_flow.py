@@ -19,7 +19,7 @@ from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
 from leggie.application.ports.router import RouterPort
-from leggie.application.services.cove_verifier import CoVeVerifier
+from leggie.application.services.cove_verifier import CoVeVerifier, article_number
 from leggie.application.services.reports import ArticleByArticleRenderer, ExecutiveSummaryRenderer
 from leggie.application.services.rerank import CompositeReranker
 from leggie.application.workflow.flow_state_machine import FlowStateMachine
@@ -76,8 +76,8 @@ class BillAnalysisFlow:
         self._orchestrator = orchestrator or Orchestrator(
             llm=llm, on_degradation=self._on_degradation, router=router)
         self._reranker = CompositeReranker()
-        self._skeptic = skeptic or CalibratedSkeptic()
-        self._cove = cove or CoVeVerifier()
+        self._skeptic = skeptic or CalibratedSkeptic(llm=llm, router=router)
+        self._cove = cove or CoVeVerifier(llm=llm, router=router)
         self._improver = ImprovementEngine()
         self._ingester = ingester or _lazy_ingest_adapter()
         self._parser = parser or _lazy_parse_adapter()
@@ -87,6 +87,7 @@ class BillAnalysisFlow:
         self._suggestions: list[Any] = []
         self._events: list[Event] = []
         self._findings: list[Finding] = []
+        self._checkpoint_path: Path | None = None
 
     @property
     def state(self) -> WorkflowState:
@@ -96,12 +97,23 @@ class BillAnalysisFlow:
     def findings(self) -> list[Finding]:
         return list(self._findings)
 
-    async def run(self, file_path: str | Path, output_dir: str | Path = "Outputs") -> tuple[list[Finding], list[Any]]:
+    async def run(
+        self,
+        file_path: str | Path,
+        output_dir: str | Path = "Outputs",
+        lenses: list[str] | None = None,
+        checkpoint_path: str | Path | None = None,
+    ) -> tuple[list[Finding], list[Any]]:
         """Run the full analysis workflow on a bill file.
 
         Args:
             file_path: Path to the bill file (PDF/DOCX/HTML/TXT).
             output_dir: Directory to save reports and findings. Defaults to "Outputs".
+            lenses: Lens names to apply. None => all configured lenses.
+            checkpoint_path: When set, restores budget spend from this file on
+                start (if it exists) and persists spend after every stage. A
+                crash mid-run does not silently reset the budget on the next
+                attempt against the same file (ARCH_UPGRADE_PLAN G4).
 
         Returns:
             (findings, reports) tuple.
@@ -118,6 +130,9 @@ class BillAnalysisFlow:
         set_trace_id(trace_id)
         logger = bind_trace_id(get_logger(__name__))
         logger.info("flow.started", bill_path=str(file_path), trace_id=trace_id)
+
+        self._checkpoint_path = Path(checkpoint_path) if checkpoint_path else None
+        self._load_checkpoint()
 
         # 1. Ingest
         self._transition(WorkflowState.INGESTING, "ingest_started")
@@ -140,7 +155,7 @@ class BillAnalysisFlow:
 
         raw_findings: list[Finding] = []
         for article in self._doc.articles:
-            article_findings = await self._orchestrator.analyze_article(article)
+            article_findings = await self._orchestrator.analyze_article(article, lenses)
             raw_findings.extend(article_findings)
             for f in article_findings:
                 self._record_event(EventType.FINDING_CREATED, {
@@ -153,11 +168,17 @@ class BillAnalysisFlow:
         self._transition(WorkflowState.AGGREGATING, "execution_completed")
 
         # 5-7. Aggregate & Verify
+        # Source index lets CoVe answer verification questions against the real
+        # article text (factored), keyed by article number.
+        article_index = {
+            article_number(a.raw_text) or a.id: a.raw_text
+            for a in (self._doc.articles if self._doc else [])
+        }
         if self._use_blackboard:
-            self._findings = await self._aggregate_via_blackboard(raw_findings)
+            self._findings = await self._aggregate_via_blackboard(raw_findings, article_index)
             self._transition(WorkflowState.VERIFYING, "aggregation_completed")
         else:
-            self._findings = await self._aggregate_inline(raw_findings)
+            self._findings = await self._aggregate_inline(raw_findings, article_index)
 
         self._transition(WorkflowState.IMPROVING, "verify_passed")
 
@@ -214,7 +235,9 @@ class BillAnalysisFlow:
 
         return self._findings, self._reports
 
-    async def _aggregate_via_blackboard(self, raw_findings: list[Finding]) -> list[Finding]:
+    async def _aggregate_via_blackboard(
+        self, raw_findings: list[Finding], article_index: dict[str, str] | None = None
+    ) -> list[Finding]:
         """Aggregate findings via BlackboardAggregator (EN3)."""
         from leggie.application.services.blackboard_aggregator import BlackboardAggregator
         aggregator = BlackboardAggregator(
@@ -223,12 +246,14 @@ class BillAnalysisFlow:
             skeptic=self._skeptic,
             cove=self._cove,
         )
-        results = await aggregator.aggregate(raw_findings)
+        results = await aggregator.aggregate(raw_findings, article_index)
         # Merge aggregator events into flow event log
         self._events.extend(aggregator.events)
         return results
 
-    async def _aggregate_inline(self, raw_findings: list[Finding]) -> list[Finding]:
+    async def _aggregate_inline(
+        self, raw_findings: list[Finding], article_index: dict[str, str] | None = None
+    ) -> list[Finding]:
         """Original inline aggregation path (dedup → rerank → skeptic → CoVe)."""
         findings = raw_findings
 
@@ -259,19 +284,26 @@ class BillAnalysisFlow:
                 "survivors": len(survivors),
             })
 
-        # 8. CoVe citation verification
+        # 8. CoVe Chain-of-Verification (factored) — revise or drop
         if findings:
-            cove_results = await self._cove.verify_batch(findings)
-            verified_findings = [r.finding for r in cove_results]
+            cove_results = await self._cove.verify_batch(findings, article_index)
+            kept = [r.finding for r in cove_results if not r.dropped]
+            dropped = sum(1 for r in cove_results if r.dropped)
             unverified = sum(1 for r in cove_results if not r.all_verified)
-            findings = verified_findings
+            findings = kept
+            if dropped:
+                self._record_event(EventType.FINDING_REFUTED, {
+                    "refuted": dropped,
+                    "survivors": len(kept),
+                    "stage": "cove",
+                })
             if unverified:
                 self._record_event(EventType.CITATION_FAILED, {
                     "unverified": unverified,
                 })
             else:
                 self._record_event(EventType.CITATION_VERIFIED, {
-                    "verified": len(verified_findings),
+                    "verified": len(kept),
                 })
 
         return findings
@@ -336,6 +368,37 @@ class BillAnalysisFlow:
                 "to": target.value,
                 "event": event,
             })
+        self._save_checkpoint()
+
+    def _budget_guard(self) -> Any | None:
+        """Duck-type the BudgetGuard out of a (possibly decorated) LLM port."""
+        return getattr(self._llm, "budget_guard", None)
+
+    def _save_checkpoint(self) -> None:
+        """Persist current budget spend to the checkpoint file, if configured."""
+        if self._checkpoint_path is None:
+            return
+        guard = self._budget_guard()
+        if guard is None:
+            return
+        try:
+            guard.to_file(str(self._checkpoint_path))
+        except OSError:
+            pass  # Checkpointing is best-effort; never fail the run over it.
+
+    def _load_checkpoint(self) -> None:
+        """Restore budget spend from the checkpoint file, if it exists."""
+        if self._checkpoint_path is None or not self._checkpoint_path.exists():
+            return
+        guard = self._budget_guard()
+        if guard is None:
+            return
+        import json
+        try:
+            state = json.loads(self._checkpoint_path.read_text(encoding="utf-8"))
+            guard.load_state(state)
+        except (OSError, ValueError):
+            pass  # Corrupt/missing checkpoint — start fresh rather than crash.
 
     def _record_event(self, event_type: EventType, data: dict[str, Any]) -> None:
         """Record an audit event."""

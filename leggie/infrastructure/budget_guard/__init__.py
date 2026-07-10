@@ -62,9 +62,6 @@ class BudgetGuard:
         total_cost = self._state.cost_used + estimated_cost
 
         if total_tokens > self._state.max_tokens or total_cost > self._state.max_cost:
-            # Check if degrade path is possible
-            if not self._state.degraded and self._state.degrade_strategy is not None:
-                return BudgetAction.DEGRADE
             return BudgetAction.BLOCK
 
         # Warn at 80% threshold
