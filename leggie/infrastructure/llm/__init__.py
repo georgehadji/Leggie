@@ -4,8 +4,13 @@ Split into sub-modules per BUILD_PLAN §3:
   base.py             — BaseLLMProvider ABC, error hierarchy
   adapters/           — provider-specific adapters (OpenRouter, Anthropic, OpenAI)
   decorators.py       — retry, cache, and resilience decorators
+  schema_format.py    — Pydantic → strict JSON Schema conversion
+  structured_parser.py — Centralised parse/normalize/repair ladder
 """
 
+from __future__ import annotations
+
+import logging
 from typing import Any
 
 from leggie.application.ports.llm import LLMPort, LLMRequest, LLMResponse
@@ -19,6 +24,17 @@ from leggie.infrastructure.llm.base import (
     LLMTimeoutError,
 )
 from leggie.infrastructure.llm.decorators import with_cache, with_retry
+
+logger = logging.getLogger(__name__)
+
+# ── Constants for structured-output retry ───────────────────────────
+_MAX_TRUNCATION_RETRY_TOKENS = 16_384  # ceiling for doubled max_tokens
+_REPAIR_PROMPT_TEMPLATE = (
+    "The following content was not valid JSON matching this schema. "
+    "Return ONLY valid JSON that conforms to the schema.\n\n"
+    "Schema: {schema_name}\n\n"
+    "Malformed content:\n{content}"
+)
 
 # Offline allowlist of known-valid OpenRouter model IDs (fallback when API unreachable)
 _OFFLINE_MODEL_ALLOWLIST: set[str] = {
@@ -142,60 +158,102 @@ class LLMAdapter(LLMPort):
         return response
 
     async def generate_structured(self, request: LLMRequest, schema: type) -> tuple[Any, LLMResponse]:
-        import json
-        import re
+        """Generate a structured response using json_schema strict mode.
+
+        Retry ladder:
+        1. Try ``json_schema`` strict mode.
+        2. On provider 400 (model doesn't support json_schema), fall back to
+           ``json_object`` mode.
+        3. If parse fails AND ``finish_reason == "length"``, retry with
+           ``max_tokens`` doubled (capped at ``_MAX_TRUNCATION_RETRY_TOKENS``).
+        4. If parse still fails, attempt a repair round (feed raw content back
+           with terse instruction).
+        """
         from dataclasses import replace
-        req = replace(request, response_format={"type": "json_object"})
-        response = await self.generate(req)
+        from leggie.infrastructure.llm.schema_format import pydantic_to_json_schema
+        from leggie.infrastructure.llm.structured_parser import (
+            StructuredResponseParser,
+        )
+
+        parser = StructuredResponseParser()
+
+        # ── Attempt 1: json_schema strict mode ────────────────────
         try:
-            content = response.content.strip()
-            # Strip markdown code fences if present (```json ... ```)
-            fence = re.search(r"```(?:json)?\s*(.*?)```", content, re.DOTALL)
-            if fence:
-                content = fence.group(1).strip()
-            data = json.loads(content)
-            # Models often return a bare array; wrap it into the schema's
-            # single list-typed field (e.g. LensFindings.findings).
-            if isinstance(data, list):
-                model_fields = getattr(schema, "model_fields", {})
-                list_field = next(iter(model_fields), None)
-                data = {list_field: data} if list_field else {}
-            # Handle model returning "issues" instead of "findings"
-            if isinstance(data, dict) and "issues" in data and "findings" not in data:
-                data["findings"] = data.pop("issues")
-            # Models frequently invent their own field names for IRAC items
-            # (e.g. "constitutional_concern" instead of "issue") even though
-            # the values are substantively correct. Rather than reject the
-            # whole response — which silently discards a real finding — map
-            # known aliases onto the schema's required keys before validating.
-            if isinstance(data, dict) and isinstance(data.get("findings"), list):
-                data["findings"] = [self._normalize_irac_item(item) for item in data["findings"]]
-            obj = schema(**data)
-            return obj, response
-        except Exception as e:
-            raise LLMError(f"Failed to parse structured response: {e}")
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema.__name__,
+                    "strict": True,
+                    "schema": pydantic_to_json_schema(schema),
+                },
+            }
+            req = replace(request, response_format=response_format)
+            response = await self.generate(req)
+            return parser.parse(response.content, schema), response
+        except (LLMError, ValueError) as exc:
+            if isinstance(exc, LLMError) and ("400" in str(exc) or "Bad Request" in str(exc)):
+                logger.warning(
+                    "json_schema rejected, falling back to json_object: %s", exc
+                )
 
-    _IRAC_ALIASES: dict[str, list[str]] = {
-        "issue": ["issue", "title", "finding", "summary", "concern", "constitutional_concern", "analysis"],
-        "rule": ["rule", "constitutional_provision", "rule_id", "legal_basis", "provision", "article"],
-        "application": ["application", "analysis", "reasoning", "constitutional_concern"],
-        "conclusion": ["conclusion", "verdict", "constitutional_concern", "analysis"],
-        "verbatim_quote": ["verbatim_quote", "excerpt", "quote", "text_excerpt"],
-    }
+        # ── Attempt 2: json_object mode (fallback) ────────────────
+        try:
+            req = replace(request, response_format={"type": "json_object"})
+            response = await self.generate(req)
+            return parser.parse(response.content, schema), response
+        except (LLMError, ValueError):
+            pass
 
-    @classmethod
-    def _normalize_irac_item(cls, item: object) -> object:
-        if not isinstance(item, dict):
-            return item
-        normalized = dict(item)
-        for target, aliases in cls._IRAC_ALIASES.items():
-            if normalized.get(target):
-                continue
-            for alias in aliases:
-                if item.get(alias):
-                    normalized[target] = item[alias]
-                    break
-        return normalized
+        # ── Attempt 3: truncation retry if finish_reason=length ───
+        if response and response.finish_reason == "length":
+            logger.info(
+                "Response truncated (finish_reason=length, %d tokens). "
+                "Retrying with doubled max_tokens.",
+                request.max_tokens,
+            )
+            doubled = min(request.max_tokens * 2, _MAX_TRUNCATION_RETRY_TOKENS)
+            retry_req = replace(
+                request,
+                max_tokens=doubled,
+                response_format={"type": "json_object"},
+            )
+            try:
+                response = await self.generate(retry_req)
+                return parser.parse(response.content, schema), response
+            except (LLMError, ValueError):
+                pass
+
+        # ── Attempt 4: repair round as last resort ────────────────
+        try:
+            content_to_repair = response.content if response else ""
+            if content_to_repair:
+                repair_prompt = _REPAIR_PROMPT_TEMPLATE.format(
+                    schema_name=schema.__name__,
+                    content=content_to_repair[:4000],
+                )
+                repair_req = LLMRequest(
+                    prompt=repair_prompt,
+                    system_prompt=(
+                        "You are a JSON repair assistant. "
+                        "Return ONLY valid JSON."
+                    ),
+                    max_tokens=min(
+                        request.max_tokens * 2,
+                        _MAX_TRUNCATION_RETRY_TOKENS,
+                    ),
+                    response_format={"type": "json_object"},
+                )
+                response = await self.generate(repair_req)
+                obj = parser.parse(response.content, schema)
+                return obj, response
+        except (LLMError, ValueError):
+            pass
+
+        # ── All attempts exhausted -> degrade ─────────────────────
+        raise LLMError(
+            f"Failed to parse structured response after all retries "
+            f"for schema {schema.__name__}"
+        )
 
     async def count_tokens(self, text: str, model: str | None = None) -> int:
         count: int = await self._provider.count_tokens(text, model)
@@ -207,5 +265,7 @@ __all__ = [
     "LLMError", "LLMConfigurationError", "LLMTimeoutError", "LLMRateLimitError",
     "LLMRateLimitError", "BudgetExceededError",
     "OpenRouterProvider",
+    "StructuredResponseParser",
+    "pydantic_to_json_schema",
     "with_retry", "with_cache",
 ]

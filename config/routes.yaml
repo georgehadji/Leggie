@@ -15,7 +15,7 @@ routes:
   lens_analysis:
     model: "google/gemini-2.5-flash"
     tier: "budget"
-    max_tokens: 4096
+    max_tokens: 6144
     cascade: true
     cascade_models:
       free: "google/gemini-2.5-flash-lite"

@@ -92,10 +92,12 @@ class OpenRouterProvider(BaseLLMProvider):
         data = resp.json()
         choice = data.get("choices", [{}])[0]
         content = choice.get("message", {}).get("content", "")
+        finish_reason = choice.get("finish_reason", "stop")
         usage = data.get("usage", {})
         return LLMResponse(
             content=content, model=model, tier_used=ModelTier.BUDGET,
             usage={"prompt_tokens": usage.get("prompt_tokens", 0), "completion_tokens": usage.get("completion_tokens", 0)},
+            finish_reason=finish_reason,
             latency_ms=elapsed,
         )
 
