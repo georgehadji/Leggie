@@ -1,27 +1,42 @@
 """Constitutional Lens — analyzes articles for constitutional compatibility.
 
 F1: Uses LLM for analysis with regex-based fallback when LLM is unavailable.
+FX5: Distinguishes "no LLM configured" (legitimate regex mode) from
+      "LLM call failed" (degradation — surfaced, not silently masked).
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from re import Pattern
 
 from leggie.application.agents.lens import Lens
 from leggie.application.ports.llm import LLMPort
 from leggie.domain.models import (
-    Article, Confidence, Evidence, Finding, FindingType, IRAC, Severity,
+    IRAC,
+    Article,
+    Confidence,
+    Event,
+    EventType,
+    Evidence,
+    Finding,
+    FindingType,
+    Severity,
 )
 from leggie.domain.models.structured_output import IRACCandidate, LensFindings
+
+log = logging.getLogger(__name__)
 
 
 class ConstitutionalLens(Lens):
     """Constitutional lens — uses LLM when available, regex fallback otherwise."""
 
-    def __init__(self, llm: LLMPort | None = None, model: str = "google/gemini-2.5-flash") -> None:
-        super().__init__(llm=llm, model=model)
+    def __init__(self, llm: LLMPort | None = None,
+                 model: str = "google/gemini-2.5-flash",
+                 **kwargs) -> None:
+        super().__init__(llm=llm, model=model, **kwargs)
 
     def name(self) -> str:
         return "constitutional"
@@ -30,13 +45,39 @@ class ConstitutionalLens(Lens):
         return "Analyzes articles for compatibility with the Greek Constitution"
 
     async def analyze(self, article: Article) -> list[Finding]:
-        if self._llm:
-            try:
-                return await self._analyze_llm(article)
-            except Exception:
-                import logging
-                logging.getLogger(__name__).warning("LLM analysis failed, falling back to regex")
-        return self._analyze_regex(article)
+        if not self._llm:
+            # Legitimate: no LLM configured → pure regex mode
+            log.info("lens_no_llm: constitutional — using regex fallback (no LLM configured)")
+            return self._analyze_regex(article)
+
+        # LLM is configured — attempt real analysis
+        try:
+            return await self._analyze_llm(article)
+        except Exception as exc:
+            # LLM call failed — this is a degradation, not silent fallback
+            log.error("lens_degraded: constitutional article=%s error=%s", article.id, exc)
+            self._emit_degradation(article, exc)
+            # Return empty — no findings from this lens. The pipeline sees
+            # the degradation event and the missing LLM findings.
+            return []
+
+    def _emit_degradation(self, article: Article, exc: Exception) -> None:
+        """Emit a degradation event if a callback is registered."""
+        if self._on_degradation is None:
+            return
+        try:
+            self._on_degradation(Event(
+                event_type=EventType.DEGRADED,
+                aggregate_id=f"lens:{self.name()}:article:{article.id}",
+                data={
+                    "lens": self.name(),
+                    "article_id": article.id,
+                    "error": str(exc)[:500],
+                    "model": self._model,
+                },
+            ))
+        except Exception:
+            log.warning("on_degradation callback failed", exc_info=True)
 
     async def _analyze_llm(self, article: Article) -> list[Finding]:
         system, template = self._prompt_for("constitutional")
@@ -44,7 +85,13 @@ class ConstitutionalLens(Lens):
         result = await self._call_llm_structured(LensFindings, prompt, system)
         if result is None or not result.findings:
             return []
-        return [self._candidate_to_finding(c, article) for c in result.findings]
+        # F2 noise suppression: a genuine finding must cite the text it's
+        # based on. A candidate with no verbatim quote has zero evidence by
+        # definition — that's the exact shape of the "preliminary check,
+        # nothing found" filler the model pads empty results with. Drop it
+        # here rather than trust the prompt alone to suppress it.
+        substantive = [c for c in result.findings if c.verbatim_quote.strip()]
+        return [self._candidate_to_finding(c, article) for c in substantive]
 
     def _candidate_to_finding(self, c: IRACCandidate, article: Article) -> Finding:
         prompt_hash = hashlib.sha256(f"constitutional:{article.id}:{c.issue}".encode()).hexdigest()[:12]

@@ -158,10 +158,39 @@ class LLMAdapter:
             # Handle model returning "issues" instead of "findings"
             if isinstance(data, dict) and "issues" in data and "findings" not in data:
                 data["findings"] = data.pop("issues")
+            # Models frequently invent their own field names for IRAC items
+            # (e.g. "constitutional_concern" instead of "issue") even though
+            # the values are substantively correct. Rather than reject the
+            # whole response — which silently discards a real finding — map
+            # known aliases onto the schema's required keys before validating.
+            if isinstance(data, dict) and isinstance(data.get("findings"), list):
+                data["findings"] = [self._normalize_irac_item(item) for item in data["findings"]]
             obj = schema(**data)
             return obj, response
         except Exception as e:
             raise LLMError(f"Failed to parse structured response: {e}")
+
+    _IRAC_ALIASES = {
+        "issue": ["issue", "title", "finding", "summary", "concern", "constitutional_concern", "analysis"],
+        "rule": ["rule", "constitutional_provision", "rule_id", "legal_basis", "provision", "article"],
+        "application": ["application", "analysis", "reasoning", "constitutional_concern"],
+        "conclusion": ["conclusion", "verdict", "constitutional_concern", "analysis"],
+        "verbatim_quote": ["verbatim_quote", "excerpt", "quote", "text_excerpt"],
+    }
+
+    @classmethod
+    def _normalize_irac_item(cls, item):
+        if not isinstance(item, dict):
+            return item
+        normalized = dict(item)
+        for target, aliases in cls._IRAC_ALIASES.items():
+            if normalized.get(target):
+                continue
+            for alias in aliases:
+                if item.get(alias):
+                    normalized[target] = item[alias]
+                    break
+        return normalized
 
     async def count_tokens(self, text, model=None):
         return await self._provider.count_tokens(text, model)
