@@ -514,13 +514,15 @@ class TestGenerateStructuredRetry:
                 finish_reason="stop",
             )
 
-        with patch.object(adapter, "generate", side_effect=mock_generate):
-            with pytest.raises(LLMError, match="Failed to parse structured response"):
-                await adapter.generate_structured(
-                    LLMRequest(prompt="test", max_tokens=1000,
-                               response_format={"type": "json_object"}),
-                    LensFindings,
-                )
+        with (
+            patch.object(adapter, "generate", side_effect=mock_generate),
+            pytest.raises(LLMError, match="Failed to parse structured response"),
+        ):
+            await adapter.generate_structured(
+                LLMRequest(prompt="test", max_tokens=1000,
+                           response_format={"type": "json_object"}),
+                LensFindings,
+            )
 
     @pytest.mark.asyncio
     async def test_max_tokens_doubled_on_truncation(self, adapter):
