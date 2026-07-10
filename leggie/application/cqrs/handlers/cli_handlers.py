@@ -16,15 +16,21 @@ from leggie.application.cqrs.commands.cli_commands import (
     EvalGoldSetCommand,
     ParseDocumentCommand,
 )
+from leggie.application.ports.citation_parser import CitationParserPort
+from leggie.application.ports.llm import LLMPort
+from leggie.application.ports.router import RouterPort
+from leggie.application.services.cove_verifier import CoVeVerifier
 
 if TYPE_CHECKING:
-    from leggie.application.ports.llm import LLMPort
-    from leggie.application.ports.router import RouterPort
     from leggie.infrastructure.budget_guard import BudgetGuard
+    from leggie.infrastructure.container import Container
 
 
 class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]]):
     """Handle bill document parsing."""
+
+    def __init__(self, container: Container | None = None) -> None:
+        self._container = container
 
     async def handle(self, command: ParseDocumentCommand) -> CommandResult[dict[str, Any]]:
         try:
@@ -64,14 +70,17 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]])
 class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
     """Handle bill analysis using the BillAnalysisFlow."""
 
+    def __init__(self, container: Container | None = None) -> None:
+        self._container = container
+
     async def handle(self, command: AnalyzeBillCommand) -> CommandResult[str]:
         try:
             from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
 
-            # Try to inject LLM port if key is configured
-            llm = _try_get_llm()
-            router = _try_get_router()
-            findings, reports = await BillAnalysisFlow(llm=llm, router=router).run(command.file_path)
+            llm = self._resolve_llm()
+            router = self._resolve_router()
+            cove = self._resolve_cove()
+            findings, reports = await BillAnalysisFlow(llm=llm, router=router, cove=cove).run(command.file_path)
 
             summary = f"Analysis complete: {len(findings)} finding(s), {len(reports)} report(s)"
             for f in findings:
@@ -80,6 +89,33 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             return CommandResult(success=True, data=summary)
         except Exception as e:
             return CommandResult(success=False, error=str(e))
+
+    def _resolve_llm(self) -> LLMPort | None:
+        """Resolve LLMPort from container, or fall back to ad-hoc factory."""
+        if self._container is not None:
+            if self._container.has_binding(LLMPort):
+                llm: LLMPort = self._container.get(LLMPort)
+                return llm
+            return None
+        return _try_get_llm()
+
+    def _resolve_router(self) -> RouterPort | None:
+        """Resolve RouterPort from container, or fall back to ad-hoc factory."""
+        if self._container is not None:
+            if self._container.has_binding(RouterPort):
+                router: RouterPort = self._container.get(RouterPort)
+                return router
+            return None
+        return _try_get_router()
+
+    def _resolve_cove(self) -> CoVeVerifier:
+        """Resolve a CoVeVerifier with citation parser from container, or bare."""
+        if self._container is not None:
+            if self._container.has_binding(CitationParserPort):
+                parser = self._container.get(CitationParserPort)
+                if parser:
+                    return CoVeVerifier(citation_parser=parser)
+        return CoVeVerifier()
 
 
 def _try_get_llm() -> LLMPort | None:
@@ -128,6 +164,9 @@ def _try_get_budget_guard() -> BudgetGuard | None:
 class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
     """Handle gold-set evaluation."""
 
+    def __init__(self, container: Container | None = None) -> None:
+        self._container = container
+
     async def handle(self, command: EvalGoldSetCommand) -> CommandResult[list[Any]]:
         try:
             import json
@@ -136,8 +175,8 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
             from leggie.infrastructure.persistence.eval_harness import EvalScorer, GoldSet
 
             gold_set = GoldSet(command.gold_set_path)
-            llm = _try_get_llm()
-            router = _try_get_router()
+            llm = self._resolve_llm() if hasattr(self, '_resolve_llm') else _try_get_llm()
+            router = self._resolve_router() if hasattr(self, '_resolve_router') else _try_get_router()
 
             results = []
             for bill_id in gold_set.bill_ids:
@@ -146,7 +185,8 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
                 bill_path = _find_bill_file(bill_id, Path(command.gold_set_path).parent)
                 if bill_path and llm:
                     from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
-                    flow = BillAnalysisFlow(llm=llm, router=router)
+                    cove = self._resolve_cove() if hasattr(self, '_resolve_cove') else None
+                    flow = BillAnalysisFlow(llm=llm, router=router, cove=cove)
                     findings, _ = await flow.run(bill_path)
                 else:
                     findings = []

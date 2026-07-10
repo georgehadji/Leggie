@@ -49,7 +49,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _build_mediator() -> Mediator:
-    """Build and configure the CQRS mediator with all handlers."""
+    """Build and configure the CQRS mediator with all handlers.
+
+    W1: Creates the DI container once at startup and injects it into all handlers.
+    """
     from leggie.application.cqrs.commands.cli_commands import (
         AnalyzeBillCommand,
         EvalGoldSetCommand,
@@ -61,16 +64,25 @@ def _build_mediator() -> Mediator:
         ParseDocumentHandler,
     )
     from leggie.application.cqrs.mediator import Mediator
+    from leggie.infrastructure.container import Container
+
+    # Single composition root — one container, one configure_defaults() call (W1)
+    container = Container()
+    container.configure_defaults()
 
     mediator = Mediator()
-    mediator.register_command_handler(ParseDocumentCommand, ParseDocumentHandler())
-    mediator.register_command_handler(AnalyzeBillCommand, AnalyzeBillHandler())
-    mediator.register_command_handler(EvalGoldSetCommand, EvalGoldSetHandler())
+    mediator.register_command_handler(ParseDocumentCommand, ParseDocumentHandler(container=container))
+    mediator.register_command_handler(AnalyzeBillCommand, AnalyzeBillHandler(container=container))
+    mediator.register_command_handler(EvalGoldSetCommand, EvalGoldSetHandler(container=container))
     return mediator
 
 
 async def main() -> int:
     """CLI entry point — dispatches through CQRS mediator."""
+    # Configure structured logging once at startup (W6)
+    from leggie.infrastructure.observability import configure_logging
+    configure_logging()
+
     parser = build_parser()
     args = parser.parse_args()
 

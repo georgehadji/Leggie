@@ -98,12 +98,22 @@ class Container:
         def _create_llm() -> LLMPort:
             from leggie.config.settings import get_settings
             from leggie.infrastructure.llm import LLMAdapter
+            from leggie.infrastructure.llm.decorators import BudgetGuardDecorator
             s = get_settings()
-            return LLMAdapter(
+            adapter: LLMPort = LLMAdapter(
                 openrouter_key=s.llm.openrouter_api_key,
                 openrouter_base_url=s.llm.openrouter_base_url,
                 default_model=s.llm.openrouter_default_model,
             )
+            # Wrap with budget guard (EN2)
+            if s.budget.max_cost_per_run > 0:
+                from leggie.infrastructure.budget_guard import BudgetGuard
+                guard = BudgetGuard(
+                    max_tokens=s.budget.max_tokens_per_run,
+                    max_cost=s.budget.max_cost_per_run,
+                )
+                adapter = BudgetGuardDecorator(adapter, guard)
+            return adapter
         self.register(LLMPort, _create_llm)
 
         # Router

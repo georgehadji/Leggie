@@ -65,7 +65,7 @@ class BillAnalysisFlow:
         dedup_threshold: float = 0.85,
         on_degradation: Callable[[Event], None] | None = None,
         router: RouterPort | None = None,
-        use_blackboard: bool = False,
+        use_blackboard: bool = True,
     ) -> None:
         self._fsm = FlowStateMachine()
         self._state = WorkflowState.IDLE
@@ -155,6 +155,7 @@ class BillAnalysisFlow:
         # 5-7. Aggregate & Verify
         if self._use_blackboard:
             self._findings = await self._aggregate_via_blackboard(raw_findings)
+            self._transition(WorkflowState.VERIFYING, "aggregation_completed")
         else:
             self._findings = await self._aggregate_inline(raw_findings)
 

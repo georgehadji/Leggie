@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 from leggie.application.ports.router import RouteResult, RouterPort
 from leggie.domain.models import ModelTier

@@ -9,12 +9,16 @@ F1: lenses now accept LLMPort for real LLM-based analysis.
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
 from leggie.application.ports.llm import LLMPort, LLMRequest
-from leggie.domain.models import Article, Finding
+from leggie.domain.models import Article, Event, EventType, Finding
+from leggie.domain.models.structured_output import IRACCandidate
+
+log = logging.getLogger(__name__)
 
 
 class Lens(ABC):
@@ -25,10 +29,12 @@ class Lens(ABC):
     """
 
     def __init__(self, llm: LLMPort | None = None, model: str = "",
-                 on_degradation: Callable[..., None] | None = None) -> None:
+                 on_degradation: Callable[..., None] | None = None,
+                 use_verbalized_sampling: bool = False) -> None:
         self._llm = llm
         self._model = model
         self._on_degradation = on_degradation
+        self._use_verbalized_sampling = use_verbalized_sampling
 
     @abstractmethod
     def name(self) -> str:
@@ -47,6 +53,32 @@ class Lens(ABC):
         Returns a list of findings (may be empty if nothing found).
         """
         ...
+
+    @abstractmethod
+    def _candidate_to_finding(self, c: IRACCandidate, article: Article) -> Finding:
+        """Convert a raw LLM candidate into a domain Finding.
+
+        Each lens sets its own FindingType and provenance here.
+        """
+        ...
+
+    def _emit_degradation(self, article: Article, exc: Exception) -> None:
+        """Emit a degradation event if a callback is registered."""
+        if self._on_degradation is None:
+            return
+        try:
+            self._on_degradation(Event(
+                event_type=EventType.DEGRADED,
+                aggregate_id=f"lens:{self.name()}:article:{article.id}",
+                data={
+                    "lens": self.name(),
+                    "article_id": article.id,
+                    "error": str(exc)[:500],
+                    "model": self._model,
+                },
+            ))
+        except Exception:
+            log.warning("on_degradation callback failed", exc_info=True)
 
     def _prompt_for(self, name: str) -> tuple[str, str]:
         """Load system + user prompt templates for this lens."""
@@ -70,6 +102,28 @@ class Lens(ABC):
         )
         obj, _ = await self._llm.generate_structured(request, schema)
         return await self._maybe_retry_greek(obj, schema, request, system)
+
+    async def _analyze_with_vs(self, prompt_name: str, article: Article) -> list[Finding]:
+        """Run Verbalized Sampling: one call, k candidates, tail-sampled.
+
+        Uses the lens's prompt templates and LLM port.
+        Returns k diverse findings (lowest-probability tail).
+        Falls back to standard _analyze_llm if LLM unavailable or VS fails.
+        """
+        if not self._llm:
+            return []
+        from leggie.application.services.lens_vs import LensVerbalizedSampling
+        system, template = self._prompt_for(prompt_name)
+        vs = LensVerbalizedSampling(
+            llm=self._llm,
+            lens_name=self.name(),
+            model=self._model,
+            system_prompt=system,
+            user_template=template,
+            k=5,
+            seed=getattr(self, "_seed", 0),
+        )
+        return await vs.generate(self, article)
 
     async def _maybe_retry_greek(self, obj: Any, schema: type, request: LLMRequest,
                                  system: str) -> Any:

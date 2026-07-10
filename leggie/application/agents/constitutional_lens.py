@@ -19,8 +19,6 @@ from leggie.domain.models import (
     IRAC,
     Article,
     Confidence,
-    Event,
-    EventType,
     Evidence,
     Finding,
     FindingType,
@@ -62,25 +60,12 @@ class ConstitutionalLens(Lens):
             # the degradation event and the missing LLM findings.
             return []
 
-    def _emit_degradation(self, article: Article, exc: Exception) -> None:
-        """Emit a degradation event if a callback is registered."""
-        if self._on_degradation is None:
-            return
-        try:
-            self._on_degradation(Event(
-                event_type=EventType.DEGRADED,
-                aggregate_id=f"lens:{self.name()}:article:{article.id}",
-                data={
-                    "lens": self.name(),
-                    "article_id": article.id,
-                    "error": str(exc)[:500],
-                    "model": self._model,
-                },
-            ))
-        except Exception:
-            log.warning("on_degradation callback failed", exc_info=True)
-
     async def _analyze_llm(self, article: Article) -> list[Finding]:
+        if self._use_verbalized_sampling:
+            vs_result = await self._analyze_with_vs("constitutional", article)
+            if vs_result:
+                return vs_result
+
         system, template = self._prompt_for("constitutional")
         prompt = template.format(article_id=article.id, article_text=article.raw_text)
         result = await self._call_llm_structured(LensFindings, prompt, system)

@@ -16,11 +16,19 @@ import structlog
 from leggie.config.settings import get_settings
 
 
+_LOGGING_CONFIGURED: bool = False
+
+
 def configure_logging(level: str | None = None) -> None:
     """Configure structured logging with structlog.
 
-    Call once at application startup.
+    Call once at application startup. Safe to call multiple times
+    (idempotent — only the first call applies).
     """
+    global _LOGGING_CONFIGURED
+    if _LOGGING_CONFIGURED:
+        return
+    _LOGGING_CONFIGURED = True
     settings = get_settings()
     log_level = level or settings.log_level
 

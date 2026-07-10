@@ -40,11 +40,13 @@ dev = [
     "ruff>=0.5",
     "mypy>=1.10",
     "pre-commit>=3.0",
+    "types-PyYAML>=6.0",
 ]
 lint = [
     "import-linter>=2.0",
     "ruff>=0.5",
     "mypy>=1.10",
+    "types-PyYAML>=6.0",
 ]
 eval = [
     "pandas>=2.0",
