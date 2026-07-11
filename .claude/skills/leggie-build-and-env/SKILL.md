@@ -49,7 +49,7 @@ set 20000000.
 ```powershell
 python -c "import leggie; print(leggie.__version__)"   # 0.1.0
 leggie --version                                       # Leggie v0.1.0
-python -m pytest tests/ -q                             # 361 passed (baseline 2026-07-10)
+python -m pytest tests/ -q                             # 367 passed (baseline 2026-07-10 evening)
 ruff check leggie/ tests/                              # clean
 mypy leggie/ --ignore-missing-imports                  # clean (strict mode via pyproject)
 lint-imports                                           # layer contract OK

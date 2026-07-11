@@ -76,7 +76,7 @@ class ConstitutionalLens(Lens):
         # definition — that's the exact shape of the "preliminary check,
         # nothing found" filler the model pads empty results with. Drop it
         # here rather than trust the prompt alone to suppress it.
-        substantive = [c for c in result.findings if c.verbatim_quote.strip()]
+        substantive = [c for c in result.findings if c.verbatim_quote and c.verbatim_quote.strip()]
         return [self._candidate_to_finding(c, article) for c in substantive]
 
     def _candidate_to_finding(self, c: IRACCandidate, article: Article) -> Finding:

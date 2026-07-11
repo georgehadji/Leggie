@@ -76,8 +76,8 @@ working tree has uncommitted changes — re-verify statuses via Provenance.
   (cap 16_384); `lens_analysis` max_tokens 4096→6144.
 
 ### 7. Phase-1 audit HIGH findings — PARTIAL
-- H-1 (LLMError path skipped truncation retry): **fixed in working tree**
-  (`response` initialized before attempt 1; guarded attempt 3).
+- H-1 (LLMError path skipped truncation retry): **fixed** (landed in
+  cb7fde8/406f969; `response` initialized before attempt 1; guarded attempt 3).
 - H-2 (repair round burns a paid call on unrepairable content): **partial** —
   empty-content guard exists; non-empty garbage still costs one call.
 - **Evidence:** `implementation_audit_report.md` §1; current
@@ -139,7 +139,7 @@ From `tasks/todo.md` §0 ("What changed vs the initial spec"):
 | D8 | cli_handlers container/ad-hoc duplication | check working tree |
 | D9 | rate limiter | LIKELY FIXED (constructed in LLMAdapter → OpenRouterProvider) — verify consumption |
 | D10 | resume-from-stage | PARTIAL (store exists, flow doesn't use it) |
-| — | uncommitted diff (~1,089 insertions: skeptic, cove_verifier, flow, citation, cli, settings) unvalidated by live smoke | THE current campaign — **leggie-remediation-campaign** |
+| — | verification-layer work (LLM CoVe + skeptic adversarial gate) LANDED as cb7fde8/406f969 (367 tests) but NEVER validated by live smoke | THE current campaign — **leggie-remediation-campaign** |
 
 ## When NOT to use this skill
 

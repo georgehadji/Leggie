@@ -10,6 +10,7 @@ Split into sub-modules per BUILD_PLAN §3:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any
 
@@ -84,7 +85,7 @@ async def validate_model_ids(
         return []
 
     if use_live and api_key:
-        try:
+        with contextlib.suppress(Exception):
             import httpx
             headers = {
                 "Authorization": f"Bearer {api_key}",
@@ -98,8 +99,6 @@ async def validate_model_ids(
                 live_ids = {m.get("id", "") for m in data.get("data", [])}
                 return [m for m in model_ids if m not in live_ids]
             # Fall back to allowlist
-        except Exception:
-            pass
 
     # Fallback: check against offline allowlist
     return [m for m in model_ids if m not in _OFFLINE_MODEL_ALLOWLIST]
@@ -229,8 +228,15 @@ class LLMAdapter(LLMPort):
                 pass
 
         # ── Attempt 4: repair round as last resort ────────────────
+        content_to_repair = response.content if response else ""
+        # H-2: don't burn a paid repair call on prose-only garbage.
+        if content_to_repair and not any(c in content_to_repair for c in "{["):
+            raise LLMError(
+                f"Structured response for schema {schema.__name__} "
+                f"contains no JSON skeleton; skipping repair round."
+            )
+
         try:
-            content_to_repair = response.content if response else ""
             if content_to_repair:
                 repair_prompt = _REPAIR_PROMPT_TEMPLATE.format(
                     schema_name=schema.__name__,

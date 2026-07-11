@@ -2,65 +2,68 @@
 name: leggie-remediation-campaign
 description: >
   EXECUTABLE, decision-gated campaign for Leggie's hardest live problem as of
-  2026-07-10: a large uncommitted, unvalidated working-tree diff (LLM-powered
-  CoVe + skeptic adversarial gate + wiring) that has never been proven by live
-  smoke, on top of open defects D3–D10. Load when asked to continue, validate,
-  or land the remediation work, to fix pipeline yield, or when asking "what
-  should I work on next" in this repo. Every phase has exact commands,
-  expected numbers, and if-X-then-Y branches.
+  2026-07-10: the verification-layer work (LLM-powered CoVe + skeptic
+  adversarial gate + wiring, commits cb7fde8/406f969) has landed but has NEVER
+  been proven by live smoke — pipeline yield is unproven since the 1-survivor
+  incident — on top of open defects D3–D10. Load when asked to continue,
+  validate, or prove the remediation work, to fix pipeline yield, or when
+  asking "what should I work on next" in this repo. Every phase has exact
+  commands, expected numbers, and if-X-then-Y branches.
 ---
 
 # Leggie Remediation Campaign
 
-**Goal (falsifiable):** the working-tree verification work is committed, and a
-live smoke on `Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf` meets every REMEDIATION_PLAN §10
-threshold. Until both are true, the campaign is not done.
+**Goal (falsifiable):** a live smoke on `Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf` meets every
+REMEDIATION_PLAN §10 threshold, and the result is recorded in a landing audit
+doc. Until both are true, the campaign is not done.
 
 **Re-verify Phase 0 before trusting anything here — this skill goes stale
-fastest.** All numbers below measured 2026-07-10 on branch
-`fix/model-ids-vfm-and-plan`.
+fastest.** Numbers below measured 2026-07-10 (evening) on branch
+`fix/model-ids-vfm-and-plan`, HEAD `406f969`, CLEAN working tree.
 
 ## Phase 0 — Snapshot and offline baseline
 
 ```powershell
-git status --short          # EXPECT: ~17 modified files + docs/REMEDIATION_PLAN.md untracked
-git diff --stat HEAD        # EXPECT: ~1,089 insertions; biggest: cove_verifier.py (+412), skeptic.py (+107), bill_analysis_flow.py (+93)
-python -m pytest tests/ -q  # EXPECT: 361 passed (measured 2026-07-10)
+git status --short          # EXPECT: clean (verification work landed as cb7fde8 + 406f969)
+git log --oneline -3        # EXPECT: 406f969 defect-hunt V7 / cb7fde8 type errors + reliability tests / 63fb25f phase1
+python -m pytest tests/ -q  # EXPECT: 367 passed (measured 2026-07-10)
 mypy leggie/ --ignore-missing-imports   # EXPECT: clean
 ruff check leggie/ tests/   # EXPECT: clean
 lint-imports                # EXPECT: contract kept
 ```
 
-**Gate:** all green → Phase 1.
-**Branch:** any test/type failure → fix via **leggie-debugging-playbook** /
-**build-error-resolver** discipline BEFORE touching anything else. If
-`git status` shows a DIFFERENT shape than above, the campaign state has moved
-— re-map with Phase 1 before acting.
+**Gate:** all green → Phase 2 (Phase 1 mapping below is now historical
+record; skim it, don't redo it).
+**Branch:** any test/type failure → fix via **leggie-debugging-playbook**
+discipline BEFORE anything else. If the tree is DIRTY again, new work has
+appeared — map it against the plan (Phase 1 method) before acting.
 
-## Phase 1 — Diff-vs-plan audit (know what you're landing)
+## Phase 1 — What landed (historical record of the diff-vs-plan mapping)
 
-Mapping established 2026-07-10 (re-verify with `git diff HEAD -- <file>`):
+The formerly-uncommitted verification work was committed 2026-07-10 as
+`cb7fde8` ("resolve all pre-existing type errors and add structured-output
+reliability tests") and `406f969` ("defect-hunt V7 — 4 verified defects
+fixed, 367 tests pass"). Content mapping (established while it was still a
+working-tree diff):
 
-| Working-tree change | Implements | Verified how |
-|---|---|---|
-| `cove_verifier.py` +412 | REAL 4-step factored CoVe with LLM (HEAD version was heuristic-only: quote validation + citation gate, no LLM calls) | `git show HEAD:leggie/application/services/cove_verifier.py` has no LLM port usage |
-| `skeptic.py` +107 | `LLMAdversarialGate` via `adversarial_critic` route (absent at HEAD: grep count 0) | `git show HEAD:...skeptic.py \| grep -c LLMAdversarialGate` → 0 |
-| `bill_analysis_flow.py` +93 | article_index for factored CoVe answers; blackboard default; auto-save polish | diff hunks |
-| `interfaces/cli/__init__.py` +21 | `--output/-o` on analyze; UTF-8 console guard | diff hunks |
-| `citation/__init__.py` +8 | fail-closed `resolve()` semantics (unverified ≠ invalid) | diff hunks |
-| `settings.py` +8 | token ceiling 20M default + governor comment | diff hunks |
-| `structured_output.py` +49 | CoVe response schemas (Questions/Answer/CrossCheck) | file read |
-| test files +~290 | coverage for all of the above | pytest green |
-| `economic_lens.py`, `blackboard_aggregator.py`, `cli_commands.py`, `cli_handlers.py` | supporting wiring | diff hunks |
+| Change | Implements |
+|---|---|
+| `cove_verifier.py` (+~412) | REAL 4-step factored CoVe with LLM (previous version was heuristic-only: quote validation + citation gate, no LLM calls) |
+| `skeptic.py` (+~107) | `LLMAdversarialGate` via `adversarial_critic` route (previously absent) |
+| `bill_analysis_flow.py` (+~93) | article_index for factored CoVe answers; blackboard default; auto-save polish |
+| `interfaces/cli/__init__.py` | `--output/-o` on analyze; UTF-8 console guard |
+| `citation/__init__.py` | fail-closed `resolve()` semantics (unverified ≠ invalid) |
+| `settings.py` | token ceiling 20M default + governor comment |
+| `structured_output.py` (+~49) | CoVe response schemas (Questions/Answer/CrossCheck) |
+| tests (+~290) | coverage for all of the above |
+| budget_guard, container, llm/__init__, economic_lens, blackboard_aggregator, cli_commands/handlers | supporting wiring + defect-hunt fixes |
 
-**Gate:** every hunk accounted for. Unexplained hunks → read them before
-proceeding; do not land code you can't map to intent.
+STILL OPEN after landing: D3 parallel fan-out (verify: loop at
+`bill_analysis_flow.py` ~line 157), D4 verbalized sampling, D5 model
+reranker, D7 citation index population, D10 stage resume — and, critically,
+**no live smoke has validated any of this**.
 
-NOT in this diff (still open): D3 parallel fan-out (loop still sequential at
-`bill_analysis_flow.py:157`), D4 verbalized sampling, D5 model reranker,
-D7 citation index population, D10 stage resume.
-
-## Phase 2 — Close the Phase-1 audit HIGH findings
+## Phase 2 — Confirm the Phase-1 audit HIGH findings stayed closed
 
 From `implementation_audit_report.md`:
 
@@ -107,16 +110,17 @@ python .claude/skills/leggie-diagnostics-and-tooling/scripts/smoke_log_stats.py 
 python .claude/skills/leggie-diagnostics-and-tooling/scripts/findings_stats.py "Outputs/OE_ΣΧΝ-ΥΠΔΙΚ_findings.json" --articles <N>
 ```
 
-**EXPECT (per REMEDIATION_PLAN §10):**
+**EXPECT (per REMEDIATION_PLAN §10, plus the project's $5 budget policy):**
 - survivors for one lens: same order of magnitude as N×(hit rate), NOT 0–2.
-  The checked-in fossil shows `total_findings: 1` — beating that is the whole
-  point.
-- `parse_failure_signals`: drift+truncation < 5% of LLM calls
+  The local fossil `Outputs/OE_ΣΧΝ-ΥΠΔΙΚ_findings.json` (untracked, this
+  machine only) shows `total_findings: 1` — beating that is the whole point.
+- `parse_failure_signals`: drift+truncation < 5% of LLM calls (§10)
 - `skeptic` signatures: no mass `skeptic_llm_error`; log shows non-neutral
-  verdicts (grep `refutes`/`supports`)
-- `cove_quote_fail` present only where quotes are genuinely absent from
-  article text
-- spend well under $5 for one lens
+  verdicts (grep `refutes`/`supports`) (§10)
+- CoVe drop/revise observed with valid (non-truncated) inputs (§10 wording);
+  `cove_quote_fail` should fire only where quotes are genuinely absent
+- spend well under $5 for one lens ($5 cap = `max_cost_per_run` policy in
+  settings.py, not a §10 bullet)
 
 **Branches:**
 - 0–2 survivors again → schema-drift ladder failing → count signatures; if
@@ -137,10 +141,11 @@ all §10 thresholds, spend < $5.
 
 1. Re-run Phase-3 sweep one final time.
 2. Write the landing audit doc (template: **leggie-docs-and-writing** §3),
-   including the measured smoke numbers as the before/after table.
-3. Commit in project style, e.g.
-   `feat(phase-verify): LLM-powered CoVe factored loop + skeptic adversarial gate`
-   — reference D-items and FIX_PLAN F4 lineage.
+   including the measured smoke numbers as the before/after table — the code
+   landed without this evidence; the audit doc closes that gap.
+3. Commit the audit doc (+ any Phase-2/branch fixes) in project style, e.g.
+   `docs: smoke-validation audit for verification layer (cb7fde8/406f969)` —
+   reference D-items and FIX_PLAN F4 lineage.
 4. Update README drift while touching docs (test badge, ports count) — list in
    **leggie-docs-and-writing** §5.
 
@@ -176,9 +181,9 @@ One variable per run (ablation discipline — **leggie-research-methodology**).
 
 ## Provenance and maintenance
 
-Everything here dated 2026-07-10; the working tree WILL move.
-- Re-snapshot: `git status --short && git diff --stat HEAD | tail -3`
-- Diff-map spot check: `git show HEAD:leggie/application/agents/skeptic.py | grep -c LLMAdversarialGate` (0 = mapping still valid; ≥1 = work landed, retire Phases 1–2)
-- Baseline: `python -m pytest tests/ -q`
+Everything here dated 2026-07-10; the tree WILL move.
+- Re-snapshot: `git status --short && git log --oneline -3`
+- Work landed? `git show HEAD:leggie/application/agents/skeptic.py | grep -c LLMAdversarialGate` (≥1 = landed, Phase 1 is history; 0 = you are on an older commit)
+- Baseline: `python -m pytest tests/ -q` (was 367 passed)
 - D3 still open? `grep -n "for article in self._doc.articles" leggie/application/workflow/bill_analysis_flow.py`
 - H-1 fix present? `grep -n "Initialise response" leggie/infrastructure/llm/__init__.py`

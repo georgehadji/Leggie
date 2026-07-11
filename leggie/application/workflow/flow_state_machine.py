@@ -77,3 +77,20 @@ class FlowStateMachine:
     def is_error_state(state: WorkflowState) -> bool:
         """Check if a state is an error/failure state."""
         return state == WorkflowState.FAILED
+
+    @staticmethod
+    def resumable_states() -> set[WorkflowState]:
+        """Return non-terminal workflow states that can be resumed from.
+
+        A checkpoint saved at one of these states already contains the outputs
+        of all prior stages, so the flow can re-enter here without double-billing.
+        """
+        return {
+            WorkflowState.PARSING,
+            WorkflowState.PLANNING,
+            WorkflowState.EXECUTING,
+            WorkflowState.AGGREGATING,
+            WorkflowState.VERIFYING,
+            WorkflowState.IMPROVING,
+            WorkflowState.REPORTING,
+        }

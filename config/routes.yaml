@@ -31,15 +31,16 @@ routes:
       budget: "google/gemini-2.5-flash"
       premium: "google/gemini-2.5-pro"
 
-  # Skeptic must CATCH legal errors the lens missed — sharper reasoning.
+  # Skeptic must CATCH legal errors the lens missed.
+  # Placed on the premium tier so the critic is strictly stronger than the
+  # lens model (google/gemini-2.5-flash) that produced the finding.
   adversarial_critic:
-    model: "anthropic/claude-sonnet-4.6"
-    tier: "budget"
+    model: "google/gemini-2.5-pro"
+    tier: "premium"
     max_tokens: 2048
     cascade: true
     cascade_models:
-      budget: "anthropic/claude-sonnet-4.6"
-      premium: "anthropic/claude-opus-4.8"
+      premium: "google/gemini-2.5-pro"
 
   # ── Simple / cheap tasks ─────────────────────────────────────────
   classification:

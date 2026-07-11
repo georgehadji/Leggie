@@ -47,7 +47,7 @@ was misclassifying "the pipeline works" as proven by unit tests alone (§3.1).
 
 ```powershell
 # From repo root E:\Documents\Vibe-Coding\Leggie
-python -m pytest tests/ -q            # full suite; baseline 361 passed (measured 2026-07-10)
+python -m pytest tests/ -q            # full suite; baseline 367 passed (measured 2026-07-10 evening)
 mypy leggie/ --ignore-missing-imports # strict mode is set in pyproject; must be clean on touched modules
 ruff check leggie/ tests/             # do NOT widen the ignore list to pass (see §3.5)
 lint-imports                          # import-linter layer contract (install via pip install -e ".[lint]")
@@ -56,8 +56,10 @@ lint-imports                          # import-linter layer contract (install vi
 Class A additionally requires a **live smoke** (costs money, needs
 `LEGGIE_LLM__OPENROUTER_API_KEY`) judged against the measurable thresholds in
 `docs/REMEDIATION_PLAN.md` §10 — findings roughly proportional to article
-count, <5% parse-failure rate, non-neutral skeptic verdicts present, CoVe drops
-only invalid quotes, cost < $5. Procedure: see sibling skill
+count, <5% parse-failure rate, non-neutral skeptic verdicts present, CoVe
+drop/revise observed with valid (non-truncated) inputs — plus the project's
+$5 budget policy (`max_cost_per_run` in settings.py; not itself a §10
+bullet). Procedure: see sibling skill
 **leggie-run-and-operate**; measurement: **leggie-diagnostics-and-tooling**.
 Never judge smoke output "by eye" — numbers only.
 
@@ -100,6 +102,19 @@ smoke; those are your job locally.
    `implementation_audit_report.md`, verdict + severity findings). Templates:
    sibling **leggie-docs-and-writing**.
 
+## 3b. Mechanical enforcement (added 2026-07-11)
+
+Some non-negotiables are enforced by Claude Code hooks in
+`.claude/settings.json` → `.claude/hooks/`:
+`guard_pretooluse.py` reads `guardrails.yaml` and denies edits to
+`leggie/domain/models/` (rule 2), denies widening the pyproject ruff ignore
+list (rule 5), denies raising `max_cost_per_run` (rule 4), and asks before
+`config/routes.yaml` or `leggie/application/ports/` edits;
+`postedit_ruff.py` ruff-checks every edited Python file under `leggie/` or
+`tests/` and feeds violations back. Tune rules in
+`.claude/hooks/guardrails.yaml`, not in the scripts. A denied edit is not an
+invitation to bypass — it is the checklist firing.
+
 ## 4. Commit conventions (verified from git log)
 
 Conventional-commit style with optional phase scope:
@@ -137,7 +152,7 @@ permanent handles.
 
 Facts dated 2026-07-10. Re-verify before trusting:
 
-- Test baseline: `python -m pytest tests/ -q` (was: 361 passed)
+- Test baseline: `python -m pytest tests/ -q` (was: 367 passed)
 - Ruff ignore list: `grep -A2 "^ignore" pyproject.toml`
 - Import contract: `grep -A8 importlinter pyproject.toml`
 - Budget defaults: `grep -n "max_tokens_per_run\|max_cost_per_run" leggie/config/settings.py`

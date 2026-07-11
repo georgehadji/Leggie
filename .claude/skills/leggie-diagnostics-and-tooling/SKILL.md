@@ -35,10 +35,10 @@ confidence: n=1 min=0.55 mean=0.55 max=0.55
 info_filler_ratio: 0%  (historical pathology: 68%)
 ```
 
-That `total_findings: 1` IS the D1 schema-drift pathology, preserved in the
-repo — the checked-in `Outputs/OE_ΣΧΝ-ΥΠΔΙΚ_findings.json` predates the
-Phase-1 fix. A healthy post-fix run must show findings roughly proportional
-to article count.
+That `total_findings: 1` IS the D1 schema-drift pathology. Note:
+`Outputs/OE_ΣΧΝ-ΥΠΔΙΚ_findings.json` is LOCAL ONLY (Outputs/ is gitignored;
+absent on a fresh clone) — it predates the Phase-1 fix on this machine. A
+healthy post-fix run must show findings roughly proportional to article count.
 
 **Interpretation:** `info_filler_ratio` near 68% = stub-era filler regression
 (playbook row 3). `findings_per_article` near zero = drift/truncation
@@ -70,7 +70,8 @@ captured console log, not the markdown outputs.
 python .claude/skills/leggie-diagnostics-and-tooling/scripts/eval_summary.py eval_results.json
 ```
 
-Real output against the checked-in file (measured 2026-07-10):
+Real output against the local file (gitignored/untracked — absent on a fresh
+clone; measured 2026-07-10):
 
 ```
 bill_id                 gold  found  match    prec     rec      F1     RDI
@@ -78,9 +79,10 @@ bill_sample_001            3      0      0   0.000   0.000   0.000  -1.000
 bill_sample_002            3      0      0   0.000   0.000   0.000  -1.000
 ```
 
-The checked-in `eval_results.json` is the STUB-ERA artifact (eval once scored
-empty findings lists — FIX_PLAN D7). All-zero rows with RDI −1.0 mean "no
-findings were fed in", not "the analyzer is that bad". Regenerate with
+This local `eval_results.json` is the STUB-ERA artifact (eval once scored
+empty findings lists — FIX_PLAN D7); it is gitignored and won't exist on a
+fresh clone. All-zero rows with RDI −1.0 mean "no findings were fed in", not
+"the analyzer is that bad". Regenerate with
 `leggie eval --gold-set tests/eval/gold_set_sample.json`.
 
 ## 2. Metric interpretation
@@ -95,8 +97,9 @@ findings were fed in", not "the analyzer is that bad". Regenerate with
 Live-smoke thresholds (REMEDIATION_PLAN §10, the acceptance gate):
 findings ∝ article count (not ~1); parse-failure rate <5% of LLM calls;
 skeptic produces some non-neutral verdicts; CoVe drop/revise observed only on
-invalid quotes; full-run wall-clock materially cut once fan-out lands; spend
-< $5.
+valid (non-truncated) inputs; full-run wall-clock materially cut once
+fan-out lands. Plus project budget policy (settings.py, not a §10 bullet):
+spend < $5.
 
 ## 3. Other measurement surfaces
 

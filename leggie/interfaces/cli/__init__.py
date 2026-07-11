@@ -7,6 +7,7 @@ interface layer thin per Clean Architecture. No direct infrastructure calls.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -34,6 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("file", type=Path, help="Path to the bill file (PDF/DOCX/HTML/TXT)")
     analyze.add_argument("--output", "-o", type=Path, default=None, help="Output directory for reports")
     analyze.add_argument("--lenses", "-l", nargs="+", default=None, help="Lenses to apply (default: all 5)")
+    analyze.add_argument(
+        "--verbalized-sampling", action="store_true",
+        help="Enable verbalized sampling (experimental, increases cost)",
+    )
     analyze.add_argument(
         "--checkpoint", "-c", type=Path, default=None,
         help="Path to persist/restore budget spend across runs (survives a crash mid-run)",
@@ -142,6 +147,7 @@ async def _handle_analyze(args: argparse.Namespace, mediator: Mediator) -> int:
         file_path=str(args.file),
         output_path=str(args.output) if args.output else None,
         lenses=args.lenses,
+        use_verbalized_sampling=args.verbalized_sampling,
         checkpoint_path=str(args.checkpoint) if args.checkpoint else None,
     )
     result = await mediator.send(cmd)
@@ -192,10 +198,8 @@ def _force_utf8_console() -> None:
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
-            try:
+            with contextlib.suppress(ValueError, OSError):
                 reconfigure(encoding="utf-8")
-            except (ValueError, OSError):
-                pass
 
 
 def entry_point() -> int:

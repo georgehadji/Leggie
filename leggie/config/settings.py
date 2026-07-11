@@ -21,6 +21,10 @@ class LLMSettings(BaseSettings):
     openrouter_api_key: str = Field(default="", description="OpenRouter API key")
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_default_model: str = "google/gemini-2.5-flash"
+    max_concurrency: int = Field(
+        default=5, ge=1, le=100,
+        description="Max concurrent article analyses per document",
+    )
 
 
 class CascadeSettings(BaseSettings):
@@ -65,13 +69,22 @@ class RetrievalSettings(BaseSettings):
     cellar_timeout_seconds: int = 60
 
 
+class AnalysisSettings(BaseSettings):
+    """Analysis pipeline configuration — opt-in experimental features."""
+
+    model_config = SettingsConfigDict(env_prefix="LEGGIE_ANALYSIS_", env_file=".env", extra="ignore")
+
+    use_verbalized_sampling: bool = False
+    reranker: Literal["composite", "model"] = "composite"
+
+
 class IngestSettings(BaseSettings):
     """Ingest configuration."""
 
     model_config = SettingsConfigDict(env_prefix="LEGGIE_INGEST_", env_file=".env", extra="ignore")
 
     max_file_size_mb: int = Field(default=50, ge=1)
-    temp_dir: str = Field(default="/tmp/leggie_ingest")
+    temp_dir: str = Field(default="/tmp/leggie_ingest")  # nosec B108
     ocr_enabled: bool = False
 
 
@@ -107,6 +120,7 @@ class Settings(BaseSettings):
     cascade: CascadeSettings = Field(default_factory=CascadeSettings)
     budget: BudgetSettings = Field(default_factory=BudgetSettings)
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
+    analysis: AnalysisSettings = Field(default_factory=AnalysisSettings)
     ingest: IngestSettings = Field(default_factory=IngestSettings)
     persistence: PersistenceSettings = Field(default_factory=PersistenceSettings)
 

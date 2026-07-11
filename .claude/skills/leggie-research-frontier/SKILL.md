@@ -15,9 +15,10 @@ description: >
 (**leggie-remediation-campaign**). Research on top of an unvalidated pipeline
 produces unattributable numbers.
 
-**Honesty baseline (verified 2026-07-10):** the checked-in `eval_results.json`
-is all zeros (stub-era fossil). Leggie has **no measured quality result yet**.
-Every item below states what a result WOULD look like.
+**Honesty baseline (verified 2026-07-10):** the only existing eval output
+(a local, gitignored `eval_results.json`) is all zeros — a stub-era fossil.
+Leggie has **no measured quality result yet**. Every item below states what a
+result WOULD look like.
 
 ## Frontier problems
 

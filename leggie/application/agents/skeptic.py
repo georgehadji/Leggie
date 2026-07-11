@@ -112,7 +112,7 @@ class LLMAdversarialGate(SkepticGate):
         try:
             request = LLMRequest(
                 prompt=prompt, system_prompt=system, model=model,
-                max_tokens=768, temperature=0.0,
+                max_tokens=2048, temperature=0.0,
                 response_format={"type": "json_object"},
             )
             obj, _ = await self._llm.generate_structured(request, SkepticVerdictResponse)
@@ -127,6 +127,11 @@ class LLMAdversarialGate(SkepticGate):
         verdict = (obj.verdict or "neutral").strip().lower()
         if verdict not in ("supports", "refutes", "neutral"):
             verdict = "neutral"
+        log.info(
+            "skeptic_verdict: finding=%s gate=adversarial verdict=%s adjustment=%.2f reason=%s",
+            finding.id, verdict, obj.confidence_adjustment or 0.0,
+            (obj.reason or "")[:120],
+        )
         return SkepticVerdict(
             str(finding.id), "adversarial", verdict, obj.reason,
             obj.confidence_adjustment,

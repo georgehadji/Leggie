@@ -121,8 +121,15 @@ class CoVeVerifier:
         resolution (never drops).
         """
         if self._llm is not None:
-            return await self._verify_llm(finding, source_text)
-        return await self._verify_deterministic(finding)
+            result = await self._verify_llm(finding, source_text)
+        else:
+            result = await self._verify_deterministic(finding)
+        log.info(
+            "cove_result: finding=%s consistency=%s dropped=%s verified=%d/%d reason=%s",
+            finding.id, result.consistency, result.dropped, result.verified_count,
+            len(result.questions), (result.reason or "")[:120],
+        )
+        return result
 
     async def verify_batch(
         self, findings: list[Finding], article_index: dict[str, str] | None = None
@@ -241,7 +248,8 @@ class CoVeVerifier:
         never when there's simply no index to check against (that's
         "unverified", not "wrong", and is left for the LLM cross-check).
         """
-        assert self._citation_parser is not None
+        if self._citation_parser is None:
+            raise RuntimeError("CoVe verifier requires a CitationParserPort")
         text = " ".join([finding.irac.rule, *[e.text_excerpt or "" for e in finding.evidence]])
         cites = self._citation_parser.parse(text)
         if not cites:
@@ -276,11 +284,11 @@ class CoVeVerifier:
             f"- Συμπέρασμα: {finding.irac.conclusion}\n\n"
             f"Διατύπωσε τις ανοιχτές ερωτήσεις επαλήθευσης."
         )
-        obj = await self._structured(CoVeQuestionsResponse, prompt, system, model, max_tokens=1024)
+        obj = await self._structured(CoVeQuestionsResponse, prompt, system, model, max_tokens=2048)
         if obj is None:
             return []
         return [
-            VerificationQuestion(question=q.strip())
+            VerificationQuestion(question=(q or "").strip())
             for q in obj.questions[: self._max_questions]
             if q and q.strip()
         ]
@@ -306,7 +314,7 @@ class CoVeVerifier:
         for q in questions:
             prompt = f"{src_block}ΕΡΩΤΗΣΗ: {q.question}\n\nΑπάντησε πραγματολογικά."
             obj = await self._structured(
-                CoVeAnswerResponse, prompt, system, model, max_tokens=512
+                CoVeAnswerResponse, prompt, system, model, max_tokens=1024
             )
             if obj is not None:
                 q.answer = obj.answer
@@ -348,7 +356,7 @@ class CoVeVerifier:
             f"Διασταύρωσε και αποφάσισε."
         )
         obj = await self._structured(
-            CoVeCrossCheckResponse, prompt, system, model, max_tokens=1024
+            CoVeCrossCheckResponse, prompt, system, model, max_tokens=2048
         )
         verified_count = sum(1 for q in questions if q.verified)
         failed_count = len(questions) - verified_count

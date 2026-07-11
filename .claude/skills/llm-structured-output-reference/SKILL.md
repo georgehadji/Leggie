@@ -49,7 +49,7 @@ Exhausted: raise LLMError → caller degrades (cascade / DEGRADED event)
 ```
 
 Status of the two HIGH findings from `implementation_audit_report.md`
-(working tree, 2026-07-10):
+(landed in commits cb7fde8/406f969, verified 2026-07-10):
 - **H-1 (LLMError skipped truncation retry)**: addressed — `response` is
   initialized to `None` before attempt 1 with an explanatory comment, and
   attempt 3 guards `if response and response.finish_reason == "length"`.
@@ -109,7 +109,7 @@ shipped once (fixed in commit 39b42ef). When changing a model in routes.yaml,
 check it: `curl -s https://openrouter.ai/api/v1/models | grep '<model-id>'`.
 
 Rate limiting: `RateLimiter(max_rate=5.0)` is constructed in
-`LLMAdapter.__init__` and passed to `OpenRouterProvider` (working tree) —
+`LLMAdapter.__init__` and passed to `OpenRouterProvider` —
 verify consumption inside `adapters/openrouter.py` before assuming throttling.
 
 ## 6. CoVe and Skeptic (the verification layer)

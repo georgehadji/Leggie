@@ -25,7 +25,7 @@ runtime evidence.
 
 | Tier | Evidence | Command | Required for |
 |---|---|---|---|
-| 1 | full test suite green | `python -m pytest tests/ -q` → baseline **361 passed** (measured 2026-07-10) | every change |
+| 1 | full test suite green | `python -m pytest tests/ -q` → baseline **367 passed** (measured 2026-07-10 evening) | every change |
 | 2 | mypy strict clean on touched modules + ruff + import-linter | `mypy leggie/ --ignore-missing-imports && ruff check leggie/ tests/ && lint-imports` | every code change |
 | 3 | live smoke with MEASURED numbers | procedure in **leggie-run-and-operate** §3, measurement via **leggie-diagnostics-and-tooling** | class-A (pipeline-behavior) changes |
 | 4 | eval delta vs gold set | `leggie eval --gold-set tests/eval/gold_set_sample.json` before/after | quality claims ("improves recall/precision") |
@@ -39,9 +39,12 @@ From `docs/REMEDIATION_PLAN.md` §10 — the current definition of done:
 - findings roughly **proportional to article count** (not ~1)
 - **<5%** parse-failure rate across LLM calls
 - skeptic produces **some non-neutral verdicts** (parse not blocking it)
-- CoVe drop/revise observed **only on invalid inputs** (fabricated quotes)
+- CoVe drop/revise observed **with valid (non-truncated) inputs**
+- full-run wall-clock **materially cut** by parallel fan-out (once D3 lands)
 - full pytest green; mypy clean; **no new ports**
-- spend **< $5**/run
+
+Additionally (project policy, `settings.py max_cost_per_run` — not a §10
+bullet): spend **< $5**/run.
 
 Thresholds change only through change control with rationale — never inline
 to make a run pass. Output quality is judged by these numbers, never by eye.
@@ -53,8 +56,8 @@ to make a run pass. Output quality is judged by these numbers, never by eye.
 | `tests/eval/gold_set_sample.json` | gold labels: 2 bills × 3 labels each | schema per label: `article_id, finding_type, description, severity, citation_text` (nullable); finding_types match the `FindingType` enum |
 | `Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf` | canonical live-smoke bill | Greek filename — quote the path |
 | `tests/unit/infrastructure/test_phase1_structured_output.py` | regression fixtures built from REAL malformed LLM payloads captured in the smoke log | the pattern to copy when a new drift alias appears |
-| `Outputs/OE_ΣΧΝ-ΥΠΔΙΚ_findings.json` (checked in) | FOSSIL of the 1-survivor pathology | historical exhibit, not a target |
-| `eval_results.json` (checked in, gitignored for future runs) | FOSSIL of stub-era all-zero eval | regenerate, don't trust |
+| `Outputs/OE_ΣΧΝ-ΥΠΔΙΚ_findings.json` (LOCAL ONLY — gitignored/untracked; absent on a fresh clone) | FOSSIL of the 1-survivor pathology | historical exhibit, not a target |
+| `eval_results.json` (LOCAL ONLY — gitignored/untracked; absent on a fresh clone) | FOSSIL of stub-era all-zero eval | regenerate with `leggie eval` |
 | `analysis_report.md`, `e2e_test_results.json` | historical exhibits | stub-era; reference only |
 
 ## 5. How to write tests here (verified patterns)
@@ -105,7 +108,7 @@ produced locally on Windows. Do not cite "CI is green" as tier-3 evidence.
 ## Provenance and maintenance
 
 Dated 2026-07-10. Re-verify:
-- Baseline: `python -m pytest tests/ -q` (was 361 passed)
+- Baseline: `python -m pytest tests/ -q` (was 367 passed)
 - Async mode: `grep -n asyncio_mode pyproject.toml`
 - Fake pattern: `grep -rn "class Fake" tests/ | head`
 - Gold set size: `python -c "import json;d=json.load(open('tests/eval/gold_set_sample.json',encoding='utf-8'));print({k:len(v) for k,v in d.items()})"`

@@ -97,6 +97,17 @@ class TestPydanticToJsonSchema:
         assert "reason" in schema["required"]
         assert schema["properties"]["verdict"]["type"] == "string"
 
+    def test_number_constraints_stripped_for_provider_compatibility(self):
+        """minimum/maximum on number fields are stripped — some providers reject them."""
+        class ConstrainedModel(BaseModel):
+            score: float = Field(ge=0.0, le=1.0)
+
+        schema = pydantic_to_json_schema(ConstrainedModel)
+        prop = schema["properties"]["score"]
+        assert prop["type"] == "number"
+        assert "minimum" not in prop
+        assert "maximum" not in prop
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # 2. StructuredResponseParser tests
@@ -507,7 +518,7 @@ class TestGenerateStructuredRetry:
         """When all retries fail, raises LLMError."""
         async def mock_generate(req):
             return LLMResponse(
-                content="completely invalid content",
+                content="completely invalid {content}",
                 model="test",
                 tier_used=ModelTier.BUDGET,
                 usage={},
@@ -523,6 +534,34 @@ class TestGenerateStructuredRetry:
                            response_format={"type": "json_object"}),
                 LensFindings,
             )
+
+    @pytest.mark.asyncio
+    async def test_repair_round_skipped_on_prose_garbage(self, adapter):
+        """Prose-only garbage must not trigger a paid repair round."""
+        calls: list[LLMRequest] = []
+
+        async def mock_generate(req: LLMRequest):
+            calls.append(req)
+            return LLMResponse(
+                content="This is just prose with no JSON skeleton.",
+                model="test",
+                tier_used=ModelTier.BUDGET,
+                usage={},
+                finish_reason="stop",
+            )
+
+        with (
+            patch.object(adapter, "generate", side_effect=mock_generate),
+            pytest.raises(LLMError, match="no JSON skeleton"),
+        ):
+            await adapter.generate_structured(
+                LLMRequest(prompt="test", max_tokens=1000,
+                           response_format={"type": "json_object"}),
+                LensFindings,
+            )
+
+        # Only the json_schema and json_object attempts should fire.
+        assert len(calls) == 2
 
     @pytest.mark.asyncio
     async def test_max_tokens_doubled_on_truncation(self, adapter):

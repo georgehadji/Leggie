@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from leggie.application.services.rerank import CompositeReranker
 from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
 from leggie.domain.models import (
     IRAC,
@@ -37,6 +38,29 @@ def sample_bill_file(tmp_path):
 
 
 class TestBillAnalysisFlow:
+    def test_default_object_graph_is_baseline(self, sample_bill_file):
+        """With default settings the flow graph matches the pre-feature baseline."""
+        flow = BillAnalysisFlow()
+        assert flow._orchestrator._use_verbalized_sampling is False
+        assert isinstance(flow._reranker, CompositeReranker)
+
+    def test_opt_in_flags_thread_to_construction(self):
+        """Verbalized sampling and model reranker flags reach the object graph."""
+        from leggie.application.ports.reranker import RerankerPort, RerankResult
+
+        class FakeReranker(RerankerPort):
+            async def rerank(self, query, documents, model="", top_k=None):
+                return []
+
+        flow = BillAnalysisFlow(
+            use_verbalized_sampling=True,
+            reranker_name="model",
+            reranker_port=FakeReranker(),
+        )
+        assert flow._orchestrator._use_verbalized_sampling is True
+        from leggie.application.services.rerank import ModelBasedReranker
+        assert isinstance(flow._reranker, ModelBasedReranker)
+
     @pytest.mark.asyncio
     async def test_run_returns_findings(self, sample_bill_file):
         flow = BillAnalysisFlow()
@@ -137,7 +161,7 @@ class TestBudgetCheckpoint:
 
         assert checkpoint.exists()
         saved = json.loads(checkpoint.read_text(encoding="utf-8"))
-        assert saved["tokens_used"] == 150
+        assert saved["budget_state"]["tokens_used"] == 150
 
     @pytest.mark.asyncio
     async def test_checkpoint_restores_prior_spend(self, sample_bill_file, tmp_path):
@@ -220,6 +244,83 @@ class TestDedupInFlow:
         first = flow._dedup_findings(findings)
         second_pass = flow._dedup_findings(first)
         assert len(first) == len(second_pass)
+
+
+class TestResumeAfterCrash:
+    """Integration-style crash-resume test (D10)."""
+
+    @pytest.mark.asyncio
+    async def test_resume_after_crash(self, sample_bill_file, tmp_path):
+        checkpoint = tmp_path / "resume.checkpoint.json"
+
+        # 1. First run: crash after execution completes (checkpoint saved at AGGREGATING).
+        flow1 = BillAnalysisFlow()
+        original_transition = flow1._transition
+        crashed_state: WorkflowState | None = None
+
+        def crashing_transition(target: WorkflowState, event: str) -> None:
+            original_transition(target, event)
+            nonlocal crashed_state
+            if crashed_state is None and flow1.state == WorkflowState.AGGREGATING:
+                crashed_state = flow1.state
+                raise RuntimeError("simulated crash")
+
+        flow1._transition = crashing_transition
+        with pytest.raises(RuntimeError):
+            await flow1.run(sample_bill_file, checkpoint_path=checkpoint)
+
+        assert crashed_state == WorkflowState.AGGREGATING
+        saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+        assert saved["stage"] == WorkflowState.AGGREGATING.value
+        assert saved["findings"]
+        assert saved["document"]
+
+        # 2. Non-crashing fresh run for comparison.
+        fresh_flow = BillAnalysisFlow()
+        fresh_findings, _ = await fresh_flow.run(sample_bill_file)
+
+        # 3. Resume with a new flow and count stage executions.
+        flow2 = BillAnalysisFlow()
+        calls = {"ingest": 0, "parse": 0, "decompose": 0, "analyze": 0}
+
+        orig_do_ingest = flow2._do_ingest
+        orig_do_parse = flow2._do_parse
+        orig_decompose = flow2._orchestrator.decompose
+        orig_analyze_document = flow2._orchestrator.analyze_document
+
+        async def counted_do_ingest(path):
+            calls["ingest"] += 1
+            return await orig_do_ingest(path)
+
+        def counted_do_parse(text, path):
+            calls["parse"] += 1
+            return orig_do_parse(text, path)
+
+        def counted_decompose(doc):
+            calls["decompose"] += 1
+            return orig_decompose(doc)
+
+        async def counted_analyze_document(doc, lenses):
+            calls["analyze"] += 1
+            return await orig_analyze_document(doc, lenses)
+
+        flow2._do_ingest = counted_do_ingest
+        flow2._do_parse = counted_do_parse
+        flow2._orchestrator.decompose = counted_decompose
+        flow2._orchestrator.analyze_document = counted_analyze_document
+
+        resumed_findings, _ = await flow2.run(sample_bill_file, checkpoint_path=checkpoint)
+
+        # 4. Assertions: skipped expensive stages and identical findings.
+        assert calls["ingest"] == 0
+        assert calls["parse"] == 0
+        assert calls["decompose"] == 0
+        assert calls["analyze"] == 0
+        assert flow2.state == WorkflowState.DONE
+        assert len(resumed_findings) == len(fresh_findings)
+        assert sorted(f.irac.issue for f in resumed_findings) == sorted(
+            f.irac.issue for f in fresh_findings
+        )
 
 
 class TestDegradationEvent:

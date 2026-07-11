@@ -122,7 +122,7 @@ CLI path: `interfaces/cli/__init__.py` → `Mediator` → handlers in
 | D8 | `cli_handlers.py` retains legacy `_try_get_*` fallbacks beside the container | verify in source |
 | D9 | `RateLimiter(max_rate=5.0)` now constructed inside `LLMAdapter.__init__` and passed to `OpenRouterProvider` — appears wired; confirm consumption in `adapters/openrouter.py` | LIKELY FIXED, verify |
 | D10 | Resume-from-stage: only budget spend is checkpointed by the flow; `infrastructure/persistence/checkpoint_store.py` exists — check whether flow uses it | PARTIAL, verify |
-| — | README claims 7 ports / 199 tests; source has 10 ports / 361 tests | DOC DRIFT |
+| — | README claims 7 ports / 199 tests; source has 10 ports / 367 tests | DOC DRIFT |
 
 ## 7. How to add things
 
