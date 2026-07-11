@@ -7,7 +7,7 @@ confidence gates, citation validity, and abstention decisions (U9).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 from leggie.domain.models import Citation, Finding
 

@@ -19,7 +19,9 @@ class SimpleRetrievalAdapter(RetrievalPort):
         self._corpus_dir = Path(corpus_dir)
         self._corpus_dir.mkdir(parents=True, exist_ok=True)
 
-    async def search(self, query: str, corpus: str = "default", top_k: int = 10, mode: str = "hybrid") -> list[RetrievalResult]:
+    async def search(
+        self, query: str, corpus: str = "default", top_k: int = 10, mode: str = "hybrid"
+    ) -> list[RetrievalResult]:
         results: list[RetrievalResult] = []
         if not self._corpus_dir.exists():
             return results

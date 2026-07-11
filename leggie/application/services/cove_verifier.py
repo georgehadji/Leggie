@@ -93,19 +93,20 @@ class CoVeVerifier:
                     citation=evidence.citation,
                     question=f"Does the citation {evidence.citation.identifier} resolve correctly?",
                 ))
-            elif evidence.text_excerpt:
+            elif evidence.text_excerpt and self._citation_parser:
                 # Try to parse citations from text
-                if self._citation_parser:
-                    parsed = self._citation_parser.parse(evidence.text_excerpt)
-                    for cite in parsed:
-                        questions.append(VerificationQuestion(
-                            citation=cite,
-                            question=f"Does the citation {cite.identifier} resolve correctly?",
-                        ))
+                parsed = self._citation_parser.parse(evidence.text_excerpt)
+                for cite in parsed:
+                    questions.append(VerificationQuestion(
+                        citation=cite,
+                        question=f"Does the citation {cite.identifier} resolve correctly?",
+                    ))
 
         return questions
 
-    async def _execute_questions(self, questions: list[VerificationQuestion]) -> list[VerificationQuestion]:
+    async def _execute_questions(
+        self, questions: list[VerificationQuestion]
+    ) -> list[VerificationQuestion]:
         """Execute verification questions independently (factored).
 
         Phase 3: resolve via citation parser (deterministic).

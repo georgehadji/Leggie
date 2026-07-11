@@ -24,7 +24,10 @@ from leggie.domain.models import (
 
 class FakeLLM(LLMPort):
     async def generate(self, request: LLMRequest) -> LLMResponse:
-        return LLMResponse(content="fake", model="fake", tier_used=ModelTier.FREE, usage={"prompt_tokens": 1, "completion_tokens": 1})
+        return LLMResponse(
+            content="fake", model="fake", tier_used=ModelTier.FREE,
+            usage={"prompt_tokens": 1, "completion_tokens": 1},
+        )
     async def generate_structured(self, request, schema):
         return (None, await self.generate(request))
     async def count_tokens(self, text, model=None):

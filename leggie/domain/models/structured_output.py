@@ -16,12 +16,16 @@ class IRACCandidate(BaseModel):
     conclusion: str = Field(description="Reasoned conclusion on the issue")
     verbatim_quote: str = Field(default="", description="Exact text span from the article")
     severity: str = Field(default="medium", description="critical, high, medium, low, info")
-    probability: float = Field(default=0.5, ge=0.0, le=1.0, description="Self-reported probability/confidence")
+    probability: float = Field(
+        default=0.5, ge=0.0, le=1.0, description="Self-reported probability/confidence"
+    )
 
 
 class LensFindings(BaseModel):
     """Response schema for a single lens analysis on one article."""
-    findings: list[IRACCandidate] = Field(default_factory=list, description="List of findings. Empty if no issues found.")
+    findings: list[IRACCandidate] = Field(
+        default_factory=list, description="List of findings. Empty if no issues found."
+    )
 
 
 class VSCandidate(BaseModel):
@@ -32,7 +36,9 @@ class VSCandidate(BaseModel):
     conclusion: str = Field(description="Reasoned conclusion")
     verbatim_quote: str = Field(default="", description="Exact text span")
     severity: str = Field(default="medium", description="critical, high, medium, low, info")
-    probability: float = Field(description="Estimated probability this finding is real", ge=0.0, le=1.0)
+    probability: float = Field(
+        description="Estimated probability this finding is real", ge=0.0, le=1.0
+    )
 
 
 class VSResponse(BaseModel):
@@ -44,7 +50,9 @@ class SkepticVerdictResponse(BaseModel):
     """Response schema for Skeptic review of a single finding."""
     verdict: str = Field(description="supports, refutes, neutral")
     reason: str = Field(description="Brief explanation")
-    confidence_adjustment: float = Field(default=0.0, description="Adjust finding confidence by this amount", ge=-0.5, le=0.5)
+    confidence_adjustment: float = Field(
+        default=0.0, description="Adjust finding confidence by this amount", ge=-0.5, le=0.5
+    )
 
 
 class BillIntroSummary(BaseModel):

@@ -1,7 +1,6 @@
 """Tests for config/settings — pydantic-settings validation."""
 
-import pytest
-from leggie.config.settings import Settings, LLMSettings, BudgetSettings
+from leggie.config.settings import BudgetSettings, LLMSettings, Settings
 
 
 class TestSettings:

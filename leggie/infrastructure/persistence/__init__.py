@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from leggie.application.ports.event_bus import EventBusPort, EventHandler
 from leggie.domain.models import Event, EventType
@@ -34,7 +33,9 @@ class InMemoryEventBus(EventBusPort):
 
     def unsubscribe(self, event_type: EventType, handler: EventHandler) -> None:
         if event_type in self._subscribers:
-            self._subscribers[event_type] = [h for h in self._subscribers[event_type] if h != handler]
+            self._subscribers[event_type] = [
+                h for h in self._subscribers[event_type] if h != handler
+            ]
 
     @property
     def events(self) -> list[Event]:

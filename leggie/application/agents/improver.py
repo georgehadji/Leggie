@@ -46,12 +46,16 @@ class MinimalChangeStrategy(ImprovementStrategy):
         suggestions: list[Suggestion] = []
 
         if finding.finding_type == FindingType.CONSTITUTIONAL:
+            issue_parts = finding.irac.issue.split(" ")
             suggestions.append(Suggestion(
                 finding_id=str(finding.id),
-                article_id=finding.irac.issue.split(" ")[1] if len(finding.irac.issue.split(" ")) > 1 else "",
+                article_id=issue_parts[1] if len(issue_parts) > 1 else "",
                 suggestion_type="minimal_change",
                 description="Review delegation clause for constitutional limits per Article 43",
-                proposed_change=f"Specify explicit criteria and limits for the delegated authority in Article {self._extract_article(finding)}",
+                proposed_change=(
+                    "Specify explicit criteria and limits for the delegated authority "
+                    f"in Article {self._extract_article(finding)}"
+                ),
                 priority="high" if finding.severity == Severity.HIGH else "medium",
             ))
 
@@ -60,8 +64,13 @@ class MinimalChangeStrategy(ImprovementStrategy):
                 finding_id=str(finding.id),
                 article_id=self._extract_article(finding),
                 suggestion_type="minimal_change",
-                description=f"Ensure alignment with relevant EU directive: {finding.irac.rule[:80]}",
-                proposed_change="Add explicit reference to the relevant EU directive and ensure full harmonization",
+                description=(
+                    f"Ensure alignment with relevant EU directive: {finding.irac.rule[:80]}"
+                ),
+                proposed_change=(
+                    "Add explicit reference to the relevant EU directive "
+                    "and ensure full harmonization"
+                ),
                 priority="high",
             ))
 
@@ -71,7 +80,9 @@ class MinimalChangeStrategy(ImprovementStrategy):
                 article_id=self._extract_article(finding),
                 suggestion_type="minimal_change",
                 description="Add fiscal impact assessment",
-                proposed_change="Include a quantified fiscal impact analysis for the proposed measure",
+                proposed_change=(
+                    "Include a quantified fiscal impact analysis for the proposed measure"
+                ),
                 priority="medium",
             ))
 
@@ -100,7 +111,11 @@ class ReformStrategy(ImprovementStrategy):
                 article_id="",
                 suggestion_type="reform",
                 description=f"Consider structural reform: {finding.irac.issue[:80]}",
-                proposed_change=f"Review the legislative approach for Article {self._extract_article(finding)}. Consider alternative approaches that address the core concern while maintaining legislative intent.",
+                proposed_change=(
+                    "Review the legislative approach for Article "
+                    f"{self._extract_article(finding)}. Consider alternative approaches "
+                    "that address the core concern while maintaining legislative intent."
+                ),
                 priority="high",
             ))
 

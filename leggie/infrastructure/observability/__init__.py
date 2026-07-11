@@ -41,7 +41,11 @@ def configure_logging(level: str | None = None) -> None:
         cache_logger_on_first_use=True,
     )
 
-    logging.basicConfig(format="%(message)s", stream=sys.stdout, level=getattr(logging, log_level.upper(), logging.INFO))
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stdout,
+        level=getattr(logging, log_level.upper(), logging.INFO),
+    )
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
@@ -81,7 +85,9 @@ def bind_trace_id(logger: structlog.stdlib.BoundLogger) -> structlog.stdlib.Boun
 class Timer:
     """Simple context manager for timing operations."""
 
-    def __init__(self, logger: structlog.stdlib.BoundLogger, operation: str, **context: Any) -> None:
+    def __init__(
+        self, logger: structlog.stdlib.BoundLogger, operation: str, **context: Any
+    ) -> None:
         self._logger = logger
         self._operation = operation
         self._context = context
@@ -95,4 +101,9 @@ class Timer:
     async def __aexit__(self, *args: Any) -> None:
         import time
         elapsed = time.monotonic() - self._start
-        self._logger.info("timing.completed", operation=self._operation, elapsed_ms=round(elapsed * 1000, 2), **self._context)
+        self._logger.info(
+            "timing.completed",
+            operation=self._operation,
+            elapsed_ms=round(elapsed * 1000, 2),
+            **self._context,
+        )

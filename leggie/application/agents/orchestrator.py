@@ -12,7 +12,6 @@ Phase 2+: parallel fan-out with asyncio.TaskGroup + semaphore.
 from __future__ import annotations
 
 import asyncio
-import logging
 
 from leggie.application.agents.constitutional_lens import ConstitutionalLens
 from leggie.application.agents.economic_lens import EconomicLens

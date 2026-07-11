@@ -54,7 +54,11 @@ class TestConstitutionalLens:
     async def test_analyze_returns_empty_for_simple_article(self):
         """F2: No findings for articles with no constitutional issues."""
         lens = ConstitutionalLens()
-        simple = Article(id="99", raw_text="\u0386\u03c1\u03b8\u03c1\u03bf 99\n1. \u0391\u03c0\u03bb\u03ae \u03b4\u03b9\u03ac\u03c4\u03b1\u03be\u03b7 \u03c7\u03c9\u03c1\u03af\u03c2 \u03b6\u03b7\u03c4\u03ae\u03bc\u03b1\u03c4\u03b1.")
+        simple_text = "Άρθρο 99\n1. Απλή διάταξη χωρίς ζητήματα."
+        simple = Article(
+            id="99",
+            raw_text=simple_text,
+        )
         findings = await lens.analyze(simple)
         assert len(findings) == 0
 

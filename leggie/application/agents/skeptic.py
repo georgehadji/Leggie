@@ -5,9 +5,9 @@ F4: Uses LLM when available for real adversarial review.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from leggie.domain.models import Finding, Confidence, FindingType
+from leggie.domain.models import Confidence, Finding, FindingType
 
 
 @dataclass
@@ -31,14 +31,18 @@ class NumericGate(SkepticGate):
     async def examine(self, finding: Finding) -> SkepticVerdict:
         if finding.finding_type != FindingType.NUMERIC:
             return SkepticVerdict(str(finding.id), "numeric", "neutral", "Not a numeric finding")
-        return SkepticVerdict(str(finding.id), "numeric", "neutral", "Numeric verification deferred")
+        return SkepticVerdict(
+            str(finding.id), "numeric", "neutral", "Numeric verification deferred"
+        )
 
 
 class TemporalGate(SkepticGate):
     async def examine(self, finding: Finding) -> SkepticVerdict:
         if finding.finding_type != FindingType.TEMPORAL:
             return SkepticVerdict(str(finding.id), "temporal", "neutral", "Not a temporal finding")
-        return SkepticVerdict(str(finding.id), "temporal", "neutral", "Temporal verification deferred")
+        return SkepticVerdict(
+            str(finding.id), "temporal", "neutral", "Temporal verification deferred"
+        )
 
 
 class FactualGate(SkepticGate):
@@ -56,8 +60,12 @@ class FactualGate(SkepticGate):
 class ObligationGate(SkepticGate):
     async def examine(self, finding: Finding) -> SkepticVerdict:
         if finding.finding_type != FindingType.OBLIGATION_ENTITLEMENT:
-            return SkepticVerdict(str(finding.id), "obligation", "neutral", "Not an obligation finding")
-        return SkepticVerdict(str(finding.id), "obligation", "neutral", "Obligation verification deferred")
+            return SkepticVerdict(
+                str(finding.id), "obligation", "neutral", "Not an obligation finding"
+            )
+        return SkepticVerdict(
+            str(finding.id), "obligation", "neutral", "Obligation verification deferred"
+        )
 
 
 class CalibratedSkeptic:

@@ -38,8 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
     # analyze
     analyze = subparsers.add_parser("analyze", help="Analyze a legal bill")
     analyze.add_argument("file", type=Path, help="Path to the bill file (PDF/DOCX/HTML/TXT)")
-    analyze.add_argument("--output", "-o", type=Path, default=None, help="Output directory for reports")
-    analyze.add_argument("--lenses", "-l", nargs="+", default=None, help="Lenses to apply (default: all 5)")
+    analyze.add_argument(
+        "--output", "-o", type=Path, default=None, help="Output directory for reports"
+    )
+    analyze.add_argument(
+        "--lenses", "-l", nargs="+", default=None, help="Lenses to apply (default: all 5)"
+    )
     analyze.add_argument(
         "--articles", "-a", nargs="+", default=None,
         help="Restrict analysis to these Άρθρο IDs (see `leggie preview` first to choose)",
@@ -47,7 +51,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # eval
     eval_cmd = subparsers.add_parser("eval", help="Run evaluation against gold set")
-    eval_cmd.add_argument("--gold-set", "-g", type=Path, required=True, help="Path to gold-set JSON")
+    eval_cmd.add_argument(
+        "--gold-set", "-g", type=Path, required=True, help="Path to gold-set JSON"
+    )
     eval_cmd.add_argument("--results", "-r", type=Path, default=None, help="Path to save results")
 
     # parse
@@ -176,8 +182,6 @@ async def _handle_analyze(args: argparse.Namespace, mediator) -> int:
 
 async def _handle_eval(args: argparse.Namespace, mediator) -> int:
     """Handle the eval command via CQRS."""
-    import json
-
     from leggie.application.cqrs.commands.cli_commands import EvalGoldSetCommand
 
     cmd = EvalGoldSetCommand(

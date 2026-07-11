@@ -64,15 +64,15 @@ class Stage(ABC):
 
     # ── Lifecycle hooks (override as needed) ────────────────────────
 
-    async def _plan(self, context: StageContext) -> None:
+    async def _plan(self, context: StageContext) -> None:  # noqa: B027
         """Plan the work for this stage. Default: no-op."""
 
     @abstractmethod
     async def _execute(self, context: StageContext) -> None:
         """Execute the stage's core work."""
 
-    async def _aggregate(self, context: StageContext) -> None:
+    async def _aggregate(self, context: StageContext) -> None:  # noqa: B027
         """Aggregate results within the stage. Default: no-op."""
 
-    async def _verify(self, context: StageContext) -> None:
+    async def _verify(self, context: StageContext) -> None:  # noqa: B027
         """Verify stage output. Default: no-op."""

@@ -1,7 +1,7 @@
 """Tests for CLI — argparse-based command-line interface."""
 
-import pytest
 from pathlib import Path
+
 from leggie.interfaces.cli import build_parser
 
 

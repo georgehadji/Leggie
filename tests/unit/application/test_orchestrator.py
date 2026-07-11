@@ -33,7 +33,9 @@ class TestOrchestrator:
         # 3 articles × 5 lenses = 15 tasks
         assert len(tasks) == 15
         for task in tasks:
-            assert task.lens in ["constitutional", "legal_coherence", "economic", "implementation", "eu_gdpr"]
+            assert task.lens in [
+                "constitutional", "legal_coherence", "economic", "implementation", "eu_gdpr"
+            ]
             assert task.sample_count == 1
 
     def test_decompose_task_article_ids(self):

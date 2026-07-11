@@ -70,7 +70,6 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 selected_article_ids=command.article_ids,
             )
 
-            from leggie.domain.models import WorkflowState
             summary = f"Analysis complete: {len(findings)} finding(s), {len(reports)} report(s)"
             for f in findings:
                 summary += f"\n  - [{f.finding_type.value}:{f.severity.value}] {f.irac.issue[:80]}"
@@ -139,6 +138,7 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
         try:
             import json
             from pathlib import Path
+
             from leggie.infrastructure.persistence.eval_harness import EvalScorer, GoldSet
 
             gold_set = GoldSet(command.gold_set_path)
@@ -146,7 +146,6 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
 
             results = []
             for bill_id in gold_set.bill_ids:
-                labels = gold_set.get_labels(bill_id)
                 # Try to find a bill file matching this bill_id
                 bill_path = _find_bill_file(bill_id, Path(command.gold_set_path).parent)
                 if bill_path and llm:

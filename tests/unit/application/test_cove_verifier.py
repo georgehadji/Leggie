@@ -55,8 +55,14 @@ class TestCoVeVerifier:
     async def test_verify_multiple_citations(self):
         verifier = CoVeVerifier()
         cites = [
-            Citation(scheme=CitationScheme.FEK, identifier="ΦΕΚ Α 1/2023", original_text="ΦΕΚ Α 1/2023", resolved=True),
-            Citation(scheme=CitationScheme.CELEX, identifier="32018L1972", original_text="CELEX:32018L1972", resolved=True),
+            Citation(
+                scheme=CitationScheme.FEK, identifier="ΦΕΚ Α 1/2023",
+                original_text="ΦΕΚ Α 1/2023", resolved=True,
+            ),
+            Citation(
+                scheme=CitationScheme.CELEX, identifier="32018L1972",
+                original_text="CELEX:32018L1972", resolved=True,
+            ),
         ]
         result = await verifier.verify(make_finding_with_citations(cites))
         assert result.verified_count == 2
@@ -68,7 +74,10 @@ class TestCoVeVerifier:
         findings = [
             make_finding_with_citations(),
             make_finding_with_citations([
-                Citation(scheme=CitationScheme.FEK, identifier="ΦΕΚ Α 1/2023", original_text="ΦΕΚ Α 1/2023", resolved=True),
+                Citation(
+                    scheme=CitationScheme.FEK, identifier="ΦΕΚ Α 1/2023",
+                    original_text="ΦΕΚ Α 1/2023", resolved=True,
+                ),
             ]),
         ]
         results = await verifier.verify_batch(findings)

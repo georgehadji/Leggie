@@ -41,9 +41,9 @@ class OpenRouterProvider(BaseLLMProvider):
     async def generate(self, request: LLMRequest) -> LLMResponse:
         try:
             import httpx
-        except ImportError:
+        except ImportError as e:
             from leggie.infrastructure.llm.base import LLMError
-            raise LLMError("httpx not installed")
+            raise LLMError("httpx not installed") from e
 
         await self._rate_limiter.acquire()
         model = request.model or self._default_model
@@ -95,7 +95,10 @@ class OpenRouterProvider(BaseLLMProvider):
         usage = data.get("usage", {})
         return LLMResponse(
             content=content, model=model, tier_used=ModelTier.BUDGET,
-            usage={"prompt_tokens": usage.get("prompt_tokens", 0), "completion_tokens": usage.get("completion_tokens", 0)},
+            usage={
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+            },
             latency_ms=elapsed,
         )
 

@@ -1,6 +1,7 @@
 """Tests for observability — structlog logging and timer."""
 
 import pytest
+
 from leggie.infrastructure.observability import Timer, get_logger
 
 
@@ -28,7 +29,7 @@ class TestTraceContext:
         assert len(tid) > 20
 
     def test_bind_trace_id(self):
-        from leggie.infrastructure.observability import get_logger, bind_trace_id, set_trace_id
+        from leggie.infrastructure.observability import bind_trace_id, get_logger, set_trace_id
         set_trace_id("trace-abc")
         logger = bind_trace_id(get_logger())
         assert "trace_id" in logger._context
@@ -47,7 +48,7 @@ class TestTimer:
         logger.info = capture_info
 
         try:
-            async with Timer(logger, "test_operation", key="value") as timer:
+            async with Timer(logger, "test_operation", key="value"):
                 pass  # Operation completes instantly
         finally:
             logger.info = original_info

@@ -148,7 +148,8 @@ class ExecutiveSummaryRenderer(ReportRenderer):
             "content": (
                 f"This report analyzes **{document.title}** ({len(document.articles)} articles, "
                 f"{len(findings)} findings). "
-                f"The analysis identified {sum(1 for f in findings if f.severity in (Severity.CRITICAL, Severity.HIGH))} "
+                f"The analysis identified "
+                f"{sum(1 for f in findings if f.severity in (Severity.CRITICAL, Severity.HIGH))} "
                 f"high-severity issues."
             ),
         })
@@ -162,13 +163,19 @@ class ExecutiveSummaryRenderer(ReportRenderer):
             sections.append({
                 "level": 2,
                 "title": "Critical Issues",
-                "content": [f"- **{f.irac.issue[:100]}** — {f.finding_type.value} ({f.lens})" for f in critical],
+                "content": [
+                    f"- **{f.irac.issue[:100]}** — {f.finding_type.value} ({f.lens})"
+                    for f in critical
+                ],
             })
         if high:
             sections.append({
                 "level": 2,
                 "title": "High-Severity Issues",
-                "content": [f"- **{f.irac.issue[:100]}** — {f.finding_type.value} ({f.lens})" for f in high],
+                "content": [
+                    f"- **{f.irac.issue[:100]}** — {f.finding_type.value} ({f.lens})"
+                    for f in high
+                ],
             })
         if medium:
             sections.append({
@@ -182,7 +189,9 @@ class ExecutiveSummaryRenderer(ReportRenderer):
             sections.append({
                 "level": 2,
                 "title": "Recommendations",
-                "content": [f"- {s.description} (priority: {s.priority})" for s in suggestions[:10]],
+                "content": [
+                    f"- {s.description} (priority: {s.priority})" for s in suggestions[:10]
+                ],
             })
 
         return sections
@@ -203,7 +212,10 @@ class ArticleByArticleRenderer(ReportRenderer):
         sections: list[dict[str, Any]] = []
         by_article = self._findings_by_article(findings)
 
-        for article_id in sorted(by_article.keys(), key=lambda x: (not x.isdigit(), int(x) if x.isdigit() else 0)):
+        def _sort_key(x: str) -> tuple[bool, int]:
+            return (not x.isdigit(), int(x) if x.isdigit() else 0)
+
+        for article_id in sorted(by_article.keys(), key=_sort_key):
             article_findings = by_article[article_id]
             article = None
             for a in document.articles:
@@ -217,7 +229,10 @@ class ArticleByArticleRenderer(ReportRenderer):
 
             content_lines: list[str] = []
             for f in article_findings:
-                content_lines.append(f"**{f.finding_type.value.upper()}** — Severity: {f.severity.value}, Confidence: {f.confidence.score}")
+                content_lines.append(
+                    f"**{f.finding_type.value.upper()}** — Severity: {f.severity.value}, "
+                    f"Confidence: {f.confidence.score}"
+                )
                 content_lines.append(f"  - Issue: {f.irac.issue}")
                 content_lines.append(f"  - Conclusion: {f.irac.conclusion}")
                 if f.evidence:

@@ -20,23 +20,40 @@ from leggie.domain.models import (
 )
 
 _COST_PATTERNS = [
-    re.compile(r"(?:δαπάνη|κόστος|επιβάρυνση|χρηματοδότηση|προϋπολογισμός)", re.UNICODE | re.IGNORECASE),
+    re.compile(
+        r"(?:δαπάνη|κόστος|επιβάρυνση|χρηματοδότηση|προϋπολογισμός)", re.UNICODE | re.IGNORECASE
+    ),
     re.compile(r"(?:τέλο[ςσ]|εισφορά|πρόστιμο|κύρωση|ποινή)", re.UNICODE | re.IGNORECASE),
 ]
 
 _UNFUNDED_PATTERNS = [
-    re.compile(r"(?:χωρίς\s+πρόβλεψη|δεν\s+προβλέπεται\s+δαπάνη|από\s+τον\s+κρατικό\s+προϋπολογισμό)", re.UNICODE | re.IGNORECASE),
-    re.compile(r"(?:καλύπτεται\s+από|βαρύνει\s+τον\s+κρατικό|επιβαρύνει\s+τον\s+προϋπολογισμό)", re.UNICODE | re.IGNORECASE),
+    re.compile(
+        r"(?:χωρίς\s+πρόβλεψη|δεν\s+προβλέπεται\s+δαπάνη|από\s+τον\s+κρατικό\s+προϋπολογισμό)",
+        re.UNICODE | re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:καλύπτεται\s+από|βαρύνει\s+τον\s+κρατικό|επιβαρύνει\s+τον\s+προϋπολογισμό)",
+        re.UNICODE | re.IGNORECASE,
+    ),
 ]
 
 _ADMIN_BURDEN_PATTERNS = [
-    re.compile(r"(?:υποχρέωση\s+υποβολή[ςσ]|υποχρέωση\s+τήρηση[ςσ]|τήρηση\s+αρχείου)", re.UNICODE | re.IGNORECASE),
-    re.compile(r"(?:προθεσμί[αα]|εντός\s+\d+\s+ημερώ[νν]|άμεση\s+εφαρμογή)", re.UNICODE | re.IGNORECASE),
+    re.compile(
+        r"(?:υποχρέωση\s+υποβολή[ςσ]|υποχρέωση\s+τήρηση[ςσ]|τήρηση\s+αρχείου)",
+        re.UNICODE | re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:προθεσμί[αα]|εντός\s+\d+\s+ημερώ[νν]|άμεση\s+εφαρμογή)", re.UNICODE | re.IGNORECASE
+    ),
 ]
 
 _DISPROPORTIONATE_PATTERNS = [
-    re.compile(r"(?:πρόστιμο\s+έω[σς]\s+\d|ποινή\s+φυλάκισης|ιοβόσβεστη)", re.UNICODE | re.IGNORECASE),
-    re.compile(r"(?:δέσμευση|κατάσχεσ[ηη]|αναστολή\s+λειτουργίας)", re.UNICODE | re.IGNORECASE),
+    re.compile(
+        r"(?:πρόστιμο\s+έω[σς]\s+\d|ποινή\s+φυλάκισης|ιοβόσβεστη)", re.UNICODE | re.IGNORECASE
+    ),
+    re.compile(
+        r"(?:δέσμευση|κατάσχεσ[ηη]|αναστολή\s+λειτουργίας)", re.UNICODE | re.IGNORECASE
+    ),
 ]
 
 
@@ -60,9 +77,18 @@ class EconomicLens(Lens):
                     finding_type=FindingType.ECONOMIC,
                     irac=IRAC(
                         issue=f"Άρθρο {article.id}: Οικονομική επιβάρυνση",
-                        rule="Κάθε νομοσχέδιο πρέπει να συνοδεύεται από εκτίμηση δημοσιονομικών επιπτώσεων",
-                        application=f"Το Άρθρο {article.id} αναφέρεται σε δαπάνη/κόστος χωρίς ποσοτική ανάλυση",
-                        conclusion=f"Απαιτείται ποσοτική εκτίμηση δημοσιονομικών επιπτώσεων για το Άρθρο {article.id}",
+                        rule=(
+                            "Κάθε νομοσχέδιο πρέπει να συνοδεύεται από εκτίμηση "
+                            "δημοσιονομικών επιπτώσεων"
+                        ),
+                        application=(
+                            f"Το Άρθρο {article.id} αναφέρεται σε δαπάνη/κόστος "
+                            "χωρίς ποσοτική ανάλυση"
+                        ),
+                        conclusion=(
+                            "Απαιτείται ποσοτική εκτίμηση δημοσιονομικών επιπτώσεων "
+                            f"για το Άρθρο {article.id}"
+                        ),
                     ),
                     severity=Severity.MEDIUM,
                     confidence=Confidence.from_score(0.55, provenance="pattern-match"),
@@ -77,7 +103,10 @@ class EconomicLens(Lens):
                     finding_type=FindingType.IMPLEMENTATION,
                     irac=IRAC(
                         issue=f"Άρθρο {article.id}: Διοικητική επιβάρυνση",
-                        rule="Η διοικητική επιβάρυνση πρέπει να είναι αναλογική προς τον επιδιωκόμενο σκοπό",
+                        rule=(
+                            "Η διοικητική επιβάρυνση πρέπει να είναι αναλογική "
+                            "προς τον επιδιωκόμενο σκοπό"
+                        ),
                         application=f"Το Άρθρο {article.id} δημιουργεί διοικητικές υποχρεώσεις",
                         conclusion=f"Το Άρθρο {article.id} χρήζει ανάλυσης διοικητικής επιβάρυνσης",
                     ),

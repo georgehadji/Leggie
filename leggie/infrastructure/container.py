@@ -19,11 +19,11 @@ from typing import Any
 
 from leggie.application.ports.blackboard import BlackboardPort
 from leggie.application.ports.citation_parser import CitationParserPort
-from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.event_bus import EventBusPort
 from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
+from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.ports.state import StatePort
 

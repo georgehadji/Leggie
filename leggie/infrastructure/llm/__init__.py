@@ -17,6 +17,7 @@ from leggie.infrastructure.llm.base import (
 )
 from leggie.infrastructure.llm.decorators import with_cache, with_retry
 
+
 # Legacy adapter — uses OpenRouter as primary provider
 class LLMAdapter:
     """Concrete LLM adapter — uses OpenRouter as primary provider."""
@@ -53,7 +54,7 @@ class LLMAdapter:
             obj = schema(**data)
             return obj, response
         except Exception as e:
-            raise LLMError(f"Failed to parse structured response: {e}")
+            raise LLMError(f"Failed to parse structured response: {e}") from e
 
     async def count_tokens(self, text, model=None):
         return await self._provider.count_tokens(text, model)

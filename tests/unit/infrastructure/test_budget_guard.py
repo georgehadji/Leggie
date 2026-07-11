@@ -4,6 +4,8 @@ import pytest
 
 from leggie.infrastructure.budget_guard import BudgetAction, BudgetGuard
 
+MODEL = "claude-sonnet-4-20250514"
+
 
 class TestBudgetGuard:
     def test_initial_state(self):
@@ -14,29 +16,29 @@ class TestBudgetGuard:
 
     def test_allow_within_budget(self):
         guard = BudgetGuard(max_tokens=100_000, max_cost=5.0)
-        action = guard.check(prompt_tokens=1_000, completion_tokens=500, model="claude-sonnet-4-20250514")
+        action = guard.check(prompt_tokens=1_000, completion_tokens=500, model=MODEL)
         assert action == BudgetAction.ALLOW
 
     def test_block_when_exceeded(self):
         guard = BudgetGuard(max_tokens=1_000, max_cost=1.0)
         # First exceed: guard degrades before blocking
-        action = guard.check(prompt_tokens=2_000, completion_tokens=500, model="claude-sonnet-4-20250514")
+        action = guard.check(prompt_tokens=2_000, completion_tokens=500, model=MODEL)
         assert action == BudgetAction.DEGRADE
         guard.apply_degrade()
         # Still exceeded after degrade: now block
-        action = guard.check(prompt_tokens=2_000, completion_tokens=500, model="claude-sonnet-4-20250514")
+        action = guard.check(prompt_tokens=2_000, completion_tokens=500, model=MODEL)
         assert action == BudgetAction.BLOCK
 
     def test_degrade_at_80_percent(self):
         guard = BudgetGuard(max_tokens=1_000, max_cost=1.0)
         # Use enough to trigger 80% threshold
-        guard.record_usage(prompt_tokens=450, completion_tokens=400, model="claude-sonnet-4-20250514")
-        action = guard.check(prompt_tokens=50, completion_tokens=50, model="claude-sonnet-4-20250514")
+        guard.record_usage(prompt_tokens=450, completion_tokens=400, model=MODEL)
+        action = guard.check(prompt_tokens=50, completion_tokens=50, model=MODEL)
         assert action == BudgetAction.DEGRADE
 
     def test_record_usage_tracks_correctly(self):
         guard = BudgetGuard(max_tokens=100_000, max_cost=5.0)
-        guard.record_usage(prompt_tokens=5_000, completion_tokens=3_000, model="claude-sonnet-4-20250514")
+        guard.record_usage(prompt_tokens=5_000, completion_tokens=3_000, model=MODEL)
         assert guard.remaining_tokens == 92_000
         assert guard.usage_ratio > 0.0
 
@@ -54,7 +56,7 @@ class TestBudgetGuard:
     def test_degrade_strategy(self):
         guard = BudgetGuard(max_tokens=100_000, max_cost=1.0)
         guard._state.degrade_strategy = "fewer_paths"
-        action = guard.check(prompt_tokens=90_000, completion_tokens=10_000, model="claude-sonnet-4-20250514")
+        action = guard.check(prompt_tokens=90_000, completion_tokens=10_000, model=MODEL)
         assert action in (BudgetAction.DEGRADE, BudgetAction.ALLOW)
 
     def test_reset(self):

@@ -9,6 +9,7 @@ Phase 1: ingest → parse → analyze (Constitutional lens) → report.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from leggie.application.agents.improver import ImprovementEngine
 from leggie.application.agents.orchestrator import Orchestrator
@@ -26,6 +27,11 @@ from leggie.domain.models import (
     Finding,
     WorkflowState,
 )
+
+if TYPE_CHECKING:
+    from leggie.application.ports.ingest import IngestPort
+    from leggie.application.ports.llm import LLMPort
+    from leggie.application.ports.parse import ParsePort
 
 
 def _lazy_ingest_adapter() -> IngestPort:
@@ -130,9 +136,10 @@ class BillAnalysisFlow:
         Returns:
             (findings, reports) tuple.
         """
-        from leggie.infrastructure.observability import get_logger, set_trace_id, bind_trace_id
-        import uuid
         import json
+        import uuid
+
+        from leggie.infrastructure.observability import bind_trace_id, get_logger, set_trace_id
         file_path = Path(file_path)
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -146,14 +153,18 @@ class BillAnalysisFlow:
             # 1. Ingest
             self._transition(WorkflowState.INGESTING, "ingest_started")
             text = await self._do_ingest(file_path)
-            self._record_event(EventType.ANALYSIS_STARTED, {"file": str(file_path), "size": len(text)})
+            self._record_event(
+                EventType.ANALYSIS_STARTED, {"file": str(file_path), "size": len(text)}
+            )
             self._transition(WorkflowState.PARSING, "ingest_completed")
 
             # 2. Parse
             self._doc = self._do_parse(text, file_path)
         else:
             # preview() already ingested + parsed this file — reuse it.
-            self._record_event(EventType.ANALYSIS_STARTED, {"file": str(file_path), "size": len(self._doc.raw_text)})
+            self._record_event(EventType.ANALYSIS_STARTED, {
+                "file": str(file_path), "size": len(self._doc.raw_text)
+            })
 
         if selected_article_ids is not None:
             selected = [a for a in self._doc.articles if a.id in selected_article_ids]
@@ -229,8 +240,12 @@ class BillAnalysisFlow:
 
         # 9. Report — render both report types (Phase 4)
         if self._doc and self._findings:
-            exec_summary = await ExecutiveSummaryRenderer().render(self._doc, self._findings, self._suggestions)
-            article_by_article = await ArticleByArticleRenderer().render(self._doc, self._findings, self._suggestions)
+            exec_summary = await ExecutiveSummaryRenderer().render(
+                self._doc, self._findings, self._suggestions
+            )
+            article_by_article = await ArticleByArticleRenderer().render(
+                self._doc, self._findings, self._suggestions
+            )
             self._reports = [exec_summary, article_by_article]
 
             # Auto-save reports and findings to output directory
@@ -292,7 +307,9 @@ class BillAnalysisFlow:
         return await self._ingester.ingest(file_path)
 
     def _do_parse(self, text: str, file_path: Path) -> Document:
-        return self._parser.parse(text, title=file_path.stem, source_format=file_path.suffix.lstrip("."))
+        return self._parser.parse(
+            text, title=file_path.stem, source_format=file_path.suffix.lstrip(".")
+        )
 
     def _transition(self, target: WorkflowState, event: str) -> None:
         """Transition the FSM, tracking current state."""

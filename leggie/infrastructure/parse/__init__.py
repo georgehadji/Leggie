@@ -19,7 +19,6 @@ from typing import Any
 
 from leggie.domain.models import Article, Document, Paragraph, SubParagraph
 
-
 # ── Cross-reference stop-list (FIX_PLAN D1.4) ───────────────────────────────
 _STOP_PATTERN: Pattern = re.compile(
     r"(?:"
@@ -93,7 +92,7 @@ class DocumentParser:
         return text.strip()
 
     def _extract_articles(self, text: str) -> list[Article]:
-        """Extract articles using line-anchored heading detection.
+        r"""Extract articles using line-anchored heading detection.
 
         F0.1: Line-anchor headings via ^ with re.MULTILINE.
         F0.2: Number constrained to \d+[Α-Ωα-ω]? (no multi-token garbage).
@@ -139,10 +138,7 @@ class DocumentParser:
             last_num = num_int
 
             # Content: from this heading start to next heading start (or end)
-            if i + 1 < len(candidates):
-                content_end = candidates[i + 1]["start"]
-            else:
-                content_end = len(text)
+            content_end = candidates[i + 1]["start"] if i + 1 < len(candidates) else len(text)
             raw = text[cand["start"]:content_end].strip()
 
             paragraphs = self._extract_paragraphs(raw)
@@ -190,7 +186,7 @@ class DocumentParser:
 
     def _infer_title(self, text: str) -> str:
         """Infer document title from first meaningful line."""
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
         for line in lines[:5]:
             if len(line) > 10 and not line.startswith("Άρθρο"):
                 return line[:200]

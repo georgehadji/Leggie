@@ -83,7 +83,9 @@ class CascadeTracker:
         tier_stats: dict[str, dict] = {}
         for d in self._decisions:
             if d.tier_attempted not in tier_stats:
-                tier_stats[d.tier_attempted] = {"attempts": 0, "successes": 0, "cost": 0.0, "tokens": 0}
+                tier_stats[d.tier_attempted] = {
+                    "attempts": 0, "successes": 0, "cost": 0.0, "tokens": 0
+                }
             tier_stats[d.tier_attempted]["attempts"] += 1
             if d.success:
                 tier_stats[d.tier_attempted]["successes"] += 1
