@@ -71,12 +71,13 @@ LEGGIE_LLM__MAX_CONCURRENCY=10 python -m leggie analyze Inputs/OE_ΣΧΝ-ΥΠΔ�
 |-----|---------|--------------------------|---------|-----------|--------------------|
 | full5 | all 5 lenses, `-o Outputs/full5` | validation of full pipeline vs single-lens baseline | **Stopped** mid-run (route-fix made it stale) | 1,175 | heavy `cascade: ... premium → google/gemini-2.5-pro (empty)` — dead `lens_analysis` route meant every lens ran on fallback 4096-token config |
 | full5_fixed | all 5 lenses, `-o Outputs/full5_fixed` | `lens_analysis` route now active (`max_tokens=6144`, cascade to pro) | **Stopped** — OpenRouter 402 Payment Required | 2,892 | 714 `HTTP/1.1 402 Payment Required` responses; no output files written |
+| full5_final | all 5 lenses, `-o Outputs/full5_final` | account topped up; Pro critic + active `lens_analysis` route | **Stopped** by user (degraded by parse failures/truncation retries) | 1,247 | 189 `Failed to parse structured response`, 111 `skeptic_llm_error`, 88 truncation retries, 1 `cove_quote_fail`; no output files |
 
 ## Blocker: account balance
 
-The full 5-lens smoke hit the OpenRouter credit wall (`402 Payment Required`) during the Skeptic/CoVe stage. The per-run budget guard was not the limiting factor — the OpenRouter account itself ran out of credits. No `Outputs/full5_fixed/*` files were produced.
+The earlier `full5_fixed` smoke hit the OpenRouter credit wall (`402 Payment Required`) during the Skeptic/CoVe stage. The per-run budget guard was not the limiting factor — the OpenRouter account itself ran out of credits. After topping up, `full5_final` started but was stopped because it was dominated by structured-output failures and truncation retries.
 
-**Next:** add OpenRouter credits, then re-run the full 5-lens smoke.
+**Next:** validate the `None`-content fix and tighter JSON prompts on a small article subset, then re-run the full 5-lens smoke.
 
 ## Config changes applied since v5
 
@@ -85,13 +86,14 @@ The full 5-lens smoke hit the OpenRouter credit wall (`402 Payment Required`) du
 | Wire all lenses to `lens_analysis` route | `leggie/application/agents/orchestrator.py` | The route was dead because orchestrator queried `lens_<name>`; now all lenses get the configured `max_tokens=6144` and cascade. |
 | Upgrade `adversarial_critic` to Gemini Pro | `config/routes.yaml` | Critic must be stronger than the lens model to catch errors. |
 
-## Candidate next variables (after full5_fixed)
+## Candidate next variables (after full5_final)
 
 Per the plan's ablation discipline, change only one variable per smoke run:
 
-1. **Strengthen the JSON-only system prompt** in the skeptic/CoVe prompt templates if JSON compliance failures persist.
-2. **Raise hard-coded `max_tokens` further** if truncation remains the dominant failure mode.
-3. **Test a cheaper lens model** (e.g. `deepseek/deepseek-v4-flash`) only after the Greek-legal yield is proven stable.
+1. **Fix `None` content from OpenRouter** — already applied; validate on a subset run.
+2. **Strengthen the JSON-only system prompt** in the skeptic/CoVe prompt templates if JSON compliance failures persist.
+3. **Raise hard-coded `max_tokens` further** if truncation remains the dominant failure mode.
+4. **Test a cheaper lens model** (e.g. `deepseek/deepseek-v4-flash`) only after the Greek-legal yield is proven stable.
 
 ## Offline gates
 

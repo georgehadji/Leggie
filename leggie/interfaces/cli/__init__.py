@@ -36,6 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--output", "-o", type=Path, default=None, help="Output directory for reports")
     analyze.add_argument("--lenses", "-l", nargs="+", default=None, help="Lenses to apply (default: all 5)")
     analyze.add_argument(
+        "--articles", "-a", type=str, default=None,
+        help="Articles to analyze, e.g. '1-5,7,10' or '1,2,3' (default: all)",
+    )
+    analyze.add_argument(
         "--verbalized-sampling", action="store_true",
         help="Enable verbalized sampling (experimental, increases cost)",
     )
@@ -147,6 +151,7 @@ async def _handle_analyze(args: argparse.Namespace, mediator: Mediator) -> int:
         file_path=str(args.file),
         output_path=str(args.output) if args.output else None,
         lenses=args.lenses,
+        articles=args.articles,
         use_verbalized_sampling=args.verbalized_sampling,
         checkpoint_path=str(args.checkpoint) if args.checkpoint else None,
     )

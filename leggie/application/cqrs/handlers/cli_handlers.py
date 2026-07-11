@@ -108,6 +108,7 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             findings, reports = await flow.run(
                 command.file_path,
                 lenses=command.lenses,
+                articles=command.articles,
             )
 
             summary = f"Analysis complete: {len(findings)} finding(s), {len(reports)} report(s)"

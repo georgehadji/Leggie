@@ -323,6 +323,12 @@ class TestStructuredResponseParser:
         with pytest.raises(ValueError, match="Empty content"):
             parser.parse("   ", LensFindings)
 
+    def test_parse_none_content_raises(self):
+        """None content is treated as empty and raises ValueError."""
+        parser = self.make_parser()
+        with pytest.raises(ValueError, match="Empty content"):
+            parser.parse(None, LensFindings)  # type: ignore[arg-type]
+
     def test_parse_schema_mismatch_raises(self):
         """JSON with missing required fields in findings raises ValueError."""
         parser = self.make_parser()

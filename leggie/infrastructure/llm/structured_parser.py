@@ -66,7 +66,7 @@ class StructuredResponseParser:
         Raises ``ValueError`` (with descriptive message) on failure —
         the caller decides retry vs degrade.
         """
-        content = content.strip()
+        content = (content or "").strip()
         # 1. Strip ```json … ``` fences
         content = self._strip_fences(content)
         if not content:

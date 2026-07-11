@@ -32,6 +32,11 @@ class TestBuildParser:
         args = parser.parse_args(["analyze", "bill.txt", "-l", "constitutional", "eu_gdpr"])
         assert args.lenses == ["constitutional", "eu_gdpr"]
 
+    def test_analyze_with_articles(self):
+        parser = build_parser()
+        args = parser.parse_args(["analyze", "bill.txt", "-a", "1-3,5"])
+        assert args.articles == "1-3,5"
+
     def test_eval_command(self):
         parser = build_parser()
         args = parser.parse_args(["eval", "-g", "gold.json"])

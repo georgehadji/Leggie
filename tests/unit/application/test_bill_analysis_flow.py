@@ -5,7 +5,10 @@ import json
 import pytest
 
 from leggie.application.services.rerank import CompositeReranker
-from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
+from leggie.application.workflow.bill_analysis_flow import (
+    BillAnalysisFlow,
+    _parse_article_selection,
+)
 from leggie.domain.models import (
     IRAC,
     Confidence,
@@ -114,6 +117,15 @@ class TestBillAnalysisFlow:
         assert reports[1].report_type == "article_by_article"
 
     @pytest.mark.asyncio
+    async def test_run_with_article_selection(self, sample_bill_file):
+        flow = BillAnalysisFlow()
+        findings, reports = await flow.run(sample_bill_file, articles="2")
+        assert flow.state == WorkflowState.DONE
+        # All emitted findings must belong to the selected article.
+        for f in findings:
+            assert "Άρθρο 2" in f.irac.issue or "2" in f.irac.issue, f.irac.issue
+
+    @pytest.mark.asyncio
     async def test_reports_have_content(self, sample_bill_file):
         flow = BillAnalysisFlow()
         findings, reports = await flow.run(sample_bill_file)
@@ -201,6 +213,25 @@ def _make_finding(issue: str, confidence: float = 0.8, finding_type=None,
         lens=lens,
         model="test",
     )
+
+
+class TestArticleSelection:
+    """Tests for _parse_article_selection."""
+
+    def test_exact_ids(self):
+        assert _parse_article_selection("1,3,5", ["1", "2", "3", "4", "5"]) == ["1", "3", "5"]
+
+    def test_numeric_range(self):
+        assert _parse_article_selection("1-3", ["1", "2", "3", "4", "5"]) == ["1", "2", "3"]
+
+    def test_mixed_exact_and_range(self):
+        assert _parse_article_selection("1-2,5", ["1", "2", "3", "4", "5"]) == ["1", "2", "5"]
+
+    def test_range_matches_greek_suffix(self):
+        assert _parse_article_selection("1-3", ["1", "2Α", "2Β", "3", "4"]) == ["1", "2Α", "2Β", "3"]
+
+    def test_empty_selection(self):
+        assert _parse_article_selection("10-12", ["1", "2", "3"]) == []
 
 
 class TestDedupInFlow:

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -138,6 +139,7 @@ class BillAnalysisFlow:
         file_path: str | Path,
         output_dir: str | Path = "Outputs",
         lenses: list[str] | None = None,
+        articles: str | None = None,
         checkpoint_path: str | Path | None = None,
     ) -> tuple[list[Finding], list[Any]]:
         """Run the full analysis workflow on a bill file.
@@ -146,6 +148,8 @@ class BillAnalysisFlow:
             file_path: Path to the bill file (PDF/DOCX/HTML/TXT).
             output_dir: Directory to save reports and findings. Defaults to "Outputs".
             lenses: Lens names to apply. None => all configured lenses.
+            articles: Article selection expression, e.g. "1-5,7,10" or "1,2,3".
+                None => all parsed articles.
             checkpoint_path: When set, creates a CheckpointStore at this path for
                 atomic resume support. Ignored if a checkpoint_store was already
                 supplied to the constructor.
@@ -186,6 +190,11 @@ class BillAnalysisFlow:
 
         self._load_checkpoint(file_path)
 
+        # If a checkpoint restored a document, apply article selection now so the
+        # requested subset is respected on resume.
+        if self._doc is not None and articles is not None:
+            self._doc = self._filter_document(self._doc, articles)
+
         # 1. Ingest
         if self._state == WorkflowState.IDLE:
             self._transition(WorkflowState.INGESTING, "ingest_started")
@@ -199,6 +208,8 @@ class BillAnalysisFlow:
         # 2. Parse
         if self._state == WorkflowState.PARSING:
             self._doc = self._do_parse(self._source_text, file_path)
+            if articles is not None:
+                self._doc = self._filter_document(self._doc, articles)
             self._source_text = ""  # No longer needed once parsed
             self._transition(WorkflowState.PLANNING, "parse_completed")
 
@@ -415,6 +426,17 @@ class BillAnalysisFlow:
             text, title=file_path.stem, source_format=file_path.suffix.lstrip("."))
         return doc
 
+    def _filter_document(self, doc: Document, selection: str) -> Document:
+        """Return a new Document keeping only the selected articles."""
+        keep_ids = _parse_article_selection(selection, [a.id for a in doc.articles])
+        if not keep_ids:
+            raise ValueError(
+                f"Article selection '{selection}' matched none of the parsed articles: "
+                f"{[a.id for a in doc.articles]}"
+            )
+        filtered = [a for a in doc.articles if a.id in keep_ids]
+        return doc.model_copy(update={"articles": filtered}, deep=False)
+
     def _dedup_findings(self, findings: list[Finding]) -> list[Finding]:
         """Remove near-duplicate findings, keeping the best per cluster."""
         import re
@@ -567,3 +589,51 @@ class BillAnalysisFlow:
     def get_event_log(self) -> list[Event]:
         """Get the full event log for this run."""
         return list(self._events)
+
+
+def _parse_article_selection(selection: str, available_ids: list[str]) -> list[str]:
+    """Parse an article selection expression into a list of article IDs.
+
+    Supports:
+      - exact IDs: "1,3,5A"
+      - numeric ranges: "1-5" (matches every article whose leading numeric part
+        falls inside the inclusive range, e.g. "5" and "5A" both match "1-5")
+      - mixed: "1-5,7,10-12"
+
+    Returns the matched IDs in the original document order.
+    """
+    parts = [p.strip() for p in selection.split(",") if p.strip()]
+    ranges: list[tuple[int, int]] = []
+    exact: set[str] = set()
+    for part in parts:
+        if "-" in part:
+            try:
+                start_s, end_s = part.split("-", 1)
+                start = int(start_s.strip())
+                end = int(end_s.strip())
+            except ValueError as exc:
+                raise ValueError(f"Invalid article range '{part}'") from exc
+            if start > end:
+                start, end = end, start
+            ranges.append((start, end))
+        else:
+            exact.add(part)
+
+    def _leading_number(aid: str) -> int | None:
+        m = re.match(r"\d+", aid)
+        return int(m.group()) if m else None
+
+    keep: set[str] = set()
+    for aid in available_ids:
+        if aid in exact:
+            keep.add(aid)
+            continue
+        num = _leading_number(aid)
+        if num is None:
+            continue
+        for start, end in ranges:
+            if start <= num <= end:
+                keep.add(aid)
+                break
+
+    return [aid for aid in available_ids if aid in keep]
