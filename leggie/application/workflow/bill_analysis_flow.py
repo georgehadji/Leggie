@@ -13,11 +13,13 @@ from pathlib import Path
 from leggie.application.agents.improver import ImprovementEngine
 from leggie.application.agents.orchestrator import Orchestrator
 from leggie.application.agents.skeptic import CalibratedSkeptic
+from leggie.application.services.bill_overview import BillOverviewGenerator
 from leggie.application.services.cove_verifier import CoVeVerifier
 from leggie.application.services.reports import ArticleByArticleRenderer, ExecutiveSummaryRenderer
 from leggie.application.services.rerank import CompositeReranker
 from leggie.application.workflow.flow_state_machine import FlowStateMachine
 from leggie.domain.models import (
+    BillOverview,
     Document,
     Event,
     EventType,
@@ -64,12 +66,15 @@ class BillAnalysisFlow:
         self._skeptic = skeptic or CalibratedSkeptic()
         self._cove = cove or CoVeVerifier()
         self._improver = ImprovementEngine()
+        self._overview_generator = BillOverviewGenerator(llm=llm)
         self._ingester = ingester or _lazy_ingest_adapter()
         self._parser = parser or _lazy_parse_adapter()
         self._reports: list = []
         self._suggestions: list = []
         self._events: list[Event] = []
         self._findings: list[Finding] = []
+        self._doc: Document | None = None
+        self._overview: BillOverview | None = None
 
     @property
     def state(self) -> WorkflowState:
@@ -79,12 +84,48 @@ class BillAnalysisFlow:
     def findings(self) -> list[Finding]:
         return list(self._findings)
 
-    async def run(self, file_path: str | Path, output_dir: str | Path = "Outputs") -> tuple[list[Finding], list]:
+    @property
+    def overview(self) -> BillOverview | None:
+        """The bill overview produced by `preview()`, if it was called."""
+        return self._overview
+
+    async def preview(self, file_path: str | Path) -> BillOverview:
+        """Stage 0 — ingest + parse, then generate a bill overview.
+
+        Runs before the deep multi-lens analysis: produces a short intro,
+        an overall summary, and per-article (Άρθρο) purpose / key
+        provisions / practical consequences. Use the resulting article
+        IDs to decide what to pass as `selected_article_ids` to `run()`.
+        """
+        file_path = Path(file_path)
+        self._transition(WorkflowState.PREVIEWING, "preview_started")
+        self._transition(WorkflowState.INGESTING, "ingest_started")
+        text = await self._do_ingest(file_path)
+        self._transition(WorkflowState.PARSING, "ingest_completed")
+        self._doc = self._do_parse(text, file_path)
+
+        overview = await self._overview_generator.generate(self._doc)
+        self._overview = overview
+        self._record_event(EventType.OVERVIEW_GENERATED, {
+            "articles": len(self._doc.articles),
+        })
+        return overview
+
+    async def run(
+        self,
+        file_path: str | Path,
+        output_dir: str | Path = "Outputs",
+        selected_article_ids: list[str] | None = None,
+    ) -> tuple[list[Finding], list]:
         """Run the full analysis workflow on a bill file.
 
         Args:
             file_path: Path to the bill file (PDF/DOCX/HTML/TXT).
             output_dir: Directory to save reports and findings. Defaults to "Outputs".
+            selected_article_ids: If given, restrict analysis to these Άρθρο
+                IDs (e.g. the ones picked after reviewing `preview()`'s
+                BillOverview). If `preview()` was already called for this
+                file, its ingest/parse result is reused instead of redone.
 
         Returns:
             (findings, reports) tuple.
@@ -101,14 +142,27 @@ class BillAnalysisFlow:
         logger = bind_trace_id(get_logger(__name__))
         logger.info("flow.started", bill_path=str(file_path), trace_id=trace_id)
 
-        # 1. Ingest
-        self._transition(WorkflowState.INGESTING, "ingest_started")
-        text = await self._do_ingest(file_path)
-        self._record_event(EventType.ANALYSIS_STARTED, {"file": str(file_path), "size": len(text)})
-        self._transition(WorkflowState.PARSING, "ingest_completed")
+        if self._doc is None:
+            # 1. Ingest
+            self._transition(WorkflowState.INGESTING, "ingest_started")
+            text = await self._do_ingest(file_path)
+            self._record_event(EventType.ANALYSIS_STARTED, {"file": str(file_path), "size": len(text)})
+            self._transition(WorkflowState.PARSING, "ingest_completed")
 
-        # 2. Parse
-        self._doc = self._do_parse(text, file_path)
+            # 2. Parse
+            self._doc = self._do_parse(text, file_path)
+        else:
+            # preview() already ingested + parsed this file — reuse it.
+            self._record_event(EventType.ANALYSIS_STARTED, {"file": str(file_path), "size": len(self._doc.raw_text)})
+
+        if selected_article_ids is not None:
+            selected = [a for a in self._doc.articles if a.id in selected_article_ids]
+            self._doc = self._doc.model_copy(update={"articles": selected})
+            self._record_event(EventType.ARTICLES_SELECTED, {
+                "selected": selected_article_ids,
+                "matched": len(selected),
+            })
+
         self._transition(WorkflowState.PLANNING, "parse_completed")
 
         # 3. Decompose / Plan

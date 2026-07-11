@@ -93,3 +93,28 @@ class TestBillAnalysisFlow:
         flow = BillAnalysisFlow()
         await flow.run(sample_bill_file)
         assert len(flow.suggestions) > 0
+
+    @pytest.mark.asyncio
+    async def test_preview_returns_overview_with_all_articles(self, sample_bill_file):
+        flow = BillAnalysisFlow()
+        overview = await flow.preview(sample_bill_file)
+        assert overview.article_ids() == ["1", "2"]
+        assert flow.overview is overview
+
+    @pytest.mark.asyncio
+    async def test_preview_reuses_ingest_and_parse_in_run(self, sample_bill_file):
+        flow = BillAnalysisFlow()
+        await flow.preview(sample_bill_file)
+        findings, reports = await flow.run(sample_bill_file)
+        assert flow.state == WorkflowState.DONE
+        assert len(reports) == 2
+
+    @pytest.mark.asyncio
+    async def test_run_selected_article_ids_restricts_analysis(self, sample_bill_file):
+        flow = BillAnalysisFlow()
+        overview = await flow.preview(sample_bill_file)
+        assert len(overview.articles) == 2
+        findings, _ = await flow.run(sample_bill_file, selected_article_ids=["1"])
+        assert len(findings) > 0
+        for f in findings:
+            assert f.irac.issue.startswith("Άρθρο 1")

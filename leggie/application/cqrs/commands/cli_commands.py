@@ -21,6 +21,18 @@ class AnalyzeBillCommand(Command):
     file_path: str
     output_path: str | None = None
     lenses: list[str] | None = None
+    article_ids: list[str] | None = None
+
+
+class PreviewBillCommand(Command):
+    """Preview a legal bill: intro, summary, per-article purpose/provisions/consequences.
+
+    Runs before ingest/analyze proper, so the caller can pick which
+    Άρθρο IDs to pass into AnalyzeBillCommand.article_ids.
+    """
+
+    file_path: str
+    output_path: str | None = None
 
 
 class EvalGoldSetCommand(Command):

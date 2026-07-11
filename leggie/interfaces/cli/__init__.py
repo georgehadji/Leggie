@@ -25,11 +25,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
+    # preview
+    preview = subparsers.add_parser(
+        "preview",
+        help="Preview a bill before analyzing: intro, summary, and per-article purpose/provisions/consequences",
+    )
+    preview.add_argument("file", type=Path, help="Path to the bill file (PDF/DOCX/HTML/TXT)")
+    preview.add_argument("--output", "-o", type=Path, default=None, help="Output path for the preview JSON")
+
     # analyze
     analyze = subparsers.add_parser("analyze", help="Analyze a legal bill")
     analyze.add_argument("file", type=Path, help="Path to the bill file (PDF/DOCX/HTML/TXT)")
     analyze.add_argument("--output", "-o", type=Path, default=None, help="Output directory for reports")
     analyze.add_argument("--lenses", "-l", nargs="+", default=None, help="Lenses to apply (default: all 5)")
+    analyze.add_argument(
+        "--articles", "-a", nargs="+", default=None,
+        help="Restrict analysis to these Άρθρο IDs (see `leggie preview` first to choose)",
+    )
 
     # eval
     eval_cmd = subparsers.add_parser("eval", help="Run evaluation against gold set")
@@ -50,16 +62,19 @@ def _build_mediator():
         AnalyzeBillCommand,
         EvalGoldSetCommand,
         ParseDocumentCommand,
+        PreviewBillCommand,
     )
     from leggie.application.cqrs.handlers.cli_handlers import (
         AnalyzeBillHandler,
         EvalGoldSetHandler,
         ParseDocumentHandler,
+        PreviewBillHandler,
     )
     from leggie.application.cqrs.mediator import Mediator
 
     mediator = Mediator()
     mediator.register_command_handler(ParseDocumentCommand, ParseDocumentHandler())
+    mediator.register_command_handler(PreviewBillCommand, PreviewBillHandler())
     mediator.register_command_handler(AnalyzeBillCommand, AnalyzeBillHandler())
     mediator.register_command_handler(EvalGoldSetCommand, EvalGoldSetHandler())
     return mediator
@@ -84,6 +99,8 @@ async def main() -> int:
 
     if args.command == "parse":
         return await _handle_parse(args, mediator)
+    if args.command == "preview":
+        return await _handle_preview(args, mediator)
     if args.command == "analyze":
         return await _handle_analyze(args, mediator)
     if args.command == "eval":
@@ -114,6 +131,29 @@ async def _handle_parse(args: argparse.Namespace, mediator) -> int:
     return 0
 
 
+async def _handle_preview(args: argparse.Namespace, mediator) -> int:
+    """Handle the preview command via CQRS — intro/summary/per-article overview, before ingest/analyze."""
+    import json
+
+    from leggie.application.cqrs.commands.cli_commands import PreviewBillCommand
+
+    cmd = PreviewBillCommand(
+        file_path=str(args.file),
+        output_path=str(args.output) if args.output else None,
+    )
+    result = await mediator.send(cmd)
+
+    if not result.success:
+        print(f"Error: {result.error}", file=sys.stderr)
+        return 1
+
+    print(json.dumps(result.data, ensure_ascii=False, indent=2))
+    if args.output:
+        print(f"Preview written to {args.output}")
+    print("\nRun `leggie analyze <file> --articles <id> [<id> ...]` to analyze only selected Άρθρα.")
+    return 0
+
+
 async def _handle_analyze(args: argparse.Namespace, mediator) -> int:
     """Handle the analyze command via CQRS."""
     from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
@@ -122,6 +162,7 @@ async def _handle_analyze(args: argparse.Namespace, mediator) -> int:
         file_path=str(args.file),
         output_path=str(args.output) if args.output else None,
         lenses=args.lenses,
+        article_ids=args.articles,
     )
     result = await mediator.send(cmd)
 

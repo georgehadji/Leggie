@@ -14,6 +14,7 @@ from leggie.application.cqrs.commands.cli_commands import (
     AnalyzeBillCommand,
     EvalGoldSetCommand,
     ParseDocumentCommand,
+    PreviewBillCommand,
 )
 
 
@@ -64,7 +65,10 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
 
             # Try to inject LLM port if key is configured
             llm = _try_get_llm()
-            findings, reports = await BillAnalysisFlow(llm=llm).run(command.file_path)
+            findings, reports = await BillAnalysisFlow(llm=llm).run(
+                command.file_path,
+                selected_article_ids=command.article_ids,
+            )
 
             from leggie.domain.models import WorkflowState
             summary = f"Analysis complete: {len(findings)} finding(s), {len(reports)} report(s)"
@@ -72,6 +76,45 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 summary += f"\n  - [{f.finding_type.value}:{f.severity.value}] {f.irac.issue[:80]}"
 
             return CommandResult(success=True, data=summary)
+        except Exception as e:
+            return CommandResult(success=False, error=str(e))
+
+
+class PreviewBillHandler(CommandHandler[PreviewBillCommand, dict]):
+    """Handle bill preview — Stage 0, before ingest/analyze proper.
+
+    Produces intro, summary, and per-article purpose/key-provisions/
+    practical-consequences so the caller can pick which Άρθρο IDs to
+    pass into AnalyzeBillCommand.article_ids.
+    """
+
+    async def handle(self, command: PreviewBillCommand) -> CommandResult[dict]:
+        try:
+            from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
+
+            llm = _try_get_llm()
+            overview = await BillAnalysisFlow(llm=llm).preview(command.file_path)
+
+            output = {
+                "intro": overview.intro,
+                "summary": overview.summary,
+                "articles": [
+                    {
+                        "article_id": a.article_id,
+                        "title": a.title,
+                        "purpose": a.purpose,
+                        "key_provisions": a.key_provisions,
+                        "practical_consequences": a.practical_consequences,
+                    }
+                    for a in overview.articles
+                ],
+            }
+
+            if command.output_path:
+                p = Path(command.output_path)
+                p.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            return CommandResult(success=True, data=output)
         except Exception as e:
             return CommandResult(success=False, error=str(e))
 
