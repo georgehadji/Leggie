@@ -28,10 +28,12 @@ def build_parser() -> argparse.ArgumentParser:
     # preview
     preview = subparsers.add_parser(
         "preview",
-        help="Preview a bill before analyzing: intro, summary, and per-article purpose/provisions/consequences",
+        help="Preview a bill: intro, summary, per-article purpose/provisions/consequences",
     )
     preview.add_argument("file", type=Path, help="Path to the bill file (PDF/DOCX/HTML/TXT)")
-    preview.add_argument("--output", "-o", type=Path, default=None, help="Output path for the preview JSON")
+    preview.add_argument(
+        "--output", "-o", type=Path, default=None, help="Output path for the preview JSON"
+    )
 
     # analyze
     analyze = subparsers.add_parser("analyze", help="Analyze a legal bill")
@@ -132,7 +134,7 @@ async def _handle_parse(args: argparse.Namespace, mediator) -> int:
 
 
 async def _handle_preview(args: argparse.Namespace, mediator) -> int:
-    """Handle the preview command via CQRS — intro/summary/per-article overview, before ingest/analyze."""
+    """Handle the preview command via CQRS — overview before ingest/analyze proper."""
     import json
 
     from leggie.application.cqrs.commands.cli_commands import PreviewBillCommand
@@ -150,7 +152,7 @@ async def _handle_preview(args: argparse.Namespace, mediator) -> int:
     print(json.dumps(result.data, ensure_ascii=False, indent=2))
     if args.output:
         print(f"Preview written to {args.output}")
-    print("\nRun `leggie analyze <file> --articles <id> [<id> ...]` to analyze only selected Άρθρα.")
+    print("\nRun `leggie analyze <file> --articles <id> ...` to analyze only selected Άρθρα.")
     return 0
 
 

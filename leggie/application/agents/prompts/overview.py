@@ -17,8 +17,8 @@ BILL_USER_PROMPT_TEMPLATE = """Τίτλος νομοσχεδίου: {title}
 2. Μια περιληπτική ανάλυση του τι κάνει το νομοσχέδιο συνολικά.
 """
 
-ARTICLE_SYSTEM_PROMPT = """You are an expert Greek legislative analyst writing for a non-lawyer reader.
-Given a single article (Άρθρο) of a Greek bill, explain in Greek:
+ARTICLE_SYSTEM_PROMPT = """You are an expert Greek legislative analyst writing for a
+non-lawyer reader. Given a single article (Άρθρο) of a Greek bill, explain in Greek:
 - purpose: τον σκοπό του άρθρου
 - key_provisions: τις σημαντικότερες διατάξεις του (ως λίστα σύντομων προτάσεων)
 - practical_consequences: τις πρακτικές συνέπειες της εφαρμογής του

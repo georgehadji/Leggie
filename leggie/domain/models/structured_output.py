@@ -56,5 +56,9 @@ class BillIntroSummary(BaseModel):
 class ArticleOverviewCandidate(BaseModel):
     """Response schema for one article's purpose/provisions/consequences (preview stage)."""
     purpose: str = Field(default="", description="What this article is trying to achieve")
-    key_provisions: list[str] = Field(default_factory=list, description="The most important rules/provisions in this article")
-    practical_consequences: str = Field(default="", description="Real-world practical effects of this article")
+    key_provisions: list[str] = Field(
+        default_factory=list, description="The most important rules/provisions in this article"
+    )
+    practical_consequences: str = Field(
+        default="", description="Real-world practical effects of this article"
+    )
