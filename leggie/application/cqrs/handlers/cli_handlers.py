@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from leggie.application.cqrs.base import CommandHandler, CommandResult
 from leggie.application.cqrs.commands.cli_commands import (
@@ -16,12 +17,13 @@ from leggie.application.cqrs.commands.cli_commands import (
     ParseDocumentCommand,
     PreviewBillCommand,
 )
+from leggie.application.ports.llm import LLMPort
 
 
-class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict]):
+class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]]):
     """Handle bill document parsing."""
 
-    async def handle(self, command: ParseDocumentCommand) -> CommandResult[dict]:
+    async def handle(self, command: ParseDocumentCommand) -> CommandResult[dict[str, Any]]:
         try:
             from leggie.infrastructure.ingest import IngestorFactory
             from leggie.infrastructure.parse import DocumentParser
@@ -79,7 +81,7 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             return CommandResult(success=False, error=str(e))
 
 
-class PreviewBillHandler(CommandHandler[PreviewBillCommand, dict]):
+class PreviewBillHandler(CommandHandler[PreviewBillCommand, dict[str, Any]]):
     """Handle bill preview — Stage 0, before ingest/analyze proper.
 
     Produces intro, summary, and per-article purpose/key-provisions/
@@ -87,7 +89,7 @@ class PreviewBillHandler(CommandHandler[PreviewBillCommand, dict]):
     pass into AnalyzeBillCommand.article_ids.
     """
 
-    async def handle(self, command: PreviewBillCommand) -> CommandResult[dict]:
+    async def handle(self, command: PreviewBillCommand) -> CommandResult[dict[str, Any]]:
         try:
             from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
 
@@ -118,7 +120,7 @@ class PreviewBillHandler(CommandHandler[PreviewBillCommand, dict]):
             return CommandResult(success=False, error=str(e))
 
 
-def _try_get_llm():
+def _try_get_llm() -> LLMPort | None:
     """Try to build an LLM port from settings. Returns None if no API key."""
     from leggie.config.settings import get_settings
     s = get_settings()
@@ -131,10 +133,10 @@ def _try_get_llm():
     )
 
 
-class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
+class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[dict[str, Any]]]):
     """Handle gold-set evaluation."""
 
-    async def handle(self, command: EvalGoldSetCommand) -> CommandResult[list]:
+    async def handle(self, command: EvalGoldSetCommand) -> CommandResult[list[dict[str, Any]]]:
         try:
             import json
             from pathlib import Path

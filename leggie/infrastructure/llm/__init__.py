@@ -6,6 +6,11 @@ Split into sub-modules per BUILD_PLAN §3:
   decorators.py       — retry, cache, and resilience decorators
 """
 
+from __future__ import annotations
+
+from typing import Any
+
+from leggie.application.ports.llm import LLMPort, LLMRequest, LLMResponse
 from leggie.infrastructure.llm.adapters.openrouter import OpenRouterProvider
 from leggie.infrastructure.llm.base import (
     BaseLLMProvider,
@@ -19,7 +24,7 @@ from leggie.infrastructure.llm.decorators import with_cache, with_retry
 
 
 # Legacy adapter — uses OpenRouter as primary provider
-class LLMAdapter:
+class LLMAdapter(LLMPort):
     """Concrete LLM adapter — uses OpenRouter as primary provider."""
 
     def __init__(
@@ -38,10 +43,12 @@ class LLMAdapter:
             rate_limiter=RateLimiter(max_rate=5.0),
         )
 
-    async def generate(self, request):
+    async def generate(self, request: LLMRequest) -> LLMResponse:
         return await self._provider.generate(request)
 
-    async def generate_structured(self, request, schema):
+    async def generate_structured(
+        self, request: LLMRequest, schema: type
+    ) -> tuple[Any, LLMResponse]:
         import json
         from dataclasses import replace
         req = replace(request, response_format={"type": "json_object"})
@@ -56,7 +63,7 @@ class LLMAdapter:
         except Exception as e:
             raise LLMError(f"Failed to parse structured response: {e}") from e
 
-    async def count_tokens(self, text, model=None):
+    async def count_tokens(self, text: str, model: str | None = None) -> int:
         return await self._provider.count_tokens(text, model)
 
 __all__ = [

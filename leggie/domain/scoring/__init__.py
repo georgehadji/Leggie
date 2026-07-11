@@ -5,6 +5,8 @@ All functions are pure: no I/O, no clocks, no randomness (seed injected).
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from leggie.domain.models import Confidence, Finding, FindingType, Severity
 
 
@@ -32,7 +34,7 @@ def score_severity(finding: Finding) -> Severity:
 def score_novelty(
     finding: Finding,
     existing_findings: list[Finding],
-    similarity_fn: callable,
+    similarity_fn: Callable[[Finding, Finding], float],
     threshold: float = 0.85,
 ) -> float:
     """Score novelty of a finding relative to existing ones (0 = duplicate, 1 = novel)."""

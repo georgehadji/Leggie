@@ -150,7 +150,7 @@ class ConstitutionalLens(Lens):
         return findings
 
 
-_DELEGATION_PATTERNS: list[Pattern] = [
+_DELEGATION_PATTERNS: list[Pattern[str]] = [
     re.compile(
         r"(?:εξουσιοδότηση|εξουσιοδοτεί|νομοθετική\s+εξουσιοδότηση)", re.UNICODE | re.IGNORECASE
     ),
@@ -158,12 +158,12 @@ _DELEGATION_PATTERNS: list[Pattern] = [
         r"(?:έκδοση\s+π\.δ\.|προεδρικό\s+διάταγμα|υπουργική\s+απόφαση)", re.UNICODE | re.IGNORECASE
     ),
 ]
-_RETROACTIVE_PATTERNS: list[Pattern] = [
+_RETROACTIVE_PATTERNS: list[Pattern[str]] = [
     re.compile(
         r"(?:αναδρομική\s+ισχύ|αναδρομικά|από\s+την\s+έναρξη\s+ισχύος)", re.UNICODE | re.IGNORECASE
     ),
 ]
-_RIGHTS_PATTERNS: list[Pattern] = [
+_RIGHTS_PATTERNS: list[Pattern[str]] = [
     re.compile(
         r"(?:περιορισμός\s+(?:θεμελιώδους|δικαιώματος)|προσβολή|παραβίαση\s+δικαιώματος)",
         re.UNICODE | re.IGNORECASE,

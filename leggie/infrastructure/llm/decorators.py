@@ -11,9 +11,9 @@ from typing import Any
 from leggie.infrastructure.llm.base import LLMRateLimitError, LLMTimeoutError
 
 
-def with_retry(max_retries: int = 3, base_delay: float = 1.0) -> Callable:
+def with_retry(max_retries: int = 3, base_delay: float = 1.0) -> Callable[..., Any]:
     """Decorator: retry LLM calls on transient failures with exponential backoff."""
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             last_exc: Exception | None = None
@@ -30,6 +30,6 @@ def with_retry(max_retries: int = 3, base_delay: float = 1.0) -> Callable:
     return decorator
 
 
-def with_cache(max_size: int = 100) -> Callable:
+def with_cache(max_size: int = 100) -> Callable[..., Any]:
     """Decorator: simple LRU cache for LLM responses keyed by prompt hash."""
     return functools.lru_cache(maxsize=max_size)

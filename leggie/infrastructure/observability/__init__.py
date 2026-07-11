@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import sys
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import structlog
@@ -50,7 +50,7 @@ def configure_logging(level: str | None = None) -> None:
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Get a structured logger for the given module name."""
-    return structlog.get_logger(name or __name__)
+    return cast(structlog.stdlib.BoundLogger, structlog.get_logger(name or __name__))
 
 
 # ── Trace ID context ──────────────────────────────────────────────
@@ -100,6 +100,7 @@ class Timer:
 
     async def __aexit__(self, *args: Any) -> None:
         import time
+        assert self._start is not None
         elapsed = time.monotonic() - self._start
         self._logger.info(
             "timing.completed",
