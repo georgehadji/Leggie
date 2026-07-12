@@ -8,8 +8,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from leggie.domain.models import Document
-
 
 class IngestError(Exception):
     """Base exception for ingest failures."""
@@ -35,7 +33,7 @@ class PDFIngestor(Ingestor):
         try:
             import pdfplumber
         except ImportError:
-            raise IngestError("pdfplumber not installed; run `pip install pdfplumber`")
+            raise IngestError("pdfplumber not installed; run `pip install pdfplumber`") from None
 
         path = Path(source)
         if not path.exists():
@@ -57,7 +55,7 @@ class DOCXIngestor(Ingestor):
         try:
             from docx import Document as DocxDocument
         except ImportError:
-            raise IngestError("python-docx not installed; run `pip install python-docx`")
+            raise IngestError("python-docx not installed; run `pip install python-docx`") from None
 
         path = Path(source)
         if not path.exists():
@@ -75,7 +73,9 @@ class HTMLIngestor(Ingestor):
         try:
             from bs4 import BeautifulSoup
         except ImportError:
-            raise IngestError("beautifulsoup4 not installed; run `pip install beautifulsoup4`")
+            raise IngestError(
+                "beautifulsoup4 not installed; run `pip install beautifulsoup4`"
+            ) from None
 
         path = Path(source)
         if not path.exists():

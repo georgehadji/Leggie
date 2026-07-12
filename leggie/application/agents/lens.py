@@ -48,6 +48,7 @@ class Lens(ABC):
     def _prompt_for(self, name: str) -> tuple[str, str]:
         """Load system + user prompt templates for this lens."""
         import importlib
+
         mod = importlib.import_module(f"leggie.application.agents.prompts.{name}")
         return mod.SYSTEM_PROMPT, mod.USER_PROMPT_TEMPLATE
 
@@ -56,6 +57,7 @@ class Lens(ABC):
         if not self._llm:
             return None
         from leggie.application.ports.llm import LLMRequest
+
         request = LLMRequest(
             prompt=prompt,
             system_prompt=system,

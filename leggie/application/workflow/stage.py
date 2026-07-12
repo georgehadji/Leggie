@@ -22,6 +22,7 @@ class StageContext:
 
     Carries state across plan→execute→aggregate→verify.
     """
+
     article_text: str
     article_id: str
     findings: list[Finding] = field(default_factory=list)
@@ -31,6 +32,7 @@ class StageContext:
 @dataclass
 class StageResult:
     """Result of a completed stage."""
+
     success: bool
     findings: list[Finding] = field(default_factory=list)
     error: str | None = None
@@ -64,15 +66,15 @@ class Stage(ABC):
 
     # ── Lifecycle hooks (override as needed) ────────────────────────
 
-    async def _plan(self, context: StageContext) -> None:
-        """Plan the work for this stage. Default: no-op."""
+    async def _plan(self, context: StageContext) -> None:  # noqa: B027
+        """Plan the work for this stage. Default: no-op (optional hook)."""
 
     @abstractmethod
     async def _execute(self, context: StageContext) -> None:
         """Execute the stage's core work."""
 
-    async def _aggregate(self, context: StageContext) -> None:
-        """Aggregate results within the stage. Default: no-op."""
+    async def _aggregate(self, context: StageContext) -> None:  # noqa: B027
+        """Aggregate results within the stage. Default: no-op (optional hook)."""
 
-    async def _verify(self, context: StageContext) -> None:
-        """Verify stage output. Default: no-op."""
+    async def _verify(self, context: StageContext) -> None:  # noqa: B027
+        """Verify stage output. Default: no-op (optional hook)."""

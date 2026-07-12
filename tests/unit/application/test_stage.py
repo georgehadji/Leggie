@@ -41,7 +41,7 @@ class TestStage:
             def stage_name(self) -> str:
                 return "fail"
 
-            async def _execute(self, context: StageContext) -> None:
+            async def _execute(self, _context: StageContext) -> None:
                 raise ValueError("test error")
 
         stage = FailingStage()

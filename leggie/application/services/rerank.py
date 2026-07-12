@@ -25,6 +25,7 @@ _SEVERITY_WEIGHTS = {
 @dataclass
 class ScoredFinding:
     """A finding with its composite score."""
+
     finding: Finding
     composite_score: float = 0.0
     severity_score: float = 0.0

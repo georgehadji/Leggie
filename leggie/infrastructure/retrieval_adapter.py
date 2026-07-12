@@ -19,24 +19,28 @@ class SimpleRetrievalAdapter(RetrievalPort):
         self._corpus_dir = Path(corpus_dir)
         self._corpus_dir.mkdir(parents=True, exist_ok=True)
 
-    async def search(self, query: str, corpus: str = "default", top_k: int = 10, mode: str = "hybrid") -> list[RetrievalResult]:
+    async def search(
+        self, query: str, _corpus: str = "default", top_k: int = 10, _mode: str = "hybrid"
+    ) -> list[RetrievalResult]:
         results: list[RetrievalResult] = []
         if not self._corpus_dir.exists():
             return results
         for f in sorted(self._corpus_dir.glob("*.md")) + sorted(self._corpus_dir.glob("*.txt")):
             text = f.read_text(encoding="utf-8")
             if query.lower() in text.lower():
-                results.append(RetrievalResult(
-                    content=text[:500],
-                    source=f.name,
-                    score=0.5,
-                    metadata={"path": str(f)},
-                ))
+                results.append(
+                    RetrievalResult(
+                        content=text[:500],
+                        source=f.name,
+                        score=0.5,
+                        metadata={"path": str(f)},
+                    )
+                )
             if len(results) >= top_k:
                 break
         return results
 
-    async def get_document(self, document_id: str, corpus: str = "default") -> str | None:
+    async def get_document(self, document_id: str, _corpus: str = "default") -> str | None:
         path = self._corpus_dir / f"{document_id}.md"
         if path.exists():
             return path.read_text(encoding="utf-8")
@@ -45,6 +49,6 @@ class SimpleRetrievalAdapter(RetrievalPort):
             return path.read_text(encoding="utf-8")
         return None
 
-    async def corpus_stats(self, corpus: str = "default") -> dict[str, Any]:
+    async def corpus_stats(self, _corpus: str = "default") -> dict[str, Any]:
         files = list(self._corpus_dir.glob("*.*"))
         return {"size": len(files), "documents": [f.name for f in files]}

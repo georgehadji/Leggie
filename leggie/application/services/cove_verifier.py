@@ -20,6 +20,7 @@ from leggie.domain.models import Citation, Finding
 @dataclass
 class VerificationQuestion:
     """A single verification question for a cited source."""
+
     citation: Citation
     question: str = ""
     verified: bool = False
@@ -29,6 +30,7 @@ class VerificationQuestion:
 @dataclass
 class CoVeResult:
     """Result of the Chain-of-Verification for a finding."""
+
     finding: Finding
     questions: list[VerificationQuestion] = field(default_factory=list)
     all_verified: bool = False
@@ -39,6 +41,7 @@ class CoVeResult:
 def _normalize(text: str) -> str:
     """Normalize text for substring matching: strip, lowercase, collapse whitespace."""
     import re
+
     return re.sub(r"\s+", " ", text.strip().lower())
 
 
@@ -89,23 +92,31 @@ class CoVeVerifier:
 
         for evidence in finding.evidence:
             if evidence.citation:
-                questions.append(VerificationQuestion(
-                    citation=evidence.citation,
-                    question=f"Does the citation {evidence.citation.identifier} resolve correctly?",
-                ))
-            elif evidence.text_excerpt:
+                questions.append(
+                    VerificationQuestion(
+                        citation=evidence.citation,
+                        question=(
+                            f"Does the citation {evidence.citation.identifier} "
+                            "resolve correctly?"
+                        ),
+                    )
+                )
+            elif evidence.text_excerpt and self._citation_parser:
                 # Try to parse citations from text
-                if self._citation_parser:
-                    parsed = self._citation_parser.parse(evidence.text_excerpt)
-                    for cite in parsed:
-                        questions.append(VerificationQuestion(
+                parsed = self._citation_parser.parse(evidence.text_excerpt)
+                for cite in parsed:
+                    questions.append(
+                        VerificationQuestion(
                             citation=cite,
                             question=f"Does the citation {cite.identifier} resolve correctly?",
-                        ))
+                        )
+                    )
 
         return questions
 
-    async def _execute_questions(self, questions: list[VerificationQuestion]) -> list[VerificationQuestion]:
+    async def _execute_questions(
+        self, questions: list[VerificationQuestion]
+    ) -> list[VerificationQuestion]:
         """Execute verification questions independently (factored).
 
         Phase 3: resolve via citation parser (deterministic).

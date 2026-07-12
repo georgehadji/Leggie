@@ -19,6 +19,7 @@ from leggie.domain.models import Document, Finding, Severity
 @dataclass
 class Report:
     """A complete analysis report."""
+
     title: str
     report_type: str
     sections: list[dict[str, Any]] = field(default_factory=list)
@@ -142,16 +143,20 @@ class ExecutiveSummaryRenderer(ReportRenderer):
         sections: list[dict[str, Any]] = []
 
         # Overview
-        sections.append({
-            "level": 2,
-            "title": "Overview",
-            "content": (
-                f"This report analyzes **{document.title}** ({len(document.articles)} articles, "
-                f"{len(findings)} findings). "
-                f"The analysis identified {sum(1 for f in findings if f.severity in (Severity.CRITICAL, Severity.HIGH))} "
-                f"high-severity issues."
-            ),
-        })
+        high_severity_count = sum(
+            1 for f in findings if f.severity in (Severity.CRITICAL, Severity.HIGH)
+        )
+        sections.append(
+            {
+                "level": 2,
+                "title": "Overview",
+                "content": (
+                    f"This report analyzes **{document.title}** "
+                    f"({len(document.articles)} articles, {len(findings)} findings). "
+                    f"The analysis identified {high_severity_count} high-severity issues."
+                ),
+            }
+        )
 
         # Findings summary by severity
         critical = [f for f in findings if f.severity.value == "critical"]
@@ -159,31 +164,47 @@ class ExecutiveSummaryRenderer(ReportRenderer):
         medium = [f for f in findings if f.severity.value == "medium"]
 
         if critical:
-            sections.append({
-                "level": 2,
-                "title": "Critical Issues",
-                "content": [f"- **{f.irac.issue[:100]}** — {f.finding_type.value} ({f.lens})" for f in critical],
-            })
+            sections.append(
+                {
+                    "level": 2,
+                    "title": "Critical Issues",
+                    "content": [
+                        f"- **{f.irac.issue[:100]}** — {f.finding_type.value} ({f.lens})"
+                        for f in critical
+                    ],
+                }
+            )
         if high:
-            sections.append({
-                "level": 2,
-                "title": "High-Severity Issues",
-                "content": [f"- **{f.irac.issue[:100]}** — {f.finding_type.value} ({f.lens})" for f in high],
-            })
+            sections.append(
+                {
+                    "level": 2,
+                    "title": "High-Severity Issues",
+                    "content": [
+                        f"- **{f.irac.issue[:100]}** — {f.finding_type.value} ({f.lens})"
+                        for f in high
+                    ],
+                }
+            )
         if medium:
-            sections.append({
-                "level": 2,
-                "title": "Medium-Severity Issues",
-                "content": [f"- {f.irac.issue[:100]} ({f.lens})" for f in medium],
-            })
+            sections.append(
+                {
+                    "level": 2,
+                    "title": "Medium-Severity Issues",
+                    "content": [f"- {f.irac.issue[:100]} ({f.lens})" for f in medium],
+                }
+            )
 
         # Suggestions
         if suggestions:
-            sections.append({
-                "level": 2,
-                "title": "Recommendations",
-                "content": [f"- {s.description} (priority: {s.priority})" for s in suggestions[:10]],
-            })
+            sections.append(
+                {
+                    "level": 2,
+                    "title": "Recommendations",
+                    "content": [
+                        f"- {s.description} (priority: {s.priority})" for s in suggestions[:10]
+                    ],
+                }
+            )
 
         return sections
 
@@ -203,7 +224,9 @@ class ArticleByArticleRenderer(ReportRenderer):
         sections: list[dict[str, Any]] = []
         by_article = self._findings_by_article(findings)
 
-        for article_id in sorted(by_article.keys(), key=lambda x: (not x.isdigit(), int(x) if x.isdigit() else 0)):
+        for article_id in sorted(
+            by_article.keys(), key=lambda x: (not x.isdigit(), int(x) if x.isdigit() else 0)
+        ):
             article_findings = by_article[article_id]
             article = None
             for a in document.articles:
@@ -217,7 +240,10 @@ class ArticleByArticleRenderer(ReportRenderer):
 
             content_lines: list[str] = []
             for f in article_findings:
-                content_lines.append(f"**{f.finding_type.value.upper()}** — Severity: {f.severity.value}, Confidence: {f.confidence.score}")
+                content_lines.append(
+                    f"**{f.finding_type.value.upper()}** — Severity: {f.severity.value}, "
+                    f"Confidence: {f.confidence.score}"
+                )
                 content_lines.append(f"  - Issue: {f.irac.issue}")
                 content_lines.append(f"  - Conclusion: {f.irac.conclusion}")
                 if f.evidence:
@@ -234,19 +260,23 @@ class ArticleByArticleRenderer(ReportRenderer):
                     content_lines.append(f"- [{s.suggestion_type}] {s.description}")
                 content_lines.append("")
 
-            sections.append({
-                "level": 2,
-                "title": header_title,
-                "content": content_lines,
-            })
+            sections.append(
+                {
+                    "level": 2,
+                    "title": header_title,
+                    "content": content_lines,
+                }
+            )
 
         # General suggestions (no specific article)
         general = [s for s in suggestions if not s.article_id]
         if general:
-            sections.append({
-                "level": 2,
-                "title": "General Recommendations",
-                "content": [f"- [{s.suggestion_type}] {s.description}" for s in general],
-            })
+            sections.append(
+                {
+                    "level": 2,
+                    "title": "General Recommendations",
+                    "content": [f"- [{s.suggestion_type}] {s.description}" for s in general],
+                }
+            )
 
         return sections

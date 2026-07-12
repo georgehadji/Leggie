@@ -22,70 +22,92 @@ from leggie.domain.models import (
 
 # ── Fakes ────────────────────────────────────────────────────────────────────
 
+
 class FakeLLM(LLMPort):
-    async def generate(self, request: LLMRequest) -> LLMResponse:
-        return LLMResponse(content="fake", model="fake", tier_used=ModelTier.FREE, usage={"prompt_tokens": 1, "completion_tokens": 1})
-    async def generate_structured(self, request, schema):
+    async def generate(self, _request: LLMRequest) -> LLMResponse:
+        return LLMResponse(
+            content="fake",
+            model="fake",
+            tier_used=ModelTier.FREE,
+            usage={"prompt_tokens": 1, "completion_tokens": 1},
+        )
+
+    async def generate_structured(self, request, _schema):
         return (None, await self.generate(request))
-    async def count_tokens(self, text, model=None):
+
+    async def count_tokens(self, text, _model=None):
         return len(text) // 4
 
 
 class FakeRouter(RouterPort):
-    async def route(self, task_type, budget_remaining=None):
+    async def route(self, _task_type, _budget_remaining=None):
         return RouteResult(model="fake-model", tier=ModelTier.BUDGET, max_tokens=4096)
-    async def cascade(self, task_type, current_tier, failure_reason=None):
+
+    async def cascade(self, _task_type, _current_tier, _failure_reason=None):
         return None
+
     def supported_models(self):
         return ["fake-model"]
 
 
 class FakeRetrieval(RetrievalPort):
-    async def search(self, query, corpus="default", top_k=10, mode="hybrid"):
+    async def search(self, _query, _corpus="default", _top_k=10, _mode="hybrid"):
         return []
-    async def get_document(self, document_id, corpus="default"):
+
+    async def get_document(self, _document_id, _corpus="default"):
         return None
-    async def corpus_stats(self, corpus="default"):
+
+    async def corpus_stats(self, _corpus="default"):
         return {"size": 0}
 
 
 class FakeCitationParser(CitationParserPort):
-    def parse(self, text):
+    def parse(self, _text):
         return []
+
     async def resolve(self, citation):
         return citation
+
     def supported_schemes(self):
         return [CitationScheme.FEK]
 
 
 class FakeEventBus(EventBusPort):
-    async def publish(self, event):
+    async def publish(self, _event):
         pass
-    def subscribe(self, event_type, handler):
+
+    def subscribe(self, _event_type, _handler):
         pass
-    def unsubscribe(self, event_type, handler):
+
+    def unsubscribe(self, _event_type, _handler):
         pass
 
 
 class FakeState(StatePort):
-    async def get_state(self, run_id):
+    async def get_state(self, _run_id):
         return WorkflowState.IDLE
-    async def set_state(self, run_id, state):
+
+    async def set_state(self, _run_id, _state):
         pass
-    async def get_checkpoint(self, run_id, stage):
+
+    async def get_checkpoint(self, _run_id, _stage):
         return None
-    async def save_checkpoint(self, run_id, stage, data):
+
+    async def save_checkpoint(self, _run_id, _stage, _data):
         pass
 
 
 class FakeBlackboard(BlackboardPort):
-    async def post_finding(self, entry):
+    async def post_finding(self, _entry):
         pass
-    async def get_findings(self, round_min=0, agent_id=None):
+
+    async def get_findings(self, _round_min=0, _agent_id=None):
         return []
+
     async def get_all_findings(self):
         return []
-    async def clear_round(self, round_number):
+
+    async def clear_round(self, _round_number):
         pass
 
 

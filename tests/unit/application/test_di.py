@@ -10,14 +10,15 @@ from leggie.infrastructure.container import BindingNotFoundError, Container
 
 
 class FakeLLM(LLMPort):
-    async def generate(self, request):
+    async def generate(self, _request):
         from leggie.application.ports.llm import LLMResponse
+
         return LLMResponse(content="fake", model="fake", tier_used=None, usage={})
 
-    async def generate_structured(self, request, schema):
+    async def generate_structured(self, request, _schema):
         return (None, await self.generate(request))
 
-    async def count_tokens(self, text, model=None):
+    async def count_tokens(self, text, _model=None):
         return len(text)
 
 

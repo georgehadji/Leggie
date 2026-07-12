@@ -3,6 +3,7 @@
 from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
 
 from leggie.domain.models import (
     IRAC,
@@ -56,7 +57,7 @@ class TestConfidence:
 
     def test_frozen(self):
         c = Confidence.from_score(0.8)
-        with pytest.raises(Exception):  # FrozenInstanceError
+        with pytest.raises(ValidationError):
             c.score = 0.5
 
 
@@ -90,7 +91,7 @@ class TestCitation:
         assert cite.resolved is True
 
     def test_identifier_not_empty(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             Citation(
                 scheme=CitationScheme.FEK,
                 identifier="   ",
@@ -171,7 +172,7 @@ class TestFinding:
             lens="test",
             model="test",
         )
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             finding.lens = "changed"
 
 
@@ -244,5 +245,5 @@ class TestEvent:
             event_type=EventType.WORKFLOW_COMPLETED,
             aggregate_id="run-001",
         )
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             event.event_type = EventType.ANALYSIS_STARTED

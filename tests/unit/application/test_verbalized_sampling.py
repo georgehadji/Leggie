@@ -17,7 +17,8 @@ class TestVSSample:
             finding_type=FindingType.CONSTITUTIONAL,
             irac=IRAC(issue="x", rule="y", application="z", conclusion="w"),
             confidence=Confidence.from_score(0.5),
-            lens="test", model="test",
+            lens="test",
+            model="test",
         )
         sample = VSSample(finding=finding, probability=0.3)
         assert sample.probability == 0.3
@@ -62,23 +63,26 @@ def _make_finding(issue_text: str) -> Finding:
         finding_type=FindingType.CONSTITUTIONAL,
         irac=IRAC(issue=issue_text, rule="r", application="a", conclusion="c"),
         confidence=Confidence.from_score(0.5),
-        lens="test", model="test",
+        lens="test",
+        model="test",
     )
 
 
 def _create_test_vs() -> VerbalizedSampling:
     """Create a test VS that returns fake candidates."""
+
     class FakeVS(VerbalizedSampling):
-        def build_prompt(self, lens_name: str, article: Article, k: int) -> str:
+        def build_prompt(self, lens_name: str, article: Article, _k: int) -> str:
             return f"Analyze {article.id} from {lens_name} perspective."
 
-        async def call_model(self, prompt: str) -> str:
+        async def call_model(self, _prompt: str) -> str:
             return "Finding A: 0.3, Finding B: 0.2, Finding C: 0.1"
 
-        def parse_distribution(self, raw_response: str) -> list[VSSample]:
+        def parse_distribution(self, _raw_response: str) -> list[VSSample]:
             return [
                 VSSample(_make_finding("A"), 0.3),
                 VSSample(_make_finding("B"), 0.2),
                 VSSample(_make_finding("C"), 0.1),
             ]
+
     return FakeVS()

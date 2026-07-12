@@ -17,6 +17,7 @@ from leggie.infrastructure.llm.base import (
 )
 from leggie.infrastructure.llm.decorators import with_cache, with_retry
 
+
 # Legacy adapter — uses OpenRouter as primary provider
 class LLMAdapter:
     """Concrete LLM adapter — uses OpenRouter as primary provider."""
@@ -30,6 +31,7 @@ class LLMAdapter:
         if not openrouter_key:
             raise LLMConfigurationError("OpenRouter API key not configured")
         from leggie.infrastructure.rate_limiter import RateLimiter
+
         self._provider: BaseLLMProvider = OpenRouterProvider(
             api_key=openrouter_key,
             base_url=openrouter_base_url,
@@ -43,6 +45,7 @@ class LLMAdapter:
     async def generate_structured(self, request, schema):
         import json
         from dataclasses import replace
+
         req = replace(request, response_format={"type": "json_object"})
         response = await self.generate(req)
         try:
@@ -53,16 +56,22 @@ class LLMAdapter:
             obj = schema(**data)
             return obj, response
         except Exception as e:
-            raise LLMError(f"Failed to parse structured response: {e}")
+            raise LLMError(f"Failed to parse structured response: {e}") from e
 
     async def count_tokens(self, text, model=None):
         return await self._provider.count_tokens(text, model)
 
+
 __all__ = [
     "BaseLLMProvider",
     "LLMAdapter",
-    "LLMError", "LLMConfigurationError", "LLMTimeoutError", "LLMRateLimitError",
-    "LLMRateLimitError", "BudgetExceededError",
+    "LLMError",
+    "LLMConfigurationError",
+    "LLMTimeoutError",
+    "LLMRateLimitError",
+    "LLMRateLimitError",
+    "BudgetExceededError",
     "OpenRouterProvider",
-    "with_retry", "with_cache",
+    "with_retry",
+    "with_cache",
 ]

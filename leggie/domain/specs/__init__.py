@@ -7,7 +7,7 @@ confidence gates, citation validity, and abstention decisions (U9).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from typing import TypeVar
 
 from leggie.domain.models import Citation, Finding
 
@@ -108,9 +108,7 @@ class HasVerifiedCitations(Spec[Finding]):
     def is_satisfied_by(self, finding: Finding) -> bool:
         if not finding.evidence:
             return not self._require_citations
-        verified = any(
-            e.citation and e.citation.resolved for e in finding.evidence if e.citation
-        )
+        verified = any(e.citation and e.citation.resolved for e in finding.evidence if e.citation)
         if self._require_citations:
             return verified
         return True  # citations helpful but not required

@@ -50,7 +50,9 @@ class BudgetSettings(BaseSettings):
 class RetrievalSettings(BaseSettings):
     """Retrieval configuration — corpora, embeddings, hybrid parameters."""
 
-    model_config = SettingsConfigDict(env_prefix="LEGGIE_RETRIEVAL_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="LEGGIE_RETRIEVAL_", env_file=".env", extra="ignore"
+    )
 
     embed_model: str = "spyrosbriakos/greek_legal_bert_v2"
     dense_top_k: int = 10

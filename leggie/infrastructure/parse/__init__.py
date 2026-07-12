@@ -19,7 +19,6 @@ from typing import Any
 
 from leggie.domain.models import Article, Document, Paragraph, SubParagraph
 
-
 # ── Cross-reference stop-list (FIX_PLAN D1.4) ───────────────────────────────
 _STOP_PATTERN: Pattern = re.compile(
     r"(?:"
@@ -48,9 +47,7 @@ SUB_PARAGRAPH_PATTERN: Pattern = re.compile(
 )
 
 # Citation patterns
-FEK_CITATION: Pattern = re.compile(
-    r"ΦΕΚ\s+(?:[ΑαΒβΓγΔδΕεΣΤστ]’?)\s*(\d+)/(\d{4})", re.UNICODE
-)
+FEK_CITATION: Pattern = re.compile(r"ΦΕΚ\s+(?:[ΑαΒβΓγΔδΕεΣΤστ]’?)\s*(\d+)/(\d{4})", re.UNICODE)
 CELEX_CITATION: Pattern = re.compile(r"CELEX[:/\s]*([A-Za-z0-9]+)", re.UNICODE)
 ECLI_CITATION: Pattern = re.compile(r"ECLI[:/\s]*([A-Za-z0-9:]+)", re.UNICODE)
 
@@ -93,7 +90,7 @@ class DocumentParser:
         return text.strip()
 
     def _extract_articles(self, text: str) -> list[Article]:
-        """Extract articles using line-anchored heading detection.
+        r"""Extract articles using line-anchored heading detection.
 
         F0.1: Line-anchor headings via ^ with re.MULTILINE.
         F0.2: Number constrained to \d+[Α-Ωα-ω]? (no multi-token garbage).
@@ -113,11 +110,13 @@ class DocumentParser:
                 continue
 
             # F0.4: Extract the content from this heading to the next heading
-            candidates.append({
-                "num": article_num,
-                "title": article_title,
-                "start": line_start,
-            })
+            candidates.append(
+                {
+                    "num": article_num,
+                    "title": article_title,
+                    "start": line_start,
+                }
+            )
 
         # Convert candidates to articles
         articles: list[Article] = []
@@ -139,20 +138,19 @@ class DocumentParser:
             last_num = num_int
 
             # Content: from this heading start to next heading start (or end)
-            if i + 1 < len(candidates):
-                content_end = candidates[i + 1]["start"]
-            else:
-                content_end = len(text)
-            raw = text[cand["start"]:content_end].strip()
+            content_end = candidates[i + 1]["start"] if i + 1 < len(candidates) else len(text)
+            raw = text[cand["start"] : content_end].strip()
 
             paragraphs = self._extract_paragraphs(raw)
 
-            articles.append(Article(
-                id=num_str,
-                title=cand["title"],
-                paragraphs=paragraphs,
-                raw_text=raw,
-            ))
+            articles.append(
+                Article(
+                    id=num_str,
+                    title=cand["title"],
+                    paragraphs=paragraphs,
+                    raw_text=raw,
+                )
+            )
 
         return articles
 
@@ -164,9 +162,7 @@ class DocumentParser:
             num = match.group(1).strip()
             para_text = match.group(2).strip()
             sub_paras = self._extract_subparagraphs(para_text)
-            paragraphs.append(
-                Paragraph(number=num, text=para_text, subparagraphs=sub_paras)
-            )
+            paragraphs.append(Paragraph(number=num, text=para_text, subparagraphs=sub_paras))
         return paragraphs
 
     def _extract_subparagraphs(self, paragraph_text: str) -> list[SubParagraph]:
@@ -190,7 +186,7 @@ class DocumentParser:
 
     def _infer_title(self, text: str) -> str:
         """Infer document title from first meaningful line."""
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
         for line in lines[:5]:
             if len(line) > 10 and not line.startswith("Άρθρο"):
                 return line[:200]
@@ -200,21 +196,27 @@ class DocumentParser:
         """Extract all citation references from text."""
         citations: list[dict] = []
         for match in FEK_CITATION.finditer(text):
-            citations.append({
-                "type": "fek",
-                "identifier": f"ΦΕΚ {match.group(1)}/{match.group(2)}",
-                "original_text": match.group(0),
-            })
+            citations.append(
+                {
+                    "type": "fek",
+                    "identifier": f"ΦΕΚ {match.group(1)}/{match.group(2)}",
+                    "original_text": match.group(0),
+                }
+            )
         for match in CELEX_CITATION.finditer(text):
-            citations.append({
-                "type": "celex",
-                "identifier": match.group(1),
-                "original_text": match.group(0),
-            })
+            citations.append(
+                {
+                    "type": "celex",
+                    "identifier": match.group(1),
+                    "original_text": match.group(0),
+                }
+            )
         for match in ECLI_CITATION.finditer(text):
-            citations.append({
-                "type": "ecli",
-                "identifier": match.group(1),
-                "original_text": match.group(0),
-            })
+            citations.append(
+                {
+                    "type": "ecli",
+                    "identifier": match.group(1),
+                    "original_text": match.group(0),
+                }
+            )
         return citations

@@ -5,7 +5,7 @@ All functions are pure: no I/O, no clocks, no randomness (seed injected).
 
 from __future__ import annotations
 
-from leggie.domain.models import Confidence, ConfidenceGrade, Finding, FindingType, Severity
+from leggie.domain.models import Confidence, Finding, FindingType, Severity
 
 
 def score_severity(finding: Finding) -> Severity:
@@ -43,7 +43,9 @@ def score_novelty(
     return 1.0 - max_sim if max_sim >= threshold else 1.0
 
 
-def combine_confidence(evidence_conf: float, verification_conf: float, weight_evidence: float = 0.4) -> Confidence:
+def combine_confidence(
+    evidence_conf: float, verification_conf: float, weight_evidence: float = 0.4
+) -> Confidence:
     """Combine evidence-based and verification-based confidence into a single score."""
     combined = evidence_conf * weight_evidence + verification_conf * (1.0 - weight_evidence)
     return Confidence.from_score(combined, provenance="combined(evidence+verification)")

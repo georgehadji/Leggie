@@ -89,7 +89,11 @@ class EvalResult:
             "f1": round(self.f1, 4),
             "risk_direction_index": round(self.risk_direction_index, 4),
             "type_metrics": {
-                k: {"precision": round(v.precision, 4), "recall": round(v.recall, 4), "f1": round(v.f1, 4)}
+                k: {
+                    "precision": round(v.precision, 4),
+                    "recall": round(v.recall, 4),
+                    "f1": round(v.f1, 4),
+                }
                 for k, v in self.type_metrics.items()
             },
         }
@@ -140,13 +144,13 @@ class GoldSet:
         for bill_id, labels in self._labels.items():
             data[bill_id] = [
                 {
-                    "article_id": l.article_id,
-                    "finding_type": l.finding_type.value,
-                    "description": l.description,
-                    "severity": l.severity.value,
-                    "citation_text": l.citation_text,
+                    "article_id": label.article_id,
+                    "finding_type": label.finding_type.value,
+                    "description": label.description,
+                    "severity": label.severity.value,
+                    "citation_text": label.citation_text,
                 }
-                for l in labels
+                for label in labels
             ]
         filepath = Path(path)
         filepath.parent.mkdir(parents=True, exist_ok=True)

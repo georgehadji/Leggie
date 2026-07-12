@@ -19,11 +19,11 @@ from typing import Any
 
 from leggie.application.ports.blackboard import BlackboardPort
 from leggie.application.ports.citation_parser import CitationParserPort
-from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.event_bus import EventBusPort
 from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
+from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.ports.state import StatePort
 
@@ -91,26 +91,31 @@ class Container:
         """Wire all defaults for Leggie's core ports."""
         # Event bus
         from leggie.infrastructure.persistence import InMemoryEventBus
+
         self.register(EventBusPort, lambda: InMemoryEventBus())
 
         # LLM adapter (OpenRouter — single API key for all providers)
         def _create_llm() -> LLMPort:
             from leggie.config.settings import get_settings
             from leggie.infrastructure.llm import LLMAdapter
+
             s = get_settings()
             return LLMAdapter(
                 openrouter_key=s.llm.openrouter_api_key,
                 openrouter_base_url=s.llm.openrouter_base_url,
                 default_model=s.llm.openrouter_default_model,
             )
+
         self.register(LLMPort, _create_llm)
 
         # Router
         from leggie.infrastructure.router import StaticRouter
+
         self.register(RouterPort, lambda: StaticRouter("config/routes.yaml"))
 
         # Citation parser
         from leggie.infrastructure.citation import GreekCitationParser
+
         self.register(CitationParserPort, lambda: GreekCitationParser())
 
         # In-memory state (file-based later)
@@ -119,16 +124,19 @@ class Container:
         # Ingest / Parse adapters
         from leggie.infrastructure.ingest_adapter import IngestAdapter
         from leggie.infrastructure.parse_adapter import ParseAdapter
+
         self.register(IngestPort, lambda: IngestAdapter())
         self.register(ParsePort, lambda: ParseAdapter())
 
         # Rate limiter for LLM calls
         from leggie.infrastructure.rate_limiter import RateLimiter
+
         self.register_instance("rate_limiter", RateLimiter(max_rate=5.0))
 
         # Blackboard / Retrieval
         from leggie.infrastructure.blackboard_adapter import BlackboardAdapter
         from leggie.infrastructure.retrieval_adapter import SimpleRetrievalAdapter
+
         self.register(BlackboardPort, lambda: BlackboardAdapter())
         self.register(RetrievalPort, lambda: SimpleRetrievalAdapter())
 
@@ -142,4 +150,5 @@ class Container:
                 max_tokens=s.budget.max_tokens_per_run,
                 max_cost=s.budget.max_cost_per_run,
             )
+
         self.register_instance("budget_guard", _create_budget_guard())

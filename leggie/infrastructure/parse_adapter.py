@@ -11,5 +11,6 @@ class ParseAdapter(ParsePort):
 
     def parse(self, text: str, title: str = "", source_format: str = "txt") -> Document:
         from leggie.infrastructure.parse import DocumentParser
+
         parser = DocumentParser()
         return parser.parse(text, title=title, source_format=source_format)

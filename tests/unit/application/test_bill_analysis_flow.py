@@ -45,7 +45,9 @@ class TestBillAnalysisFlow:
         flow = BillAnalysisFlow()
         await flow.run(sample_bill_file)
         events = flow.get_event_log()
-        assert len(events) >= 5  # At least: analysis_started, stage_completed × 4+, workflow_completed
+        assert (
+            len(events) >= 5
+        )  # At least: analysis_started, stage_completed × 4+, workflow_completed
 
     @pytest.mark.asyncio
     async def test_run_returns_findings_with_irac(self, sample_bill_file):

@@ -75,18 +75,14 @@ class Mediator:
         """Execute a command through the pipeline."""
         handler = self._command_handlers.get(type(command))
         if handler is None:
-            raise HandlerNotRegisteredError(
-                f"No handler registered for {type(command).__name__}"
-            )
+            raise HandlerNotRegisteredError(f"No handler registered for {type(command).__name__}")
         return await self._run_pipeline(command, handler.handle)
 
     async def query(self, query: Query) -> QueryResult:
         """Execute a query through the pipeline."""
         handler = self._query_handlers.get(type(query))
         if handler is None:
-            raise HandlerNotRegisteredError(
-                f"No handler registered for {type(query).__name__}"
-            )
+            raise HandlerNotRegisteredError(f"No handler registered for {type(query).__name__}")
         return await self._run_pipeline(query, handler.handle)
 
     async def _run_pipeline(
@@ -109,6 +105,7 @@ class Mediator:
             async def make_next(b: IPipelineBehavior, next_fn: Callable) -> Callable:
                 async def wrapped(req: Any) -> Any:
                     return await b.handle(req, next_fn)
+
                 return wrapped
 
             current = await make_next(behavior, prev)

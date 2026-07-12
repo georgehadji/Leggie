@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from leggie.application.blackboard import Blackboard as BlackboardService
-from leggie.application.ports.blackboard import BlackboardPort, BlackboardEntry
-from leggie.domain.models import Finding
+from leggie.application.ports.blackboard import BlackboardEntry, BlackboardPort
 
 
 class BlackboardAdapter(BlackboardPort):
@@ -16,7 +15,9 @@ class BlackboardAdapter(BlackboardPort):
     async def post_finding(self, entry: BlackboardEntry) -> None:
         self._service.post(entry.finding, agent_id=entry.agent_id, metadata=entry.metadata)
 
-    async def get_findings(self, round_min: int = 0, agent_id: str | None = None) -> list[BlackboardEntry]:
+    async def get_findings(
+        self, _round_min: int = 0, _agent_id: str | None = None
+    ) -> list[BlackboardEntry]:
         findings = self._service.get_all_findings()
         return [BlackboardEntry(finding=f, agent_id="") for f in findings]
 

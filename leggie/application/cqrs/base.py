@@ -19,6 +19,7 @@ TResult = TypeVar("TResult")
 @dataclass(frozen=True)
 class CommandResult[TResult]:
     """Result of executing a command."""
+
     success: bool
     data: TResult | None = None
     error: str | None = None
@@ -27,6 +28,7 @@ class CommandResult[TResult]:
 @dataclass(frozen=True)
 class QueryResult[TResult]:
     """Result of executing a query."""
+
     success: bool
     data: TResult | None = None
     error: str | None = None

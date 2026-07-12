@@ -26,11 +26,16 @@ class OpenRouterProvider(BaseLLMProvider):
       - Provider fallback handled server-side
     """
 
-    def __init__(self, api_key: str, base_url: str = "https://openrouter.ai/api/v1",
-                 default_model: str = "openai/gpt-5.6-luna",
-                 rate_limiter: RateLimiter | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://openrouter.ai/api/v1",
+        default_model: str = "openai/gpt-5.6-luna",
+        rate_limiter: RateLimiter | None = None,
+    ) -> None:
         if not api_key:
             from leggie.infrastructure.llm.base import LLMConfigurationError
+
             raise LLMConfigurationError("OpenRouter API key not configured")
         self._api_key = api_key
         self._base_url = base_url
@@ -43,7 +48,8 @@ class OpenRouterProvider(BaseLLMProvider):
             import httpx
         except ImportError:
             from leggie.infrastructure.llm.base import LLMError
-            raise LLMError("httpx not installed")
+
+            raise LLMError("httpx not installed") from None
 
         await self._rate_limiter.acquire()
         model = request.model or self._default_model
@@ -84,9 +90,11 @@ class OpenRouterProvider(BaseLLMProvider):
 
         if resp.status_code == 429:
             from leggie.infrastructure.llm.base import LLMRateLimitError
+
             raise LLMRateLimitError(f"OpenRouter rate limited: {resp.text}")
         if resp.status_code != 200:
             from leggie.infrastructure.llm.base import LLMError
+
             raise LLMError(f"OpenRouter API error {resp.status_code}: {resp.text}")
 
         data = resp.json()
@@ -94,10 +102,15 @@ class OpenRouterProvider(BaseLLMProvider):
         content = choice.get("message", {}).get("content", "")
         usage = data.get("usage", {})
         return LLMResponse(
-            content=content, model=model, tier_used=ModelTier.BUDGET,
-            usage={"prompt_tokens": usage.get("prompt_tokens", 0), "completion_tokens": usage.get("completion_tokens", 0)},
+            content=content,
+            model=model,
+            tier_used=ModelTier.BUDGET,
+            usage={
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+            },
             latency_ms=elapsed,
         )
 
-    async def count_tokens(self, text: str, model: str | None = None) -> int:
+    async def count_tokens(self, text: str, _model: str | None = None) -> int:
         return len(text) // 4 + 1

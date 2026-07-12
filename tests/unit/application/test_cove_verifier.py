@@ -23,7 +23,8 @@ def make_finding_with_citations(citations: list[Citation] | None = None) -> Find
         finding_type=FindingType.CONSTITUTIONAL,
         irac=IRAC(issue="test", rule="rule", application="app", conclusion="conc"),
         confidence=Confidence.from_score(0.5),
-        lens="test", model="test",
+        lens="test",
+        model="test",
         evidence=evidence_list,
     )
 
@@ -55,8 +56,18 @@ class TestCoVeVerifier:
     async def test_verify_multiple_citations(self):
         verifier = CoVeVerifier()
         cites = [
-            Citation(scheme=CitationScheme.FEK, identifier="ΦΕΚ Α 1/2023", original_text="ΦΕΚ Α 1/2023", resolved=True),
-            Citation(scheme=CitationScheme.CELEX, identifier="32018L1972", original_text="CELEX:32018L1972", resolved=True),
+            Citation(
+                scheme=CitationScheme.FEK,
+                identifier="ΦΕΚ Α 1/2023",
+                original_text="ΦΕΚ Α 1/2023",
+                resolved=True,
+            ),
+            Citation(
+                scheme=CitationScheme.CELEX,
+                identifier="32018L1972",
+                original_text="CELEX:32018L1972",
+                resolved=True,
+            ),
         ]
         result = await verifier.verify(make_finding_with_citations(cites))
         assert result.verified_count == 2
@@ -67,9 +78,16 @@ class TestCoVeVerifier:
         verifier = CoVeVerifier()
         findings = [
             make_finding_with_citations(),
-            make_finding_with_citations([
-                Citation(scheme=CitationScheme.FEK, identifier="ΦΕΚ Α 1/2023", original_text="ΦΕΚ Α 1/2023", resolved=True),
-            ]),
+            make_finding_with_citations(
+                [
+                    Citation(
+                        scheme=CitationScheme.FEK,
+                        identifier="ΦΕΚ Α 1/2023",
+                        original_text="ΦΕΚ Α 1/2023",
+                        resolved=True,
+                    ),
+                ]
+            ),
         ]
         results = await verifier.verify_batch(findings)
         assert len(results) == 2
@@ -78,13 +96,15 @@ class TestCoVeVerifier:
     @pytest.mark.asyncio
     async def test_plan_questions_from_text_excerpt(self):
         from leggie.infrastructure.citation import GreekCitationParser
+
         parser = GreekCitationParser()
         verifier = CoVeVerifier(citation_parser=parser)
         finding = Finding(
             finding_type=FindingType.CONSTITUTIONAL,
             irac=IRAC(issue="test", rule="rule", application="app", conclusion="conc"),
             confidence=Confidence.from_score(0.5),
-            lens="test", model="test",
+            lens="test",
+            model="test",
             evidence=[Evidence(text_excerpt="ΦΕΚ Α 137/2023", verdict="supports")],
         )
         result = await verifier.verify(finding)

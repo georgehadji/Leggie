@@ -10,14 +10,23 @@ SAMPLE_DOC = Document(
     source_format="txt",
     raw_text="Test bill with three articles.",
     articles=[
-        Article(id="1", raw_text="Άρθρο 1: Εξουσιοδότηση για έκδοση π.δ. και "
-                "περιορισμός προσωπικών δεδομένων για την προστασία "
-                "του απορρήτου των επικοινωνιών."),
-        Article(id="2", raw_text="Άρθρο 2: Απλή διάταξη χωρίς συνταγματικά ζητήματα "
-                "που ρυθμίζει την έναρξη ισχύος του παρόντος νόμου."),
-        Article(id="3", raw_text="Άρθρο 3: Περιορισμός προσωπικών δεδομένων "
-                "και παραβίαση δικαιώματος στην ιδιωτικότητα κατά την "
-                "εφαρμογή των διατάξεων του παρόντος."),
+        Article(
+            id="1",
+            raw_text="Άρθρο 1: Εξουσιοδότηση για έκδοση π.δ. και "
+            "περιορισμός προσωπικών δεδομένων για την προστασία "
+            "του απορρήτου των επικοινωνιών.",
+        ),
+        Article(
+            id="2",
+            raw_text="Άρθρο 2: Απλή διάταξη χωρίς συνταγματικά ζητήματα "
+            "που ρυθμίζει την έναρξη ισχύος του παρόντος νόμου.",
+        ),
+        Article(
+            id="3",
+            raw_text="Άρθρο 3: Περιορισμός προσωπικών δεδομένων "
+            "και παραβίαση δικαιώματος στην ιδιωτικότητα κατά την "
+            "εφαρμογή των διατάξεων του παρόντος.",
+        ),
     ],
 )
 
@@ -33,7 +42,13 @@ class TestOrchestrator:
         # 3 articles × 5 lenses = 15 tasks
         assert len(tasks) == 15
         for task in tasks:
-            assert task.lens in ["constitutional", "legal_coherence", "economic", "implementation", "eu_gdpr"]
+            assert task.lens in [
+                "constitutional",
+                "legal_coherence",
+                "economic",
+                "implementation",
+                "eu_gdpr",
+            ]
             assert task.sample_count == 1
 
     def test_decompose_task_article_ids(self):

@@ -68,7 +68,7 @@ class TestPipelineBehavior:
         calls = []
 
         class LogBehavior(IPipelineBehavior):
-            async def handle(self, request, next_handler, **kwargs):
+            async def handle(self, request, next_handler, **_kwargs):
                 calls.append("before")
                 result = await next_handler(request)
                 calls.append("after")
@@ -87,14 +87,14 @@ class TestPipelineBehavior:
         order = []
 
         class BehaviorA(IPipelineBehavior):
-            async def handle(self, request, next_handler, **kwargs):
+            async def handle(self, request, next_handler, **_kwargs):
                 order.append("A-start")
                 result = await next_handler(request)
                 order.append("A-end")
                 return result
 
         class BehaviorB(IPipelineBehavior):
-            async def handle(self, request, next_handler, **kwargs):
+            async def handle(self, request, next_handler, **_kwargs):
                 order.append("B-start")
                 result = await next_handler(request)
                 order.append("B-end")

@@ -12,7 +12,6 @@ Phase 2+: parallel fan-out with asyncio.TaskGroup + semaphore.
 from __future__ import annotations
 
 import asyncio
-import logging
 
 from leggie.application.agents.constitutional_lens import ConstitutionalLens
 from leggie.application.agents.economic_lens import EconomicLens
@@ -102,6 +101,7 @@ class Orchestrator:
                     return await lens.analyze(article)
                 except Exception as e:
                     import logging
+
                     log = logging.getLogger(__name__)
                     log.warning("lens_failed: %s article=%s error=%s", name, article.id, str(e))
                     return []

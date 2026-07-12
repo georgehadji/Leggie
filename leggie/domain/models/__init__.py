@@ -7,8 +7,8 @@ No I/O, no outward imports.
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum, StrEnum, auto
-from typing import Any, ClassVar
+from enum import StrEnum
+from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator

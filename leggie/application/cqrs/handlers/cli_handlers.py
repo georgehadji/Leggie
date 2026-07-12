@@ -37,8 +37,7 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict]):
                         "id": a.id,
                         "title": a.title,
                         "paragraphs": [
-                            {"number": p.number, "text": p.text[:200]}
-                            for p in a.paragraphs
+                            {"number": p.number, "text": p.text[:200]} for p in a.paragraphs
                         ],
                     }
                     for a in doc.articles
@@ -66,7 +65,6 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             llm = _try_get_llm()
             findings, reports = await BillAnalysisFlow(llm=llm).run(command.file_path)
 
-            from leggie.domain.models import WorkflowState
             summary = f"Analysis complete: {len(findings)} finding(s), {len(reports)} report(s)"
             for f in findings:
                 summary += f"\n  - [{f.finding_type.value}:{f.severity.value}] {f.irac.issue[:80]}"
@@ -79,10 +77,12 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
 def _try_get_llm():
     """Try to build an LLM port from settings. Returns None if no API key."""
     from leggie.config.settings import get_settings
+
     s = get_settings()
     if not s.llm.openrouter_api_key:
         return None
     from leggie.infrastructure.llm import LLMAdapter
+
     return LLMAdapter(
         openrouter_key=s.llm.openrouter_api_key,
         default_model=s.llm.openrouter_default_model,
@@ -96,6 +96,7 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
         try:
             import json
             from pathlib import Path
+
             from leggie.infrastructure.persistence.eval_harness import EvalScorer, GoldSet
 
             gold_set = GoldSet(command.gold_set_path)
@@ -103,11 +104,11 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
 
             results = []
             for bill_id in gold_set.bill_ids:
-                labels = gold_set.get_labels(bill_id)
                 # Try to find a bill file matching this bill_id
                 bill_path = _find_bill_file(bill_id, Path(command.gold_set_path).parent)
                 if bill_path and llm:
                     from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
+
                     flow = BillAnalysisFlow(llm=llm)
                     findings, _ = await flow.run(bill_path)
                 else:
@@ -116,8 +117,10 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
                 scorer = EvalScorer(gold_set)
                 result = scorer.score(bill_id, findings)
                 results.append(result.to_dict())
-                print(f"  {bill_id}: {result.total_gold} gold, {len(findings)} findings, "
-                      f"P={result.precision:.2f} R={result.recall:.2f}")
+                print(
+                    f"  {bill_id}: {result.total_gold} gold, {len(findings)} findings, "
+                    f"P={result.precision:.2f} R={result.recall:.2f}"
+                )
 
             if command.results_path:
                 p = Path(command.results_path)

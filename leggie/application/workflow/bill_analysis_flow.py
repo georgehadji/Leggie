@@ -13,6 +13,9 @@ from pathlib import Path
 from leggie.application.agents.improver import ImprovementEngine
 from leggie.application.agents.orchestrator import Orchestrator
 from leggie.application.agents.skeptic import CalibratedSkeptic
+from leggie.application.ports.ingest import IngestPort
+from leggie.application.ports.llm import LLMPort
+from leggie.application.ports.parse import ParsePort
 from leggie.application.services.cove_verifier import CoVeVerifier
 from leggie.application.services.reports import ArticleByArticleRenderer, ExecutiveSummaryRenderer
 from leggie.application.services.rerank import CompositeReranker
@@ -29,12 +32,14 @@ from leggie.domain.models import (
 def _lazy_ingest_adapter() -> IngestPort:
     """Lazy factory for IngestAdapter to avoid top-level infra import."""
     from leggie.infrastructure.ingest_adapter import IngestAdapter
+
     return IngestAdapter()
 
 
 def _lazy_parse_adapter() -> ParsePort:
     """Lazy factory for ParseAdapter to avoid top-level infra import."""
     from leggie.infrastructure.parse_adapter import ParseAdapter
+
     return ParseAdapter()
 
 
@@ -79,7 +84,9 @@ class BillAnalysisFlow:
     def findings(self) -> list[Finding]:
         return list(self._findings)
 
-    async def run(self, file_path: str | Path, output_dir: str | Path = "Outputs") -> tuple[list[Finding], list]:
+    async def run(
+        self, file_path: str | Path, output_dir: str | Path = "Outputs"
+    ) -> tuple[list[Finding], list]:
         """Run the full analysis workflow on a bill file.
 
         Args:
@@ -89,9 +96,11 @@ class BillAnalysisFlow:
         Returns:
             (findings, reports) tuple.
         """
-        from leggie.infrastructure.observability import get_logger, set_trace_id, bind_trace_id
-        import uuid
         import json
+        import uuid
+
+        from leggie.infrastructure.observability import bind_trace_id, get_logger, set_trace_id
+
         file_path = Path(file_path)
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -125,11 +134,14 @@ class BillAnalysisFlow:
             article_findings = await self._orchestrator.analyze_article(article)
             all_findings.extend(article_findings)
             for f in article_findings:
-                self._record_event(EventType.FINDING_CREATED, {
-                    "finding_id": str(f.id),
-                    "lens": f.lens,
-                    "type": f.finding_type.value,
-                })
+                self._record_event(
+                    EventType.FINDING_CREATED,
+                    {
+                        "finding_id": str(f.id),
+                        "lens": f.lens,
+                        "type": f.finding_type.value,
+                    },
+                )
 
         self._findings = all_findings
         self._transition(WorkflowState.AGGREGATING, "execution_completed")
@@ -145,27 +157,34 @@ class BillAnalysisFlow:
         refuted_count = len(self._findings) - len(survivors)
         self._findings = survivors
         if refuted_count:
-            self._record_event(EventType.FINDING_REFUTED, {
-                "refuted": refuted_count,
-                "survivors": len(survivors),
-            })
+            self._record_event(
+                EventType.FINDING_REFUTED,
+                {
+                    "refuted": refuted_count,
+                    "survivors": len(survivors),
+                },
+            )
 
         # 7. Verify — CoVe citation verification (Phase 3)
         if self._findings:
             cove_results = await self._cove.verify_batch(self._findings)
-            verified_findings = [
-                r.finding for r in cove_results
-            ]
+            verified_findings = [r.finding for r in cove_results]
             unverified = sum(1 for r in cove_results if not r.all_verified)
             self._findings = verified_findings
             if unverified:
-                self._record_event(EventType.CITATION_FAILED, {
-                    "unverified": unverified,
-                })
+                self._record_event(
+                    EventType.CITATION_FAILED,
+                    {
+                        "unverified": unverified,
+                    },
+                )
             else:
-                self._record_event(EventType.CITATION_VERIFIED, {
-                    "verified": len(verified_findings),
-                })
+                self._record_event(
+                    EventType.CITATION_VERIFIED,
+                    {
+                        "verified": len(verified_findings),
+                    },
+                )
         self._transition(WorkflowState.IMPROVING, "verify_passed")
 
         # 8. Improve — generate suggestions (Phase 4)
@@ -175,12 +194,17 @@ class BillAnalysisFlow:
 
         # 9. Report — render both report types (Phase 4)
         if self._doc and self._findings:
-            exec_summary = await ExecutiveSummaryRenderer().render(self._doc, self._findings, self._suggestions)
-            article_by_article = await ArticleByArticleRenderer().render(self._doc, self._findings, self._suggestions)
+            exec_summary = await ExecutiveSummaryRenderer().render(
+                self._doc, self._findings, self._suggestions
+            )
+            article_by_article = await ArticleByArticleRenderer().render(
+                self._doc, self._findings, self._suggestions
+            )
             self._reports = [exec_summary, article_by_article]
 
             # Auto-save reports and findings to output directory
             import json
+
             exec_path = output_path / f"{bill_name}_executive_summary.md"
             art_path = output_path / f"{bill_name}_article_by_article.md"
             findings_path = output_path / f"{bill_name}_findings.json"
@@ -190,17 +214,19 @@ class BillAnalysisFlow:
 
             findings_data = []
             for f in self._findings:
-                findings_data.append({
-                    "id": str(f.id),
-                    "type": f.finding_type.value,
-                    "severity": f.severity.value,
-                    "confidence": f.confidence.score,
-                    "lens": f.lens,
-                    "issue": f.irac.issue,
-                    "rule": f.irac.rule,
-                    "conclusion": f.irac.conclusion,
-                    "evidence": [e.text_excerpt for e in f.evidence if e.text_excerpt],
-                })
+                findings_data.append(
+                    {
+                        "id": str(f.id),
+                        "type": f.finding_type.value,
+                        "severity": f.severity.value,
+                        "confidence": f.confidence.score,
+                        "lens": f.lens,
+                        "issue": f.irac.issue,
+                        "rule": f.irac.rule,
+                        "conclusion": f.irac.conclusion,
+                        "evidence": [e.text_excerpt for e in f.evidence if e.text_excerpt],
+                    }
+                )
             with open(findings_path, "w", encoding="utf-8") as f:
                 json.dump(findings_data, f, indent=2, ensure_ascii=False)
 
@@ -212,12 +238,15 @@ class BillAnalysisFlow:
             )
 
         # 10. Done
-        self._record_event(EventType.WORKFLOW_COMPLETED, {
-            "total_findings": len(self._findings),
-            "suggestions": len(self._suggestions),
-            "reports": len(self._reports),
-            "final_state": self._state.value,
-        })
+        self._record_event(
+            EventType.WORKFLOW_COMPLETED,
+            {
+                "total_findings": len(self._findings),
+                "suggestions": len(self._suggestions),
+                "reports": len(self._reports),
+                "final_state": self._state.value,
+            },
+        )
         self._transition(WorkflowState.DONE, "report_completed")
 
         return self._findings, self._reports
@@ -238,18 +267,23 @@ class BillAnalysisFlow:
         return await self._ingester.ingest(file_path)
 
     def _do_parse(self, text: str, file_path: Path) -> Document:
-        return self._parser.parse(text, title=file_path.stem, source_format=file_path.suffix.lstrip("."))
+        return self._parser.parse(
+            text, title=file_path.stem, source_format=file_path.suffix.lstrip(".")
+        )
 
     def _transition(self, target: WorkflowState, event: str) -> None:
         """Transition the FSM, tracking current state."""
         next_state = self._fsm.transition(self._state, event)
         if next_state is not None:
             self._state = next_state
-            self._record_event(EventType.STAGE_COMPLETED, {
-                "from": self._state.value if next_state != target else "previous",
-                "to": target.value,
-                "event": event,
-            })
+            self._record_event(
+                EventType.STAGE_COMPLETED,
+                {
+                    "from": self._state.value if next_state != target else "previous",
+                    "to": target.value,
+                    "event": event,
+                },
+            )
 
     def _record_event(self, event_type: EventType, data: dict) -> None:
         """Record an audit event."""
