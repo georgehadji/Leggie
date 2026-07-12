@@ -3,9 +3,9 @@
 Per BUILD_PLAN §8: "Each Port has a fake + contract test."
 """
 
-import pytest
-
 from dataclasses import FrozenInstanceError
+
+import pytest
 
 from leggie.application.ports.blackboard import BlackboardPort
 from leggie.application.ports.citation_parser import CitationParserPort
@@ -99,7 +99,7 @@ class FakeBlackboard(BlackboardPort):
 
 
 class FakeReasoner(ReasonerPort):
-    async def reason(self, request: ReasonerRequest) -> ReasonerResult:
+    async def reason(self, request: ReasonerRequest) -> ReasonerResult:  # noqa: ARG002
         return ReasonerResult(
             synthesis="Fake synthesis",
             critical_insights=["insight 1"],
