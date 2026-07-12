@@ -2,9 +2,13 @@
 
 import pytest
 
+from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.reasoner import ReasonerPort, ReasonerRequest, ReasonerResult
-from leggie.application.workflow.deliberative_flow import DeliberativeFlow
-from leggie.domain.models import EventType
+from leggie.application.workflow.deliberative_flow import (
+    DeliberativeBudgetExceededError,
+    DeliberativeFlow,
+)
+from leggie.domain.models import Citation, CitationScheme, EventType
 
 SAMPLE_BILL = """
 ΣΧΕΔΙΟ ΝΟΜΟΥ
@@ -52,6 +56,22 @@ class FakeServerManager:
 
     async def ensure_running(self) -> None:
         self.ensure_running_calls += 1
+
+
+class FakeCitationParser(CitationParserPort):
+    def __init__(self, citations: list[Citation] | None = None) -> None:
+        self._citations = citations or []
+        self.parse_calls: list[str] = []
+
+    def parse(self, text: str) -> list[Citation]:
+        self.parse_calls.append(text)
+        return self._citations
+
+    async def resolve(self, citation: Citation) -> Citation:
+        return citation
+
+    def supported_schemes(self) -> list[CitationScheme]:
+        return [CitationScheme.FEK]
 
 
 class TestDeliberativeFlowRun:
@@ -217,3 +237,113 @@ class TestDeliberativeFlowServerLifecycle:
         # Should not raise even without a server manager.
         report_path = await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         assert report_path.exists()
+
+
+class TestDeliberativeFlowBudget:
+    @pytest.mark.asyncio
+    async def test_no_budget_configured_never_raises(self, sample_bill_file, tmp_path):
+        reasoner = RecordingFakeReasoner()
+        flow = DeliberativeFlow(
+            reasoner=reasoner,
+            stage1_preset="preset-1",
+            stage2_preset="preset-2",
+            max_tokens_per_run=None,
+        )
+        report_path = await flow.run(sample_bill_file, output_dir=tmp_path / "out")
+        assert report_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_estimate_within_budget_proceeds(self, sample_bill_file, tmp_path):
+        reasoner = RecordingFakeReasoner()
+        flow = DeliberativeFlow(
+            reasoner=reasoner,
+            stage1_preset="preset-1",
+            stage2_preset="preset-2",
+            max_tokens_per_run=1_000_000,
+        )
+        report_path = await flow.run(sample_bill_file, output_dir=tmp_path / "out")
+        assert report_path.exists()
+        assert len(reasoner.requests) == 2
+
+    @pytest.mark.asyncio
+    async def test_estimate_over_budget_raises_before_any_reasoner_call(
+        self, sample_bill_file, tmp_path
+    ):
+        reasoner = RecordingFakeReasoner()
+        flow = DeliberativeFlow(
+            reasoner=reasoner,
+            stage1_preset="preset-1",
+            stage2_preset="preset-2",
+            max_tokens_per_run=1,
+        )
+        with pytest.raises(DeliberativeBudgetExceededError, match="exceeds the configured budget"):
+            await flow.run(sample_bill_file, output_dir=tmp_path / "out")
+        assert len(reasoner.requests) == 0
+
+    @pytest.mark.asyncio
+    async def test_over_budget_records_budget_tripped_event(self, sample_bill_file, tmp_path):
+        reasoner = RecordingFakeReasoner()
+        flow = DeliberativeFlow(
+            reasoner=reasoner,
+            stage1_preset="preset-1",
+            stage2_preset="preset-2",
+            max_tokens_per_run=1,
+        )
+        with pytest.raises(DeliberativeBudgetExceededError):
+            await flow.run(sample_bill_file, output_dir=tmp_path / "out")
+        events = flow.get_event_log()
+        assert any(e.event_type == EventType.BUDGET_TRIPPED for e in events)
+
+
+class TestDeliberativeFlowCitationAppendix:
+    @pytest.mark.asyncio
+    async def test_no_citation_parser_omits_appendix(self, sample_bill_file, tmp_path):
+        reasoner = RecordingFakeReasoner()
+        flow = DeliberativeFlow(
+            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
+        )
+        report_path = await flow.run(sample_bill_file, output_dir=tmp_path / "out")
+        content = report_path.read_text(encoding="utf-8")
+        assert "Παράρτημα" not in content
+
+    @pytest.mark.asyncio
+    async def test_citation_parser_with_no_matches_omits_appendix(
+        self, sample_bill_file, tmp_path
+    ):
+        reasoner = RecordingFakeReasoner()
+        citation_parser = FakeCitationParser(citations=[])
+        flow = DeliberativeFlow(
+            reasoner=reasoner,
+            stage1_preset="preset-1",
+            stage2_preset="preset-2",
+            citation_parser=citation_parser,
+        )
+        report_path = await flow.run(sample_bill_file, output_dir=tmp_path / "out")
+        content = report_path.read_text(encoding="utf-8")
+        assert "Παράρτημα" not in content
+        assert len(citation_parser.parse_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_citation_parser_with_matches_appends_section(
+        self, sample_bill_file, tmp_path
+    ):
+        reasoner = RecordingFakeReasoner()
+        citation_parser = FakeCitationParser(
+            citations=[
+                Citation(
+                    scheme=CitationScheme.FEK,
+                    identifier="FEK/2024/1",
+                    original_text="ΦΕΚ Α 1/2024",
+                )
+            ]
+        )
+        flow = DeliberativeFlow(
+            reasoner=reasoner,
+            stage1_preset="preset-1",
+            stage2_preset="preset-2",
+            citation_parser=citation_parser,
+        )
+        report_path = await flow.run(sample_bill_file, output_dir=tmp_path / "out")
+        content = report_path.read_text(encoding="utf-8")
+        assert "# Παράρτημα: Μη-επαληθευμένες παραπομπές" in content
+        assert "ΦΕΚ Α 1/2024" in content

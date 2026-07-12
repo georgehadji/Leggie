@@ -41,6 +41,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Party perspective for the deliberative pipeline (default: neutral)",
     )
+    analyze.add_argument(
+        "--fallback",
+        action="store_true",
+        help="If the Reasoner backend is unavailable, fall back to the deterministic "
+        "pipeline instead of aborting (deliberative pipeline only)",
+    )
 
     # eval
     eval_cmd = subparsers.add_parser("eval", help="Run evaluation against gold set")
@@ -135,6 +141,7 @@ async def _handle_analyze(args: argparse.Namespace, mediator) -> int:
         lenses=args.lenses,
         pipeline=args.pipeline,
         perspective=args.perspective,
+        fallback=args.fallback,
     )
     result = await mediator.send(cmd)
 

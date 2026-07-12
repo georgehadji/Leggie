@@ -72,6 +72,43 @@ leggie eval --gold-set tests/eval/gold_set_sample.json
 leggie --version
 ```
 
+### Deliberative pipeline (opt-in)
+
+Leggie's default `analyze` is the deterministic 5-lens pipeline above. A second,
+**explicitly opt-in** pipeline delegates multi-model deliberation to
+[Reasoner](#) — a separate service that runs an 8-phase, cross-lab
+generate-critique-synthesize engine — for a two-stage prose report:
+
+1. **Stage 1 (generation)** — a structured report (introduction, summary,
+   changes per Μέρος/Κεφάλαιο, purpose/provisions/consequences) plus a
+   party-perspective evaluation.
+2. **Stage 2 (adversarial audit)** — an independent auditor pass that
+   consumes Stage 1's output and the full bill, surfacing what was missed:
+   ambiguities, constitutional/EU-ECHR conflicts, loopholes, a Top-20 problem
+   ranking, Top-10 amendments, and a 2-page executive briefing.
+
+This pipeline is **non-deterministic and billable**, so it never runs unless
+explicitly enabled:
+
+```bash
+# .env
+LEGGIE_REASONER__ENABLED=true
+LEGGIE_REASONER__HOME=/path/to/reasoner/repo   # for auto-start
+LEGGIE_REASONER__API_KEY=...                   # Reasoner ADMIN_API_KEY
+
+leggie analyze bill.txt --pipeline deliberative --perspective neutral
+```
+
+Output is a **prose Markdown report** (`Outputs/{bill}_deliberative.md`) with
+three sections — Περίληψη, Κριτική (Stage 1), Έλεγχος/Audit (Stage 2) — plus
+an optional citation appendix. It does **not** produce `Finding` objects and
+does not go through Skeptic/CoVe verification; the deterministic `analyze`
+path remains the source of truth for verified findings.
+
+If Reasoner is unreachable, `analyze --pipeline deliberative` aborts with an
+actionable message by default. Pass `--fallback` to run the deterministic
+pipeline instead. See `.env.example` for all `LEGGIE_REASONER__*` settings.
+
 ### Python API
 
 ```python
@@ -107,7 +144,7 @@ leggie/
 │   ├── clustering/   # Dedup, cross-article merging
 │   └── specs/        # Composable business rules (Specification pattern)
 ├── application/      # Use-cases, workflow, orchestration
-│   ├── ports/        # 7 abstract interfaces (LLM, Router, Retrieval, State, EventBus, Blackboard, CitationParser)
+│   ├── ports/        # 8 abstract interfaces (LLM, Router, Retrieval, State, EventBus, Blackboard, CitationParser, Reasoner)
 │   ├── workflow/     # FlowStateMachine + BillAnalysisFlow + Stage lifecycle
 │   ├── agents/       # 5 lens workers, CalibratedSkeptic, ImprovementEngine, Orchestrator
 │   ├── blackboard/   # Schema-grounded aggregation with Observer pattern
@@ -224,7 +261,8 @@ pytest tests/unit/application/test_constitutional_lens.py -v
 | **2 — Ensemble** | ✅ Complete | 5 lenses, parallel fan-out (TaskGroup + semaphore), reranker |
 | **3 — Adversarial + Evidence** | ✅ Complete | Calibrated Skeptic, CoVe, citation verification, blackboard |
 | **4 — Improvement + Reports** | ✅ Complete | Improvement engine, Exec Summary + Article-by-Article |
-| **5+ — Post-MVP** | ⬜ Planned | Knowledge graph, debate rounds, learned router, interactive chat, more lenses |
+| **5 — Deliberative pipeline** | ✅ Complete | Opt-in Reasoner-backed two-stage pipeline (`--pipeline deliberative`), prose report, budget pre-flight, citation appendix |
+| **6+ — Post-MVP** | ⬜ Planned | Knowledge graph, debate rounds, learned router, interactive chat, more lenses |
 
 ---
 

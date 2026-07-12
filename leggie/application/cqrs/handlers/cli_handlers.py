@@ -94,7 +94,11 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
 
         try:
             from leggie.application.ports.reasoner import ReasonerUnavailableError
-            from leggie.application.workflow.deliberative_flow import DeliberativeFlow
+            from leggie.application.workflow.deliberative_flow import (
+                DeliberativeBudgetExceededError,
+                DeliberativeFlow,
+            )
+            from leggie.infrastructure.citation import GreekCitationParser
             from leggie.infrastructure.reasoner.adapter import ReasonerAdapter
             from leggie.infrastructure.reasoner.server_manager import ReasonerServerManager
 
@@ -109,6 +113,8 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 stage1_preset=settings.reasoner.stage1_preset,
                 stage2_preset=settings.reasoner.stage2_preset,
                 server_manager=server_manager,
+                citation_parser=GreekCitationParser(),
+                max_tokens_per_run=settings.budget.max_tokens_per_run,
             )
             report_path = await flow.run(
                 command.file_path,
@@ -117,10 +123,15 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             )
             return CommandResult(success=True, data=f"Deliberative report saved to {report_path}")
         except ReasonerUnavailableError as e:
+            if command.fallback:
+                return await self._handle_deterministic(command)
             return CommandResult(
                 success=False,
-                error=f"Reasoner unavailable: {e}",
+                error=f"Reasoner unavailable: {e}. Retry with --fallback to use the "
+                "deterministic pipeline instead.",
             )
+        except DeliberativeBudgetExceededError as e:
+            return CommandResult(success=False, error=str(e))
         except Exception as e:
             return CommandResult(success=False, error=str(e))
 

@@ -95,3 +95,27 @@ Principle: **don't add a heavy engine until the reused weebot spine actually bre
 ## 8. One-paragraph summary
 
 Leggie is a **deterministic, event-sourced legal-analysis workflow** whose LLM intelligence is fanned out into independent, parallel, stateless lens-workers (orchestrator-worker + parallelization) and then converged on a **bounded, auditable blackboard** (dedupe → rerank → calibrated adversarial critique → evidence binding). It runs on a Clean/Hexagonal core reused from weebot, with a durable checkpointed spine for fault tolerance and full replayability. It is explicitly **not** an autonomous agent swarm — the control flow is code, the reasoning is model — which is exactly what makes it reproducible, auditable, cost-bounded, and cheap to extend.
+
+---
+
+## 9. The deliberative pipeline — a bounded exception, not a departure
+
+`--pipeline deliberative` (§1's default remains `deterministic`) delegates multi-model
+generation/critique/synthesis to an external service (Reasoner) rather than reimplementing
+it inside Leggie. This is a deliberate, narrow exception to §1's rule, not a reversal of it:
+
+- **Still a fixed DAG, not an autonomous agent.** The two-stage sequence (Stage 1 generate →
+  Stage 2 audit → assemble → persist) is hard-coded in `DeliberativeFlow`. Leggie never lets
+  an LLM choose its own control flow here either — it just hands one *step* of that fixed DAG
+  to a specialist external system, the same way a lens-worker hands a step to an LLM call.
+- **Opt-in, never default.** `LEGGIE_REASONER__ENABLED=false` by default; the deterministic
+  `analyze` path (§2–§7 above) is byte-for-byte unaffected by this pipeline's existence.
+- **Non-determinism is quarantined.** Raw synthesis, models used, tokens, and cost are
+  captured as events for replay — the run is *auditable*, even though its content is not
+  bit-reproducible run-to-run (unlike the deterministic pipeline's citation parser/scoring).
+- **No verification claim.** Output is prose, not `Finding` objects — it explicitly does not
+  go through Skeptic/CoVe, so it does not carry the same admissibility guarantees as the
+  deterministic path's findings. An optional citation appendix (deterministic ΦΕΚ/CELEX/ECLI
+  parser over the prose) is the only verification sliver retained.
+
+See `implementation_plan.md` for the full design rationale and work breakdown.

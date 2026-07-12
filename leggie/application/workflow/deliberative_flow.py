@@ -13,12 +13,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.parse import ParsePort
 from leggie.application.ports.reasoner import ReasonerPort, ReasonerRequest, ReasonerResult
 from leggie.application.services.deliberative_prompts import DeliberativePromptRenderer
 from leggie.application.workflow.ingest_parse import lazy_ingest_adapter, lazy_parse_adapter
 from leggie.domain.models import Event, EventType
+
+_CHARS_PER_TOKEN = 4  # rough heuristic, consistent with LLMAdapter.count_tokens
 
 
 class ServerLifecycle(Protocol):
@@ -29,6 +32,10 @@ class ServerLifecycle(Protocol):
     """
 
     async def ensure_running(self) -> None: ...
+
+
+class DeliberativeBudgetExceededError(Exception):
+    """Raised when the pre-flight token estimate exceeds the configured budget."""
 
 
 class DeliberativeFlow:
@@ -43,6 +50,8 @@ class DeliberativeFlow:
         ingester: IngestPort | None = None,
         parser: ParsePort | None = None,
         prompt_renderer: DeliberativePromptRenderer | None = None,
+        citation_parser: CitationParserPort | None = None,
+        max_tokens_per_run: int | None = None,
     ) -> None:
         self._reasoner = reasoner
         self._stage1_preset = stage1_preset
@@ -51,6 +60,8 @@ class DeliberativeFlow:
         self._ingester = ingester or lazy_ingest_adapter()
         self._parser = parser or lazy_parse_adapter()
         self._prompts = prompt_renderer or DeliberativePromptRenderer()
+        self._citation_parser = citation_parser
+        self._max_tokens_per_run = max_tokens_per_run
         self._events: list[Event] = []
 
     async def run(
@@ -84,10 +95,13 @@ class DeliberativeFlow:
             {"file": str(file_path), "pipeline": "deliberative", "perspective": perspective},
         )
 
+        self._check_budget(bill_text)
+
         stage1_result = await self._run_stage1(bill_text, perspective)
         stage2_result = await self._run_stage2(bill_text, stage1_result.synthesis)
 
         report = self._assemble_report(stage1_result, stage2_result)
+        report += self._citation_appendix(report)
         report_path = output_path / f"{bill_name}_deliberative.md"
         report_path.write_text(report, encoding="utf-8")
 
@@ -153,6 +167,37 @@ class DeliberativeFlow:
             return ""
         lines = "\n".join(f"- {item}" for item in items)
         return f"\n**{title}:**\n{lines}"
+
+    def _check_budget(self, bill_text: str) -> None:
+        """Pre-flight token estimate — two stages each resend bill_text (+ Stage 1
+        output as Stage 2's prior_report), so estimate ~3x the bill's token count."""
+        if self._max_tokens_per_run is None:
+            return
+        estimated_tokens = (len(bill_text) // _CHARS_PER_TOKEN) * 3
+        if estimated_tokens > self._max_tokens_per_run:
+            self._record_event(
+                EventType.BUDGET_TRIPPED,
+                {
+                    "estimated_tokens": estimated_tokens,
+                    "max_tokens_per_run": self._max_tokens_per_run,
+                },
+            )
+            raise DeliberativeBudgetExceededError(
+                f"Estimated {estimated_tokens} tokens exceeds the configured budget of "
+                f"{self._max_tokens_per_run} (LEGGIE_BUDGET__MAX_TOKENS_PER_RUN). "
+                "Increase the budget or analyze a smaller bill."
+            )
+
+    def _citation_appendix(self, report: str) -> str:
+        """Optional appendix: run the deterministic citation parser over the prose
+        report and list every citation as unverified (deliberative path skips CoVe)."""
+        if self._citation_parser is None:
+            return ""
+        citations = self._citation_parser.parse(report)
+        if not citations:
+            return ""
+        lines = "\n".join(f"- {c.original_text}" for c in citations)
+        return f"\n\n# Παράρτημα: Μη-επαληθευμένες παραπομπές\n\n{lines}\n"
 
     def _record_event(self, event_type: EventType, data: dict) -> None:
         self._events.append(

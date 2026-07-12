@@ -23,6 +23,7 @@ class AnalyzeBillCommand(Command):
     lenses: list[str] | None = None
     pipeline: str = "deterministic"
     perspective: str | None = None
+    fallback: bool = False
 
 
 class EvalGoldSetCommand(Command):

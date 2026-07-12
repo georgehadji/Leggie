@@ -59,6 +59,18 @@ class TestBuildParser:
         )
         assert args.perspective == "neutral"
 
+    def test_analyze_default_fallback_is_false(self):
+        parser = build_parser()
+        args = parser.parse_args(["analyze", "bill.txt"])
+        assert args.fallback is False
+
+    def test_analyze_fallback_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            ["analyze", "bill.txt", "--pipeline", "deliberative", "--fallback"]
+        )
+        assert args.fallback is True
+
     def test_eval_command(self):
         parser = build_parser()
         args = parser.parse_args(["eval", "-g", "gold.json"])
