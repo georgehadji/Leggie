@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from leggie.application.ports.blackboard import BlackboardPort
 from leggie.application.ports.citation_parser import CitationParserPort
@@ -24,8 +24,12 @@ from leggie.application.ports.event_bus import EventBusPort
 from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
+from leggie.application.ports.reasoner import ReasonerPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.ports.state import StatePort
+
+if TYPE_CHECKING:
+    from leggie.infrastructure.reasoner.server_manager import ReasonerServerManager
 
 logger = logging.getLogger(__name__)
 
@@ -143,3 +147,20 @@ class Container:
                 max_cost=s.budget.max_cost_per_run,
             )
         self.register_instance("budget_guard", _create_budget_guard())
+
+        # Reasoner (multi-model deliberative pipeline — opt-in, lazy: no
+        # network/process activity until first resolved by the deliberative flow)
+        def _create_reasoner() -> ReasonerPort:
+            from leggie.infrastructure.reasoner.adapter import ReasonerAdapter
+            s = get_settings()
+            return ReasonerAdapter(
+                base_url=s.reasoner.base_url,
+                api_key=s.reasoner.api_key,
+                request_timeout=float(s.reasoner.request_timeout),
+            )
+        self.register(ReasonerPort, _create_reasoner)
+
+        def _create_reasoner_server_manager() -> ReasonerServerManager:
+            from leggie.infrastructure.reasoner.server_manager import ReasonerServerManager
+            return ReasonerServerManager(get_settings().reasoner)
+        self.register_instance("reasoner_server_manager", _create_reasoner_server_manager())

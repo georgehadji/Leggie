@@ -5,6 +5,7 @@ import pytest
 from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.event_bus import EventBusPort
 from leggie.application.ports.llm import LLMPort
+from leggie.application.ports.reasoner import ReasonerPort
 from leggie.application.ports.router import RouterPort
 from leggie.infrastructure.container import BindingNotFoundError, Container
 
@@ -73,3 +74,27 @@ class TestContainer:
         assert container.has_binding(LLMPort) is True
         assert container.has_binding(RouterPort) is True
         assert container.has_binding(CitationParserPort) is True
+        assert container.has_binding(ReasonerPort) is True
+
+    def test_reasoner_port_resolves_to_adapter(self):
+        from leggie.infrastructure.reasoner.adapter import ReasonerAdapter
+
+        container = Container()
+        container.configure_defaults()
+        reasoner = container.get(ReasonerPort)
+        assert isinstance(reasoner, ReasonerAdapter)
+
+    def test_reasoner_not_eagerly_constructed(self):
+        """Reasoner binding is lazy — resolving unrelated ports must not touch it."""
+        container = Container()
+        container.configure_defaults()
+        container.get(CitationParserPort)
+        assert ReasonerPort not in container._singletons
+
+    def test_reasoner_server_manager_resolves(self):
+        from leggie.infrastructure.reasoner.server_manager import ReasonerServerManager
+
+        container = Container()
+        container.configure_defaults()
+        manager = container.get("reasoner_server_manager")
+        assert isinstance(manager, ReasonerServerManager)
