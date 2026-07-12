@@ -13,10 +13,14 @@ from pathlib import Path
 from leggie.application.agents.improver import ImprovementEngine
 from leggie.application.agents.orchestrator import Orchestrator
 from leggie.application.agents.skeptic import CalibratedSkeptic
+from leggie.application.ports.ingest import IngestPort
+from leggie.application.ports.llm import LLMPort
+from leggie.application.ports.parse import ParsePort
 from leggie.application.services.cove_verifier import CoVeVerifier
 from leggie.application.services.reports import ArticleByArticleRenderer, ExecutiveSummaryRenderer
 from leggie.application.services.rerank import CompositeReranker
 from leggie.application.workflow.flow_state_machine import FlowStateMachine
+from leggie.application.workflow.ingest_parse import lazy_ingest_adapter, lazy_parse_adapter
 from leggie.domain.models import (
     Document,
     Event,
@@ -24,18 +28,6 @@ from leggie.domain.models import (
     Finding,
     WorkflowState,
 )
-
-
-def _lazy_ingest_adapter() -> IngestPort:
-    """Lazy factory for IngestAdapter to avoid top-level infra import."""
-    from leggie.infrastructure.ingest_adapter import IngestAdapter
-    return IngestAdapter()
-
-
-def _lazy_parse_adapter() -> ParsePort:
-    """Lazy factory for ParseAdapter to avoid top-level infra import."""
-    from leggie.infrastructure.parse_adapter import ParseAdapter
-    return ParseAdapter()
 
 
 class BillAnalysisFlow:
@@ -64,8 +56,8 @@ class BillAnalysisFlow:
         self._skeptic = skeptic or CalibratedSkeptic()
         self._cove = cove or CoVeVerifier()
         self._improver = ImprovementEngine()
-        self._ingester = ingester or _lazy_ingest_adapter()
-        self._parser = parser or _lazy_parse_adapter()
+        self._ingester = ingester or lazy_ingest_adapter()
+        self._parser = parser or lazy_parse_adapter()
         self._reports: list = []
         self._suggestions: list = []
         self._events: list[Event] = []
