@@ -32,6 +32,33 @@ class TestBuildParser:
         args = parser.parse_args(["analyze", "bill.txt", "-l", "constitutional", "eu_gdpr"])
         assert args.lenses == ["constitutional", "eu_gdpr"]
 
+    def test_analyze_default_pipeline_is_deterministic(self):
+        parser = build_parser()
+        args = parser.parse_args(["analyze", "bill.txt"])
+        assert args.pipeline == "deterministic"
+
+    def test_analyze_deliberative_pipeline_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["analyze", "bill.txt", "--pipeline", "deliberative"])
+        assert args.pipeline == "deliberative"
+
+    def test_analyze_invalid_pipeline_rejected(self):
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["analyze", "bill.txt", "--pipeline", "not-a-real-pipeline"])
+
+    def test_analyze_default_perspective_is_none(self):
+        parser = build_parser()
+        args = parser.parse_args(["analyze", "bill.txt"])
+        assert args.perspective is None
+
+    def test_analyze_perspective_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            ["analyze", "bill.txt", "--pipeline", "deliberative", "--perspective", "neutral"]
+        )
+        assert args.perspective == "neutral"
+
     def test_eval_command(self):
         parser = build_parser()
         args = parser.parse_args(["eval", "-g", "gold.json"])

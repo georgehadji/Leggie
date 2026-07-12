@@ -21,6 +21,8 @@ class AnalyzeBillCommand(Command):
     file_path: str
     output_path: str | None = None
     lenses: list[str] | None = None
+    pipeline: str = "deterministic"
+    perspective: str | None = None
 
 
 class EvalGoldSetCommand(Command):

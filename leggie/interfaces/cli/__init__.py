@@ -30,6 +30,17 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("file", type=Path, help="Path to the bill file (PDF/DOCX/HTML/TXT)")
     analyze.add_argument("--output", "-o", type=Path, default=None, help="Output directory for reports")
     analyze.add_argument("--lenses", "-l", nargs="+", default=None, help="Lenses to apply (default: all 5)")
+    analyze.add_argument(
+        "--pipeline",
+        choices=["deterministic", "deliberative"],
+        default="deterministic",
+        help="Analysis pipeline: deterministic (default, 5-lens) or deliberative (opt-in)",
+    )
+    analyze.add_argument(
+        "--perspective",
+        default=None,
+        help="Party perspective for the deliberative pipeline (default: neutral)",
+    )
 
     # eval
     eval_cmd = subparsers.add_parser("eval", help="Run evaluation against gold set")
@@ -122,6 +133,8 @@ async def _handle_analyze(args: argparse.Namespace, mediator) -> int:
         file_path=str(args.file),
         output_path=str(args.output) if args.output else None,
         lenses=args.lenses,
+        pipeline=args.pipeline,
+        perspective=args.perspective,
     )
     result = await mediator.send(cmd)
 

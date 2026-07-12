@@ -1,0 +1,185 @@
+"""Tests for AnalyzeBillHandler pipeline routing (WU-7).
+
+Deterministic path must remain unchanged; deliberative path must construct
+DeliberativeFlow only when explicitly enabled, and must refuse cleanly when
+LEGGIE_REASONER__ENABLED is not set — no accidental network/process activity.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
+from leggie.application.cqrs.handlers import cli_handlers
+from leggie.config.settings import ReasonerSettings, Settings
+
+
+class FakeDeliberativeFlow:
+    """Records construction args and run() calls; never touches the network."""
+
+    instances: list[FakeDeliberativeFlow] = []
+
+    def __init__(self, reasoner, stage1_preset, stage2_preset, server_manager=None):
+        self.reasoner = reasoner
+        self.stage1_preset = stage1_preset
+        self.stage2_preset = stage2_preset
+        self.server_manager = server_manager
+        self.run_calls: list[dict] = []
+        FakeDeliberativeFlow.instances.append(self)
+
+    async def run(self, file_path, output_dir="Outputs", perspective="neutral"):
+        self.run_calls.append(
+            {"file_path": file_path, "output_dir": output_dir, "perspective": perspective}
+        )
+        return f"{output_dir}/fake_deliberative.md"
+
+
+class FakeReasonerAdapter:
+    def __init__(self, base_url, api_key, request_timeout):  # noqa: ARG002
+        self.base_url = base_url
+
+
+class FakeReasonerServerManager:
+    def __init__(self, settings):
+        self.settings = settings
+
+
+@pytest.fixture(autouse=True)
+def _reset_fake_instances():
+    FakeDeliberativeFlow.instances = []
+    yield
+    FakeDeliberativeFlow.instances = []
+
+
+@pytest.fixture
+def patch_deliberative_collaborators(monkeypatch):
+    """Patch the classes AnalyzeBillHandler locally imports for the deliberative path."""
+    import leggie.application.workflow.deliberative_flow as deliberative_flow_module
+    import leggie.infrastructure.reasoner.adapter as adapter_module
+    import leggie.infrastructure.reasoner.server_manager as server_manager_module
+
+    monkeypatch.setattr(deliberative_flow_module, "DeliberativeFlow", FakeDeliberativeFlow)
+    monkeypatch.setattr(adapter_module, "ReasonerAdapter", FakeReasonerAdapter)
+    monkeypatch.setattr(server_manager_module, "ReasonerServerManager", FakeReasonerServerManager)
+
+
+def _settings_with_reasoner(**reasoner_overrides) -> Settings:
+    return Settings(reasoner=ReasonerSettings(**reasoner_overrides))
+
+
+class TestDeterministicPipelineUnchanged:
+    @pytest.mark.asyncio
+    async def test_routes_to_deterministic_by_default(self, monkeypatch, tmp_path):
+        called = {"deterministic": False, "deliberative": False}
+
+        async def fake_deterministic(_self, _command):
+            called["deterministic"] = True
+            from leggie.application.cqrs.base import CommandResult
+            return CommandResult(success=True, data="ok")
+
+        async def fake_deliberative(_self, _command):
+            called["deliberative"] = True
+            from leggie.application.cqrs.base import CommandResult
+            return CommandResult(success=True, data="ok")
+
+        monkeypatch.setattr(
+            cli_handlers.AnalyzeBillHandler, "_handle_deterministic", fake_deterministic
+        )
+        monkeypatch.setattr(
+            cli_handlers.AnalyzeBillHandler, "_handle_deliberative", fake_deliberative
+        )
+
+        handler = cli_handlers.AnalyzeBillHandler()
+        command = AnalyzeBillCommand(file_path=str(tmp_path / "bill.txt"))
+        await handler.handle(command)
+
+        assert called["deterministic"] is True
+        assert called["deliberative"] is False
+
+
+class TestDeliberativeRoutingDisabled:
+    @pytest.mark.asyncio
+    async def test_refuses_when_reasoner_disabled(self, monkeypatch, tmp_path):
+        settings = _settings_with_reasoner(enabled=False)
+        import leggie.config.settings as settings_module
+        monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
+
+        handler = cli_handlers.AnalyzeBillHandler()
+        command = AnalyzeBillCommand(
+            file_path=str(tmp_path / "bill.txt"), pipeline="deliberative"
+        )
+        result = await handler.handle(command)
+
+        assert result.success is False
+        assert "disabled" in result.error.lower()
+        assert len(FakeDeliberativeFlow.instances) == 0
+
+
+@pytest.mark.usefixtures("patch_deliberative_collaborators")
+class TestDeliberativeRoutingEnabled:
+    @pytest.mark.asyncio
+    async def test_constructs_deliberative_flow_with_configured_presets(
+        self, monkeypatch, tmp_path
+    ):
+        settings = _settings_with_reasoner(
+            enabled=True,
+            stage1_preset="custom-stage1",
+            stage2_preset="custom-stage2",
+            perspective="neutral",
+        )
+        import leggie.config.settings as settings_module
+        monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
+
+        handler = cli_handlers.AnalyzeBillHandler()
+        bill_path = str(tmp_path / "bill.txt")
+        command = AnalyzeBillCommand(
+            file_path=bill_path, pipeline="deliberative", perspective="neutral"
+        )
+        result = await handler.handle(command)
+
+        assert result.success is True
+        assert len(FakeDeliberativeFlow.instances) == 1
+        flow = FakeDeliberativeFlow.instances[0]
+        assert flow.stage1_preset == "custom-stage1"
+        assert flow.stage2_preset == "custom-stage2"
+        assert flow.run_calls[0]["file_path"] == bill_path
+        assert flow.run_calls[0]["perspective"] == "neutral"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_settings_perspective_when_unset(self, monkeypatch, tmp_path):
+        settings = _settings_with_reasoner(enabled=True, perspective="neutral")
+        import leggie.config.settings as settings_module
+        monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
+
+        handler = cli_handlers.AnalyzeBillHandler()
+        command = AnalyzeBillCommand(
+            file_path=str(tmp_path / "bill.txt"), pipeline="deliberative", perspective=None
+        )
+        await handler.handle(command)
+
+        flow = FakeDeliberativeFlow.instances[0]
+        assert flow.run_calls[0]["perspective"] == "neutral"
+
+    @pytest.mark.asyncio
+    async def test_reasoner_unavailable_error_reported_cleanly(self, monkeypatch, tmp_path):
+        from leggie.application.ports.reasoner import ReasonerUnavailableError
+
+        class RaisingFlow(FakeDeliberativeFlow):
+            async def run(self, _file_path, _output_dir="Outputs", _perspective="neutral"):
+                raise ReasonerUnavailableError("backend down")
+
+        import leggie.application.workflow.deliberative_flow as deliberative_flow_module
+        monkeypatch.setattr(deliberative_flow_module, "DeliberativeFlow", RaisingFlow)
+
+        settings = _settings_with_reasoner(enabled=True)
+        import leggie.config.settings as settings_module
+        monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
+
+        handler = cli_handlers.AnalyzeBillHandler()
+        command = AnalyzeBillCommand(
+            file_path=str(tmp_path / "bill.txt"), pipeline="deliberative"
+        )
+        result = await handler.handle(command)
+
+        assert result.success is False
+        assert "unavailable" in result.error.lower()
