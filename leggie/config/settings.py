@@ -81,6 +81,39 @@ class PersistenceSettings(BaseSettings):
     wal_mode: bool = True
 
 
+class ReasonerSettings(BaseSettings):
+    """Reasoner service configuration — multi-model deliberative analysis."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="LEGGIE_REASONER_", env_file=".env", extra="ignore"
+    )
+
+    enabled: bool = Field(
+        default=False, description="Master switch to enable deliberative pipeline"
+    )
+    home: str = Field(default="", description="Path to Reasoner repository for auto-start")
+    base_url: str = Field(default="http://localhost:8003", description="Reasoner backend URL")
+    api_key: str = Field(default="", description="Reasoner ADMIN_API_KEY (secret)")
+    autostart: bool = Field(
+        default=True, description="Auto-start Reasoner backend if not running"
+    )
+    startup_timeout: int = Field(
+        default=60, ge=1, description="Seconds to wait for Reasoner to become healthy"
+    )
+    request_timeout: int = Field(
+        default=300, ge=1, description="Timeout for individual Reasoner requests"
+    )
+    stage1_preset: str = Field(
+        default="multi-perspective-premium", description="Reasoner preset for Stage 1 generation"
+    )
+    stage2_preset: str = Field(
+        default="subagent-premium", description="Reasoner preset for Stage 2 audit"
+    )
+    perspective: str = Field(
+        default="neutral", description="Default party perspective (neutral, niki, etc.)"
+    )
+
+
 class Settings(BaseSettings):
     """Top-level configuration — loads all sub-settings and top-level vars."""
 
@@ -105,6 +138,7 @@ class Settings(BaseSettings):
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
     ingest: IngestSettings = Field(default_factory=IngestSettings)
     persistence: PersistenceSettings = Field(default_factory=PersistenceSettings)
+    reasoner: ReasonerSettings = Field(default_factory=ReasonerSettings)
 
     @field_validator("seed")
     @classmethod
