@@ -10,6 +10,7 @@ configured container and resolve all adapters through it; no ad-hoc factories.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -27,6 +28,46 @@ from leggie.application.services.cove_verifier import CoVeVerifier
 
 if TYPE_CHECKING:
     from leggie.infrastructure.container import Container
+
+logger = logging.getLogger(__name__)
+
+
+# ── Shared resolver helpers ───────────────────────────────────────────
+
+
+def _resolve_llm_from_container(container: Container) -> LLMPort | None:
+    """Resolve LLMPort from *container*, returning None on configuration errors."""
+    if container.has_binding(LLMPort):
+        from leggie.infrastructure.llm.base import LLMConfigurationError
+
+        try:
+            llm: LLMPort = container.get(LLMPort)
+            return llm
+        except LLMConfigurationError:
+            logger.warning("llm.unconfigured_fallback", exc_info=True)
+            return None
+    return None
+
+
+def _resolve_router_from_container(container: Container) -> RouterPort | None:
+    """Resolve RouterPort from *container*."""
+    if container.has_binding(RouterPort):
+        router: RouterPort = container.get(RouterPort)
+        return router
+    return None
+
+
+def _resolve_cove_from_container(container: Container) -> CoVeVerifier:
+    """Resolve a CoVeVerifier wired with LLM + router + citation parser."""
+    llm = _resolve_llm_from_container(container)
+    router = _resolve_router_from_container(container)
+    parser = None
+    if container.has_binding(CitationParserPort):
+        parser = container.get(CitationParserPort) or None
+    return CoVeVerifier(citation_parser=parser, llm=llm, router=router)
+
+
+# ── Handler classes ───────────────────────────────────────────────────
 
 
 class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]]):
@@ -82,12 +123,12 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             from leggie.config.settings import get_settings
             from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
 
-            llm = self._resolve_llm()
-            router = self._resolve_router()
-            cove = self._resolve_cove()
+            llm = _resolve_llm_from_container(self._container)
+            router = _resolve_router_from_container(self._container)
+            cove = _resolve_cove_from_container(self._container)
             settings = get_settings()
             reranker_port = None
-            if self._container.has_binding(RerankerPort):
+            if settings.analysis.reranker == "model" and self._container.has_binding(RerankerPort):
                 reranker_port = self._container.get(RerankerPort)
 
             checkpoint_store = None
@@ -101,12 +142,13 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 router=router,
                 cove=cove,
                 checkpoint_store=checkpoint_store,
-                use_verbalized_sampling=command.use_verbalized_sampling,
+                use_verbalized_sampling=command.use_verbalized_sampling or settings.analysis.use_verbalized_sampling,
                 reranker_name=settings.analysis.reranker,
                 reranker_port=reranker_port,
             )
             findings, reports = await flow.run(
                 command.file_path,
+                output_dir=command.output_path or "Outputs",
                 lenses=command.lenses,
                 articles=command.articles,
             )
@@ -118,29 +160,6 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             return CommandResult(success=True, data=summary)
         except Exception as e:
             return CommandResult(success=False, error=str(e))
-
-    def _resolve_llm(self) -> LLMPort | None:
-        """Resolve LLMPort from the container."""
-        if self._container.has_binding(LLMPort):
-            llm: LLMPort = self._container.get(LLMPort)
-            return llm
-        return None
-
-    def _resolve_router(self) -> RouterPort | None:
-        """Resolve RouterPort from the container."""
-        if self._container.has_binding(RouterPort):
-            router: RouterPort = self._container.get(RouterPort)
-            return router
-        return None
-
-    def _resolve_cove(self) -> CoVeVerifier:
-        """Resolve a CoVeVerifier wired with LLM + router + citation parser."""
-        llm = self._resolve_llm()
-        router = self._resolve_router()
-        parser = None
-        if self._container.has_binding(CitationParserPort):
-            parser = self._container.get(CitationParserPort) or None
-        return CoVeVerifier(citation_parser=parser, llm=llm, router=router)
 
 
 class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
@@ -157,16 +176,15 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
             from leggie.infrastructure.persistence.eval_harness import EvalScorer, GoldSet
 
             gold_set = GoldSet(command.gold_set_path)
-            llm = self._resolve_llm()
-            router = self._resolve_router()
+            llm = _resolve_llm_from_container(self._container)
+            router = _resolve_router_from_container(self._container)
 
             results = []
             for bill_id in gold_set.bill_ids:
                 gold_set.get_labels(bill_id)
-                # Try to find a bill file matching this bill_id
                 bill_path = _find_bill_file(bill_id, Path(command.gold_set_path).parent)
                 if bill_path and llm:
-                    cove = self._resolve_cove()
+                    cove = _resolve_cove_from_container(self._container)
                     flow = BillAnalysisFlow(llm=llm, router=router, cove=cove)
                     findings, _ = await flow.run(bill_path)
                 else:
@@ -185,26 +203,6 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
             return CommandResult(success=True, data=results)
         except Exception as e:
             return CommandResult(success=False, error=str(e))
-
-    def _resolve_llm(self) -> LLMPort | None:
-        if self._container.has_binding(LLMPort):
-            llm: LLMPort = self._container.get(LLMPort)
-            return llm
-        return None
-
-    def _resolve_router(self) -> RouterPort | None:
-        if self._container.has_binding(RouterPort):
-            router: RouterPort = self._container.get(RouterPort)
-            return router
-        return None
-
-    def _resolve_cove(self) -> CoVeVerifier:
-        llm = self._resolve_llm()
-        router = self._resolve_router()
-        parser = None
-        if self._container.has_binding(CitationParserPort):
-            parser = self._container.get(CitationParserPort) or None
-        return CoVeVerifier(citation_parser=parser, llm=llm, router=router)
 
 
 def _find_bill_file(bill_id: str, search_dir: Path) -> Path | None:

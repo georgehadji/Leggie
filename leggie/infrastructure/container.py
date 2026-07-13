@@ -138,8 +138,9 @@ class Container:
             lambda: GreekCitationParser(resolution_index=resolution_index),
         )
 
-        # In-memory state (file-based later)
-        self.register(StatePort, lambda: InMemoryEventBus())
+        # In-memory state store
+        from leggie.infrastructure.persistence.state_store import InMemoryStateStore
+        self.register(StatePort, lambda: InMemoryStateStore())
 
         # Ingest / Parse adapters
         from leggie.infrastructure.ingest_adapter import IngestAdapter

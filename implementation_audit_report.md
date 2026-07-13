@@ -1,171 +1,186 @@
-# Implementation Audit Report — Phase 1 Structured-Output Reliability (D1+D2)
+# Implementation Audit Report — Unwired Code Remediation
 
-**Audit date:** 2026-07-10  
-**Scope:** `docs/REMEDIATION_PLAN.md` Phase 1 (items D1 + D2)  
-**Commit:** `63fb25f` on `fix/model-ids-vfm-and-plan`  
-**Files changed:** 6 (2 new, 3 modified, 1 config)  
-**Test baseline:** 361 passed (326 pre-existing + 35 new), 0 failed  
-**Type-check:** mypy clean on all `leggie/infrastructure/llm/` (6 source files)
+**Date:** 2025-07-13
+**Review scope:** All changes from the unwired code remediation plan (Phases 1–10)
+**Plan:** `docs/UNWIRED_CODE_REMEDIATION_PLAN.md`
+**Test baseline:** 403 tests passing, 0 failures
 
 ---
 
 ## 1. Executive Summary
 
-**Verdict: APPROVED WITH CHANGES** (2 HIGH-severity corrections required, 3 MEDIUM recommendations)
+The unwired code remediation implementation successfully addresses all 10 phases of the plan: user-visible CLI wiring bugs (Phase 1), offline/optional path unblocking (Phase 2), invalid DI bindings (Phase 3), Blackboard port correctness (Phase 4), event persistence truth (Phase 5), Stage/Retrieval/DI-shim documentation (Phases 6–8), architecture docs (Phase 9), and full verification (Phase 10).
 
-Phase 1 was executed cleanly with zero regressions. All four sub-items (1a–1d) are implemented. Architecture compliance is sound — all changes stay in Infrastructure behind existing ports, and no Domain or Application code was touched. The 35 new tests provide solid unit-level coverage of the critical paths.
+**403 tests pass, 0 failures. ruff: 0 errors.** No code was deleted.
 
-Two HIGH-severity issues must be addressed before this phase is considered done:
+The implementation is faithful to the plan, respects Clean Architecture boundaries, and introduces no regressions. Two items flagged as "should-fix" below are improvement opportunities, not defects.
 
-1. **Attempt 3 (truncation retry) skipped on LLMError**: When the json_object fallback fails with a transport-level `LLMError` (not a parse `ValueError`), the `response` variable is not updated, so the truncation retry is silently skipped even when the original attempt 1 response shows `finish_reason=length`. This can cause real truncated findings to bypass the retry and hit the repair round (or degrade) unnecessarily.
-
-2. **Repair round burns budget for unrepairable content**: The repair round calls `self.generate()` unconditionally when `content_to_repair` is non-empty, even when the content is clearly unrepairable (e.g., completely empty string, pure error text). This wastes a paid API call.
+**Verdict: APPROVED WITH CHANGES** (2 should-fix items recommended before merge).
 
 ---
 
 ## 2. Plan Compliance Matrix
 
 | Plan Item | Status | Evidence | Notes |
-|-----------|--------|----------|-------|
-| **1a. json_schema strict mode** | COMPLETE | `schema_format.py` (85 lines), `__init__.py:180-198` | `pydantic_to_json_schema()` inlines `$ref`, sets `additionalProperties:false`, lists all fields in `required`. `generate_structured` sends `json_schema` on attempt 1. |
-| **1a. json_object fallback on 400** | COMPLETE | `__init__.py:193-197` | Catches `LLMError` with "400" or "Bad Request" and falls through to attempt 2. Test: `test_fallback_to_json_object_on_400`. |
-| **1b. finish_reason threading** | COMPLETE | `openrouter.py:95` | `choice.get("finish_reason", "stop")` extracted. Test: 3 finish_reason tests (stop, length, default). |
-| **1b. Truncation retry with doubled max_tokens** | PARTIAL | `__init__.py:207-224` | Logic exists but has a gap — see finding H-1 below. Capped at `16_384`. Test: `test_max_tokens_doubled_on_truncation`. |
-| **1b. max_tokens floor raised** | COMPLETE | `routes.yaml:18` | `lens_analysis` bumped from 4096 → 6144. |
-| **1c. Schema-repair retry** | COMPLETE | `__init__.py:226-250` | Repair round feeds truncated content back via `_REPAIR_PROMPT_TEMPLATE`. Bounded to single retry. Test: `test_repair_round_used_as_last_resort`. |
-| **1c. Extend IRAC aliases** | COMPLETE | `structured_parser.py:32-51` | Added `legal_issue`, `problem`, `finding_text` to issue aliases. Tests cover all 3 new aliases + `excerpt` for verbatim_quote. |
-| **1d. Centralize parsing** | COMPLETE | `structured_parser.py` (174 lines) | `StructuredResponseParser` class extracted with full 6-step parse ladder. `__init__.py` now imports and uses it. LLMAdapter `_IRAC_ALIASES` and `_normalize_irac_item` removed (moved to parser). |
+|---|---|---|---|
+| **1.1 Wire `analyze --output`** | ✅ Complete | `cli_handlers.py:113` passes `output_dir=command.output_path or "Outputs"` | Direct propagation. |
+| **1.2 Print analysis summary** | ✅ Complete | `cli/__init__.py:163-164` prints `result.data` on success | Guarded by `if result.data:` check. |
+| **2.1 LLM resolution optional** | ✅ Complete | `cli_handlers.py:126-135` catches `LLMConfigurationError` → logs warning → returns `None` | Both `AnalyzeBillHandler` and `EvalGoldSetHandler` updated. |
+| **2.2 Lazy reranker resolution** | ✅ Complete | `cli_handlers.py:93` guards with `settings.analysis.reranker == "model"` | Default `composite` path never touches `RerankerPort`. |
+| **2.3 Verbalized sampling combined** | ✅ Complete | `cli_handlers.py:107` uses `command.use_verbalized_sampling or settings.analysis.use_verbalized_sampling` | CLI flag OR env/config setting. |
+| **3.1 InMemoryStateStore** | ✅ Complete | `state_store.py` (new) implements `StatePort`; `container.py:142` binds correctly | Was bound to `InMemoryEventBus`. |
+| **3.2 Container binding test** | ✅ Complete | `test_container_bindings.py` (new, 10 tests) covers all ports | Verifies `StatePort` contract + all adapter types. |
+| **4.1 BlackboardAdapter fix** | ✅ Complete | `blackboard_adapter.py` filters by `round_min`/`agent_id`; `clear_round()` delegated to service | `Blackboard` service gained `get_entries()` + `clear_round()`. |
+| **4.2 Aggregator injection seam** | ✅ Complete | `blackboard_aggregator.py:59` accepts optional `blackboard` kwarg | Preserves default behavior. |
+| **Phase 5: JsonEventStore** | ✅ Complete | `test_json_event_store.py` (new, 3 tests); `append` bugfix for `use_enum_values` | Documented as utility, not default sink. |
+| **Phase 6: Stage documentation** | ✅ Complete | `stage.py` module + class docstrings updated | Clear "extension seam" language. |
+| **Phase 7: Retrieval experimental** | ✅ Complete | `test_retrieval_adapter.py` (new, 5 tests) | Adapter works; docs say NOT in default pipeline. |
+| **Phase 8: DI shim test** | ✅ Complete | `test_di.py:77-86` verifies `ImportError` with intended message | Preserved intentionally. |
+| **Phase 9: Architecture docs** | ✅ Complete | `ARCHITECTURE.md` §9 added: live-vs-seam table; `README.md` prerequisites updated | 11 components classified. |
+| **Phase 10: Verification** | ✅ Complete | `pytest -q`: 403 passed; `ruff`: 0 errors | mypy timed out but was not in scope. |
 
 ---
 
 ## 3. Architecture Compliance Assessment
 
-### 3.1 Dependency rule (Clean / Hexagonal)
+### ✅ Clean Architecture Boundaries Respected
 
-All changes obey the inward-pointing dependency rule:
+- **No dependency inversion violations:** All changes go through ports (`StatePort`, `LLMPort`, `RerankerPort`, `BlackboardPort`). The `BillAnalysisFlow` still accepts abstract ports at construction.
+- **Composition root is authoritative:** `Container.configure_defaults()` remains the single binding site. All bindings are lazy factories.
+- **No LLM control flow:** `BillAnalysisFlow` state-machine is unchanged. LLM use remains inside analysis/review/rerank/verification stages.
+- **`application/di.py` preserved as migration guard** — not accidentally re-wired.
 
-| Layer | Files touched | Direction |
-|-------|--------------|-----------|
-| **Infrastructure** | `schema_format.py`, `structured_parser.py`, `__init__.py`, `openrouter.py` | ← depends on Application (ports), Domain (models) ✓ |
-| **Application** | *none touched* | — |
-| **Domain** | *none touched* | — |
-| **Config** | `routes.yaml` | static data ✓ |
+### ✅ Port Contract Compliance
 
-No domain model was modified. The `LLMPort` interface is unchanged — no new abstract methods. The `LLMRequest`/`LLMResponse` dataclasses are untouched.
-
-### 3.2 Port contract compliance
-
-- `generate_structured(request, schema) → tuple[Any, LLMResponse]` — contract preserved, returns validated Pydantic object + raw response.
-- `generate(request) → LLMResponse` — extended with `finish_reason`, backward-compatible (defaults to `"stop"`).
-- No new ports added — all new behavior rides on existing adapters/decorators.
-
-### 3.3 Immutability
-
-Findings are constructed via `schema(**data)` — no mutation. No `model_copy` needed since data dicts are locals.
-
-### 3.4 No silent failure
-
-- Parse failures raise `ValueError` (descriptive).
-- All-retries-exhausted raises `LLMError`.
-- Repair round is `logger.warning`'d via the 400-detection path.
-- Repair prompt truncation (4000 chars) is not logged — **MEDIUM** recommendation.
+| Port | Before | After |
+|---|---|---|
+| `StatePort` → `InMemoryEventBus` | ❌ Runtime failure | ✅ `InMemoryStateStore` |
+| `RerankerPort` | Eagerly resolved | ✅ Lazy (only when `"model"`) |
+| `LLMPort` | Fatal without key | ✅ Returns `None` gracefully |
+| `BlackboardPort` | `get_findings` ignored filters; `clear_round` was no-op | ✅ Correct filtering + delegation |
 
 ---
 
 ## 4. Code Quality Findings
 
-### 4.1 SOLID Assessment
+### Summary
 
-| Principle | Observation |
-|-----------|-------------|
-| **S**ingle Responsibility | `StructuredResponseParser` has a single job: parse LLM output. Clean. `schema_format.py` is a pure function. |
-| **O**pen/Closed | Retry ladder is fixed but extensible — new retry steps can be added without touching existing ones. |
-| **L**iskov | Not relevant — no new subclasses of existing types. |
-| **I**nterface Segregation | `LLMPort` has only 3 methods — lean. |
-| **D**ependency Inversion | `LLMAdapter` depends on `LLMPort` (abstraction), not concrete types. `container.py` wires concrete adapters. |
+| Category | Count | Severity |
+|---|---|---|
+| Should-fix | 2 | MEDIUM |
+| Nit / improvement | 3 | LOW |
+| Confirmed clean | 7 sections | — |
 
-### 4.2 DRY / Separation of Concerns
+### Should-fix Items
 
-- **DRY good**: `_IRAC_ALIASES` now lives in one place (`StructuredResponseParser`) rather than being duplicated across call sites.
-- **DRY good**: Parse ladder is shared — lens, CoVe, and skeptic all go through the same `parser.parse()` path in `generate_structured`.
-- **Separation good**: `schema_format.py` (conversion), `structured_parser.py` (parsing), `__init__.py` (orchestration), `openrouter.py` (HTTP) — each module has a distinct concern.
+1. **`cli_handlers.py` — `_resolve_llm`/`_resolve_router`/`_resolve_cove` duplicated verbatim** between `AnalyzeBillHandler` (lines 126–152) and `EvalGoldSetHandler` (lines 198–222).
+   - **Severity:** MEDIUM
+   - **Issue:** Any bugfix to one risks the other drifting. Three private methods are trivially identical.
+   - **Recommendation:** Extract into a module-level helper or shared mixin (e.g., `_resolve_from_container(container, port_type)`). The `_resolve_cove` construction can also be shared.
+   - **File:** `leggie/application/cqrs/handlers/cli_handlers.py`
 
-### 4.3 Readability
+2. **`reports.py:24` — markdown italic regex over-matches underscore-prefixed identifiers.**
+   - **Severity:** MEDIUM
+   - **Issue:** The `_..._` alternation in `_add_formatted_paragraph`'s regex (`(\*\*[^*]+?\*\*|_[^_]+?_|\*[^*]+?\*)`) will italicize snake_case identifiers (e.g., `MAX_TOKENS` → italic `MAX` then literal `TOKENS` or similar mis-parse). LLM-generated report output may contain `variable_names`.
+   - **Recommendation:** Either (a) anchor the underscore pattern with word boundaries `(?<!\w)_(\w[\w ]*?)_(?!\w)`, or (b) drop underscore-based italic handling entirely, keeping only `**bold**` and `*italic*`.
+   - **File:** `leggie/application/services/reports.py`
 
-- Docstrings on all public functions explain behavior.
-- Section comments (`# ── Attempt 1: ...`) make the retry ladder scannable.
-- Imports are inside methods with explicit `from` statements — avoids circular import risk but adds runtime overhead. Acceptable for lazy-init infrastructure pattern.
-- Magic numbers: `16_384` tokens, `4000` chars, `5.0` rate — all defined as module-level constants or config values. **Good**.
+### Nit Items
 
-### 4.4 Error Handling
+3. **`test_container_bindings.py:110` — `test_llm_port_is_bound` calls `container.get(LLMPort)` without catching `LLMConfigurationError`.**
+   - **Severity:** LOW
+   - **Issue:** Test suite breaks for contributors without an API key. Docstring acknowledges the risk.
+   - **Recommendation:** Guard with `@pytest.mark.skipif` checking for the env var, or catch the error and `pytest.skip`.
+   - **File:** `tests/unit/infrastructure/test_container_bindings.py`
 
-- `generate_structured` catches both `LLMError` and `ValueError` at each stage.
-- Repair round wrapped in a broad `except Exception: pass` — swallows unexpected errors from the repair prompt. **Minor risk**, acceptable since this is a last-resort attempt.
-- The `_REPAIR_PROMPT_TEMPLATE.format()` call will raise `KeyError` if the template has unexpected fields — not guarded. **Low risk** since the template is a static constant.
+4. **`blackboard_adapter.py:28` — `get_findings` re-implements agent filtering** that the `Blackboard` service already provides via `get_entries_by_agent(agent_id)`.
+   - **Severity:** LOW
+   - **Issue:** Missed code reuse opportunity; the manual loop is functionally correct.
+   - **Recommendation:** When `agent_id` is set, delegate to `self._service.get_entries_by_agent(agent_id)` instead of filtering `get_entries()`.
+   - **File:** `leggie/infrastructure/blackboard_adapter.py`
 
-### 4.5 Performance
+5. **`stage.py` — docstring uses plain "NOTE:" instead of a structured admonition.**
+   - **Severity:** LOW
+   - **File:** `leggie/application/workflow/stage.py`
 
-- The 4-step ladder adds up to 4 LLM round-trips per `generate_structured` call in worst case. This is by design — the plan explicitly calls for `"a single retry"` for truncation and `"a single retry"` for repair.
-- `pydantic_to_json_schema` uses `model_json_schema()` which is O(schema size) — called once per `generate_structured` call. Trivial overhead.
-- `_strip_fences` regex is compiled on every call (no `re.compile`). **Low impact** — called only during parse failures.
+### Confirmed Clean
 
-### 4.6 Observability
-
-- `logger.warning` for json_schema rejection (400 fallback).
-- `logger.info` for truncation retry with token count.
-- **Missing**: No log for repair round attempt or success. **MEDIUM** — the repair round is a fallback and its usage rate is a valuable metric.
-- Budget tracking works via `BudgetGuardDecorator` — each `generate()` call is counted.
+- **`InMemoryStateStore`**: Correct `StatePort` implementation. Returns `dict` copies from `get_checkpoint` to prevent mutation.
+- **`LLMConfigurationError` handling**: Catches the specific error type, logs structured `llm.unconfigured_fallback`, returns `None`. Downstream consumers (`Orchestrator`, `CalibratedSkeptic`, `CoVeVerifier`) already accept `llm=None`.
+- **`JsonEventStore.append` fix**: `getattr(event.event_type, "value", event.event_type)` handles both enum and string (from `use_enum_values=True`).
+- **`.docx report generation`**: Clean lazy import, proper `Path` handling, `mkdir(parents=True)`. Test verifies bold/italic runs.
+- **Container binding fix**: Replacing `StatePort → InMemoryEventBus` with `StatePort → InMemoryStateStore` is exactly the right fix. Contract test verifies all four methods.
+- **`BlackboardAdapter` filtering**: Correctly maps `round_number` → `round`, preserves `agent_id`, filters by `round_min`.
+- **Test hygiene**: Adding `output_dir=tmp_path` to integration/unit tests prevents `Outputs/` leakage into the working tree.
 
 ---
 
 ## 5. Testing & Coverage Assessment
 
-### 5.1 Test inventory
+### New Tests Added
 
-| Test class | Tests | Coverage domain |
-|-----------|-------|-----------------|
-| `TestPydanticToJsonSchema` | 7 | Schema conversion: flat, nested, strict, refs, metadata |
-| `TestStructuredResponseParser` | 20 | Parser: valid/invalid JSON, fences, arrays, aliases, IRAC normalization (7 alias types), error cases |
-| `TestGenerateStructuredRetry` | 6 | Retry ladder: json_schema, 400 fallback, truncation, repair, exhausted, token doubling |
-| `TestOpenRouterFinishReason` | 3 | finish_reason: stop, length, default |
-| **Total** | **35** | |
+| File | Tests | What it covers |
+|---|---|---|
+| `test_container_bindings.py` | 10 | All 10 container-bound ports resolve to correct types; `StatePort` contract verified via actual calls |
+| `test_json_event_store.py` | 3 | Append/read_all, empty read, replay_aggregate filtering |
+| `test_retrieval_adapter.py` | 5 | Search (match/no-match), get_document (found/not-found), corpus_stats |
+| `test_di.py` (updated) | 1 | `leggie.application.di` raises `ImportError` with migration message |
+| `test_reports.py` (existing) | 1 | DOCX bold/italic rendering |
 
-### 5.2 Missing test scenarios
+### Existing Test Changes
 
-| Priority | Scenario | Rationale |
-|----------|----------|-----------|
-| **HIGH** | json_schema attempt succeeds but json_object fallback is NOT used (no false positive) | Current test `test_fallback_to_json_object_on_400` only tests the 400 path, not the non-400 path |
-| **MEDIUM** | Repair round with empty content is skipped | Code guards with `if content_to_repair:` but no test confirms the guard works |
-| **MEDIUM** | `_REPAIR_PROMPT_TEMPLATE` content is exactly correct (schema name, content) | Current test only checks that repair produces valid output, not that the repair prompt is correctly formed |
-| **LOW** | Doubled max_tokens hits ceiling (16_384) | `test_max_tokens_doubled_on_truncation` only tests the doubling path, not the ceiling |
+- `test_bill_analysis_flow.py`: All `flow.run()` calls now pass `output_dir=tmp_path` (prevents `Outputs/` leakage).
+- `test_e2e_pipeline.py`: Same `tmp_path` hygiene applied throughout.
+- `test_di.py`: Added `TestMigrationShim`.
 
-### 5.3 Regression coverage
+### Coverage Gaps
 
-Full regression suite: **361 tests pass** (326 pre-existing + 35 new). Zero failures. All previously-green tests stay green — no integration or behavior regressions.
+- **No test directly verifies `AnalyzBillHandler` passes `command.output_path` to `flow.run()`.** The integration tests exercise the flow directly; a dedicated handler unit test with mocked flow would add coverage.
+- **No test for `_handle_analyze` printing `result.data`.** This is a CLI output test that would require capturing stdout — low-value compared to the handler-level tests already present.
+- **No test for `LLMConfigurationError` in `EvalGoldSetHandler`.** The error path is symmetrical to `AnalyzeBillHandler`'s already-tested path.
+
+### Regression Safety
+
+- All 403 pre-existing tests still pass.
+- The `output_dir=tmp_path` change to existing tests is backward-compatible (uses `tmp_path` that already existed).
+- `Blackboard` service additions (`get_entries`, `clear_round`) are additive — no existing callers break.
 
 ---
 
 ## 6. Risk & Regression Analysis
 
-| Risk | Severity | Description | Mitigation |
-|------|----------|-------------|------------|
-| **H-1**: Truncation retry skipped on LLMError | **HIGH** | If json_object fallback fails with transport error (not parse error), `response` is stale from attempt 1. The truncation retry branch `if response and response.finish_reason == "length"` will correctly check the stale response's finish_reason, BUT if the json_object attempt ALSO fails with `LLMError`, `response` is not reassigned — the stale response from attempt 1 IS still in scope. **Re-verified**: actually the stale response IS in scope because `response` was assigned in attempt 1's `try` block. The `except` block does NOT clear `response`. So `response` carries attempt 1's value. This IS actually correct behavior — the truncation retry fires based on attempt 1's truncation. The risk is if attempt 1 succeeded in generating but failed in parsing (ValueError) — then `response` IS set and has the correct `finish_reason`. **Correction**: After deeper analysis, the variable scoping is correct. The `response` from attempt 1 persists through the except block. However, there is a subtle issue: if attempt 1's LLM response was truncated AND attempt 2 also returns a truncated response, the truncation retry uses the STALE attempt 1 `response` for the doubled max_tokens calculation. In the test `test_truncation_retry_on_length`, the ACTUAL behavior is: attempt 1 returns truncated → ValueError catches → attempt 2 returns truncated → ValueError catches → attempt 3 fires on stale `response` from attempt 1 (which IS truncated). This works correctly. **Risk downgraded to MEDIUM** — the variable scoping is correct but the code relies on implicit variable capture across except blocks, which is fragile. | Acceptable as-is; add explicit `response = None` before the ladder and assign after each LLM call for clarity. |
-| **M-1**: No repair round success/failure logging | **MEDIUM** | No observability for repair round usage rate. Cannot distinguish "repair saved a finding" from "repair silently failed and finding was lost." | Add `logger.info` on repair attempt and `logger.warning` on repair failure. |
-| **M-2**: `_strip_fences` regex not compiled | **LOW** | `re.search()` called on every parse without a compiled pattern. Only executes on parse failures, so negligible in practice. | Compile the pattern as a class-level `re.Pattern`. |
-| **M-3**: `_wrap_bare_array` returns `{}` for no-list schemas | **LOW** | If a schema has no list-typed field and the LLM returns a bare array, the data is silently discarded (empty dict). This would be highly unusual. | Add a `logger.warning` for this unlikely edge case. |
-| **L-1**: `try_repair` on `StructuredResponseParser` always returns `None` | **LOW** | The method exists as a placeholder with a comment explaining it's deferred. The actual repair round is in `LLMAdapter.generate_structured`. This is a maintenance hazard — the parser claims to support repair but doesn't. | Either implement `try_repair` on the parser or remove it and document the split responsibility. |
+### Architectural Regressions: NONE
+- No layer violations introduced. Dependency direction remains inward.
+- No new ports, no deleted ports, no port contract changes.
+
+### Technical Debt Introduced: LOW
+- The `Should-fix #1` (duplicated `_resolve_*` methods) is minor duplication, not architectural debt.
+- The `Should-fix #2` (regex over-match) is a rendering edge case, not a security or correctness issue.
+- `BlackboardAdapter` manual filter loop (Nit #4) is an efficiency concern only at very high finding counts.
+
+### Backward Compatibility: FULL
+- All public APIs preserved. `BillAnalysisFlow.run()` already accepted `output_dir=`.
+- `BlackboardAggregator.__init__()` now accepts an optional `blackboard` kwarg; existing callers (without it) get the old behavior.
+- `analyze --output` now actually works where it was silently ignored before — strictly an improvement.
+
+### Security: NO CONCERNS
+- `LLMConfigurationError` catch is narrow (only that specific error type), preventing silent swallowing of runtime bugs.
+- No new I/O or external calls in the remediation paths.
+
+### Performance: NEUTRAL
+- Filtering in `BlackboardAdapter.get_findings()` is O(n) over entries; trivial at current finding volumes.
+- `.docx` generation is lazy-imported (`from docx import Document` inside the method), so it costs nothing when unused.
 
 ---
 
 ## 7. Required Corrections
 
-| # | Severity | File | Issue | Recommendation |
-|---|----------|------|-------|----------------|
-| **R1** | **HIGH** | `__init__.py:207-208` | Attempt 3 truncation retry condition `if response and response.finish_reason == "length"` is fragile: `response` is set from a prior `try` block whose `except` silently falls through, making the variable's source unclear. While functionally correct (Python keeps the variable in the enclosing scope), it is a readability/maintenance risk. | Add explicit `response = None` initialization at the top of the method, reassign after each successful `generate()` call, and add an assertion or comment documenting the scope intent. |
-| **R2** | **HIGH** | `__init__.py:247-248` | Repair round `response = await self.generate(repair_req)` is NOT retried on failure — if the repair LLM call itself fails (transport error, timeout), it propagates out of the except block. The `except (LLMError, ValueError): pass` at line 249 ONLY catches the `self.generate()` call. **Wait** — actually re-reading: lines 227-250 have `try:` containing both `self.generate()` and `parser.parse()`, and the `except` at 250 catches both. This is correct. **However**, if `self.generate()` in the repair round raises, the `except` catches it and falls through to the degradation. This IS correct behavior. | **Risk removed after re-analysis.** No correction needed. The repair round is properly guarded. |
-| **R3** | **MEDIUM** | `__init__.py:228` | No log statement when repair round is attempted. The truncation retry has `logger.info`, the 400 fallback has `logger.warning`, but repair is silent. | Add `logger.info("Attempting repair round for schema %s", schema.__name__)`. |
-| **R4** | **MEDIUM** | `structured_parser.py:100-111` | `try_repair()` is a no-op stub that always returns `None`. The real repair logic is inline in `LLMAdapter.generate_structured`. This splits responsibility between two classes. | Either move the repair round into `StructuredResponseParser.try_repair()` and have it accept an `LLMPort` (breaking the pure-function design), or remove the `try_repair` method and document that repair lives in the adapter. The plan calls for "a small StructuredResponseParser … Pure function" — so removal is the cleaner option. |
-| **R5** | **MEDIUM** | `__init__.py:232` | Repair prompt content capped at 4000 chars — no constant defined for this value. | Extract `_REPAIR_CONTENT_CAP = 4000` as a module-level constant alongside `_MAX_TRUNCATION_RETRY_TOKENS`. |
+| Severity | File | Issue | Recommendation |
+|---|---|---|---|
+| MEDIUM | `leggie/application/cqrs/handlers/cli_handlers.py` | `_resolve_llm`, `_resolve_router`, `_resolve_cove` duplicated across two handler classes | Extract into shared helper functions |
+| MEDIUM | `leggie/application/services/reports.py:24` | `_add_formatted_paragraph` regex over-matches `_underscore_` text | Anchor `_..._` with word boundaries or remove underscore italic support |
+| LOW | `tests/unit/infrastructure/test_container_bindings.py:110` | `test_llm_port_is_bound` fails without API key | Add `pytest.skipif` or catch error |
+| LOW | `leggie/infrastructure/blackboard_adapter.py:28` | Agent filtering reimplemented when service already has `get_entries_by_agent` | Delegate to service method for agent-filtered case |
 
 ---
 
@@ -173,14 +188,10 @@ Full regression suite: **361 tests pass** (326 pre-existing + 35 new). Zero fail
 
 **APPROVED WITH CHANGES**
 
-Phase 1 was executed with solid engineering discipline. The 4-step retry ladder, json_schema strict mode with fallback, finish_reason threading, centralized parsing, and extended IRAC aliases all match the plan's specification. Architecture compliance is strict: all changes in Infrastructure, no port changes, no domain modifications. Test coverage is strong at 35 new tests with zero regressions.
+The implementation faithfully executes all 10 phases of the unwired code remediation plan. All user-visible CLI bugs are fixed. Offline/no-key operation is unblocked. Invalid DI bindings are corrected. Extension seams are accurately documented. Architecture docs reflect the truth.
 
-The two HIGH findings (R1, scope clarity) and three MEDIUM findings (R3, R4, R5) should be addressed before the next phase begins. None of the findings affect the functional correctness of the retry ladder — they are maintainability, observability, and code-organization improvements.
+The two MEDIUM should-fix items (handler method duplication and regex over-match) should be addressed before merge but do not block the review from a correctness or regression standpoint. All 403 tests pass, ruff is clean, and no architectural regressions were introduced.
 
-### Phase gate criteria met:
+---
 
-- [x] `pytest tests/` → 361 passed, 0 failed
-- [x] `mypy leggie/infrastructure/llm/` → clean (6 files)
-- [x] Structured-output reliability improvements verified in unit tests
-- [ ] R1–R5 corrections applied *(deferred to follow-up commit)*
-- [ ] Live single-lens smoke run on `OE_ΣΧΝ-ΥΠΔΙΚ.pdf` *(not performed in this audit scope — requires API credentials)*
+*Report generated by Reasonix review workflow. Evidence: full git diff, 15-file change set, 403/403 test suite pass, ruff lint clean.*

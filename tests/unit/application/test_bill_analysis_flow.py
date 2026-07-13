@@ -65,29 +65,29 @@ class TestBillAnalysisFlow:
         assert isinstance(flow._reranker, ModelBasedReranker)
 
     @pytest.mark.asyncio
-    async def test_run_returns_findings(self, sample_bill_file):
+    async def test_run_returns_findings(self, sample_bill_file, tmp_path):
         flow = BillAnalysisFlow()
-        findings, reports = await flow.run(sample_bill_file)
+        findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
         assert len(findings) > 0
 
     @pytest.mark.asyncio
-    async def test_run_state_transitions(self, sample_bill_file):
+    async def test_run_state_transitions(self, sample_bill_file, tmp_path):
         flow = BillAnalysisFlow()
         assert flow.state == WorkflowState.IDLE
-        await flow.run(sample_bill_file)
+        await flow.run(sample_bill_file, output_dir=tmp_path)
         assert flow.state == WorkflowState.DONE
 
     @pytest.mark.asyncio
-    async def test_run_records_events(self, sample_bill_file):
+    async def test_run_records_events(self, sample_bill_file, tmp_path):
         flow = BillAnalysisFlow()
-        await flow.run(sample_bill_file)
+        await flow.run(sample_bill_file, output_dir=tmp_path)
         events = flow.get_event_log()
         assert len(events) >= 5  # At least: analysis_started, stage_completed × 4+, workflow_completed
 
     @pytest.mark.asyncio
-    async def test_run_returns_findings_with_irac(self, sample_bill_file):
+    async def test_run_returns_findings_with_irac(self, sample_bill_file, tmp_path):
         flow = BillAnalysisFlow()
-        findings, reports = await flow.run(sample_bill_file)
+        findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
         for f in findings:
             assert f.irac.issue
             assert f.irac.rule
@@ -99,45 +99,54 @@ class TestBillAnalysisFlow:
         path = tmp_path / "empty.txt"
         path.write_text("No articles here.", encoding="utf-8")
         flow = BillAnalysisFlow()
-        findings, reports = await flow.run(path)
+        findings, reports = await flow.run(path, output_dir=tmp_path)
         assert len(findings) == 0
 
     @pytest.mark.asyncio
-    async def test_run_findings_property(self, sample_bill_file):
+    async def test_run_findings_property(self, sample_bill_file, tmp_path):
         flow = BillAnalysisFlow()
-        await flow.run(sample_bill_file)
+        await flow.run(sample_bill_file, output_dir=tmp_path)
         assert len(flow.findings) > 0
 
     @pytest.mark.asyncio
-    async def test_run_returns_reports(self, sample_bill_file):
+    async def test_run_returns_reports(self, sample_bill_file, tmp_path):
         flow = BillAnalysisFlow()
-        findings, reports = await flow.run(sample_bill_file)
+        findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
         assert len(reports) == 2
         assert reports[0].report_type == "executive_summary"
         assert reports[1].report_type == "article_by_article"
 
     @pytest.mark.asyncio
-    async def test_run_with_article_selection(self, sample_bill_file):
+    async def test_run_writes_docx_reports(self, sample_bill_file, tmp_path):
+        """Both markdown reports are accompanied by Word (.docx) versions."""
+        output_dir = tmp_path / "out"
         flow = BillAnalysisFlow()
-        findings, reports = await flow.run(sample_bill_file, articles="2")
+        await flow.run(sample_bill_file, output_dir=output_dir)
+        assert (output_dir / "bill_executive_summary.docx").exists()
+        assert (output_dir / "bill_article_by_article.docx").exists()
+
+    @pytest.mark.asyncio
+    async def test_run_with_article_selection(self, sample_bill_file, tmp_path):
+        flow = BillAnalysisFlow()
+        findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path, articles="2")
         assert flow.state == WorkflowState.DONE
         # All emitted findings must belong to the selected article.
         for f in findings:
             assert "Άρθρο 2" in f.irac.issue or "2" in f.irac.issue, f.irac.issue
 
     @pytest.mark.asyncio
-    async def test_reports_have_content(self, sample_bill_file):
+    async def test_reports_have_content(self, sample_bill_file, tmp_path):
         flow = BillAnalysisFlow()
-        findings, reports = await flow.run(sample_bill_file)
+        findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
         for report in reports:
             md = report.to_markdown()
             assert "Legal Analysis" in md
             assert len(md) > 100
 
     @pytest.mark.asyncio
-    async def test_suggestions_property(self, sample_bill_file):
+    async def test_suggestions_property(self, sample_bill_file, tmp_path):
         flow = BillAnalysisFlow()
-        await flow.run(sample_bill_file)
+        await flow.run(sample_bill_file, output_dir=tmp_path)
         assert len(flow.suggestions) > 0
 
 
@@ -169,7 +178,7 @@ class TestBudgetCheckpoint:
         guard.record_usage(prompt_tokens=100, completion_tokens=50, model="google/gemini-2.5-flash")
 
         flow = BillAnalysisFlow(llm=_LLMWithGuard(guard))
-        await flow.run(sample_bill_file, checkpoint_path=checkpoint)
+        await flow.run(sample_bill_file, output_dir=tmp_path, checkpoint_path=checkpoint)
 
         assert checkpoint.exists()
         saved = json.loads(checkpoint.read_text(encoding="utf-8"))
@@ -188,18 +197,18 @@ class TestBudgetCheckpoint:
 
         guard = BudgetGuard(max_tokens=1000, max_cost=1.0)
         flow = BillAnalysisFlow(llm=_LLMWithGuard(guard))
-        await flow.run(sample_bill_file, checkpoint_path=checkpoint)
+        await flow.run(sample_bill_file, output_dir=tmp_path, checkpoint_path=checkpoint)
 
         # Prior spend (900) plus whatever this run recorded must exceed the
         # fresh-start baseline of 0 — proves the checkpoint was actually loaded.
         assert guard.remaining_tokens <= 100
 
     @pytest.mark.asyncio
-    async def test_no_checkpoint_path_is_noop(self, sample_bill_file):
+    async def test_no_checkpoint_path_is_noop(self, sample_bill_file, tmp_path):
         from leggie.infrastructure.budget_guard import BudgetGuard
         guard = BudgetGuard()
         flow = BillAnalysisFlow(llm=_LLMWithGuard(guard))
-        findings, reports = await flow.run(sample_bill_file)
+        findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
         assert flow.state == WorkflowState.DONE
 
 
@@ -298,7 +307,7 @@ class TestResumeAfterCrash:
 
         flow1._transition = crashing_transition
         with pytest.raises(RuntimeError):
-            await flow1.run(sample_bill_file, checkpoint_path=checkpoint)
+            await flow1.run(sample_bill_file, output_dir=tmp_path, checkpoint_path=checkpoint)
 
         assert crashed_state == WorkflowState.AGGREGATING
         saved = json.loads(checkpoint.read_text(encoding="utf-8"))
@@ -308,7 +317,7 @@ class TestResumeAfterCrash:
 
         # 2. Non-crashing fresh run for comparison.
         fresh_flow = BillAnalysisFlow()
-        fresh_findings, _ = await fresh_flow.run(sample_bill_file)
+        fresh_findings, _ = await fresh_flow.run(sample_bill_file, output_dir=tmp_path)
 
         # 3. Resume with a new flow and count stage executions.
         flow2 = BillAnalysisFlow()
@@ -340,7 +349,9 @@ class TestResumeAfterCrash:
         flow2._orchestrator.decompose = counted_decompose
         flow2._orchestrator.analyze_document = counted_analyze_document
 
-        resumed_findings, _ = await flow2.run(sample_bill_file, checkpoint_path=checkpoint)
+        resumed_findings, _ = await flow2.run(
+            sample_bill_file, output_dir=tmp_path, checkpoint_path=checkpoint
+        )
 
         # 4. Assertions: skipped expensive stages and identical findings.
         assert calls["ingest"] == 0

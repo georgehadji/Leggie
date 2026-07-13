@@ -56,8 +56,9 @@ class BlackboardAggregator:
         reranker: Reranker | None = None,
         skeptic: CalibratedSkeptic | None = None,
         cove: CoVeVerifier | None = None,
+        blackboard: Blackboard | None = None,
     ) -> None:
-        self._board = Blackboard()
+        self._board = blackboard or Blackboard()
         self._dedup_threshold = dedup_threshold
         self._reranker = reranker or CompositeReranker()
         self._skeptic = skeptic or CalibratedSkeptic()

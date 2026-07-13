@@ -8,12 +8,33 @@ Phase 4: 2 report types — Executive Summary + Article-by-Article.
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from leggie.application.agents.improver import Suggestion
 from leggie.domain.models import Document, Finding, Severity
+
+
+def _add_formatted_paragraph(doc, text: str, style: str | None = None) -> None:
+    """Add a paragraph to *doc* with basic Markdown bold/italic runs."""
+    paragraph = doc.add_paragraph(style=style)
+    pattern = re.compile(r"(\*\*[^*]+?\*\*|(?<!\w)_(\w[\w ]*?)_(?!\w)|\*[^*]+?\*)")
+    pos = 0
+    for match in pattern.finditer(text):
+        if match.start() > pos:
+            paragraph.add_run(text[pos:match.start()])
+        marker = match.group()
+        run = paragraph.add_run(marker.strip("*_"))
+        if marker.startswith("**"):
+            run.bold = True
+        else:
+            run.italic = True
+        pos = match.end()
+    if pos < len(text):
+        paragraph.add_run(text[pos:])
 
 
 @dataclass
@@ -45,6 +66,38 @@ class Report:
             lines.append("")
 
         return "\n".join(lines)
+
+    def to_docx(self, path: str | Path) -> Path:
+        """Render the report as a Word document and save it to *path*."""
+        from docx import Document
+
+        doc = Document()
+        doc.add_heading(self.title, level=1)
+
+        if self.metadata:
+            for key, value in self.metadata.items():
+                doc.add_paragraph(f"{key}: {value}")
+            doc.add_paragraph()
+
+        for section in self.sections:
+            level = section.get("level", 2)
+            doc.add_heading(section["title"], level=level)
+            content = section.get("content", "")
+            if isinstance(content, str):
+                _add_formatted_paragraph(doc, content)
+            elif isinstance(content, list):
+                for item in content:
+                    text = item.strip()
+                    style = None
+                    if text.startswith(("- ", "* ")):
+                        text = text[2:]
+                        style = "List Bullet"
+                    _add_formatted_paragraph(doc, text, style=style)
+
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(str(output_path))
+        return output_path
 
 
 class ReportRenderer(ABC):

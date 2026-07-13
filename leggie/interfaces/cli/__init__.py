@@ -160,6 +160,8 @@ async def _handle_analyze(args: argparse.Namespace, mediator: Mediator) -> int:
     if not result.success:
         print(f"{result.error}")
         return 1
+    if result.data:
+        print(result.data)
     return 0
 
 

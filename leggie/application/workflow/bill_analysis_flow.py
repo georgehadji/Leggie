@@ -278,11 +278,15 @@ class BillAnalysisFlow:
 
                 # Auto-save reports and findings to output directory
                 exec_path = output_path / f"{bill_name}_executive_summary.md"
+                exec_docx_path = output_path / f"{bill_name}_executive_summary.docx"
                 art_path = output_path / f"{bill_name}_article_by_article.md"
+                art_docx_path = output_path / f"{bill_name}_article_by_article.docx"
                 findings_path = output_path / f"{bill_name}_findings.json"
 
                 exec_path.write_text(exec_summary.to_markdown(), encoding="utf-8")
                 art_path.write_text(article_by_article.to_markdown(), encoding="utf-8")
+                exec_summary.to_docx(exec_docx_path)
+                article_by_article.to_docx(art_docx_path)
 
                 findings_data = []
                 for f in self._findings:
@@ -303,7 +307,9 @@ class BillAnalysisFlow:
                 logger.info(
                     "flow.outputs_saved",
                     executive_summary=str(exec_path),
+                    executive_summary_docx=str(exec_docx_path),
                     article_by_article=str(art_path),
+                    article_by_article_docx=str(art_docx_path),
                     findings=str(findings_path),
                 )
                 guard = self._budget_guard()
