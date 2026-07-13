@@ -149,6 +149,33 @@ class TestBillAnalysisFlow:
         await flow.run(sample_bill_file, output_dir=tmp_path)
         assert len(flow.suggestions) > 0
 
+    @pytest.mark.asyncio
+    async def test_preview_returns_overview_with_all_articles(self, sample_bill_file):
+        flow = BillAnalysisFlow()
+        overview = await flow.preview(sample_bill_file)
+        assert overview.article_ids() == ["1", "2"]
+        assert flow.overview is overview
+
+    @pytest.mark.asyncio
+    async def test_preview_then_run_completes(self, sample_bill_file, tmp_path):
+        flow = BillAnalysisFlow()
+        await flow.preview(sample_bill_file)
+        findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
+        assert flow.state == WorkflowState.DONE
+        assert len(reports) == 2
+
+    @pytest.mark.asyncio
+    async def test_run_selected_article_ids_restricts_analysis(self, sample_bill_file, tmp_path):
+        flow = BillAnalysisFlow()
+        overview = await flow.preview(sample_bill_file)
+        assert len(overview.articles) == 2
+        findings, _ = await flow.run(
+            sample_bill_file, output_dir=tmp_path, selected_article_ids=["1"]
+        )
+        assert len(findings) > 0
+        for f in findings:
+            assert "Άρθρο 1" in f.irac.issue, f.irac.issue
+
 
 class _LLMWithGuard:
     """Duck-typed LLM stub exposing a real BudgetGuard, like BudgetGuardDecorator."""

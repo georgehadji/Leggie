@@ -19,6 +19,7 @@ from leggie.application.cqrs.commands.cli_commands import (
     AnalyzeBillCommand,
     EvalGoldSetCommand,
     ParseDocumentCommand,
+    PreviewBillCommand,
 )
 from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.llm import LLMPort
@@ -158,6 +159,49 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 summary += f"\n  - [{f.finding_type.value}:{f.severity.value}] {f.irac.issue[:80]}"
 
             return CommandResult(success=True, data=summary)
+        except Exception as e:
+            return CommandResult(success=False, error=str(e))
+
+
+class PreviewBillHandler(CommandHandler[PreviewBillCommand, dict[str, Any]]):
+    """Handle bill preview — Stage 0, before ingest/analyze proper.
+
+    Produces intro, summary, and per-article purpose/key-provisions/
+    practical-consequences so the caller can pick which Άρθρο IDs to
+    pass into `leggie analyze --articles`.
+    """
+
+    def __init__(self, container: Container) -> None:
+        self._container = container
+
+    async def handle(self, command: PreviewBillCommand) -> CommandResult[dict[str, Any]]:
+        try:
+            from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
+
+            llm = _resolve_llm_from_container(self._container)
+            router = _resolve_router_from_container(self._container)
+            overview = await BillAnalysisFlow(llm=llm, router=router).preview(command.file_path)
+
+            output = {
+                "intro": overview.intro,
+                "summary": overview.summary,
+                "articles": [
+                    {
+                        "article_id": a.article_id,
+                        "title": a.title,
+                        "purpose": a.purpose,
+                        "key_provisions": a.key_provisions,
+                        "practical_consequences": a.practical_consequences,
+                    }
+                    for a in overview.articles
+                ],
+            }
+
+            if command.output_path:
+                p = Path(command.output_path)
+                p.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            return CommandResult(success=True, data=output)
         except Exception as e:
             return CommandResult(success=False, error=str(e))
 

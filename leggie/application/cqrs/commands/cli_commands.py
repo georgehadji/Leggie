@@ -26,6 +26,17 @@ class AnalyzeBillCommand(Command):
     checkpoint_path: str | None = None
 
 
+class PreviewBillCommand(Command):
+    """Preview a legal bill: intro, summary, per-article purpose/provisions/consequences.
+
+    Runs before ingest/analyze proper, so the caller can pick which
+    Άρθρο IDs to pass into `leggie analyze --articles`.
+    """
+
+    file_path: str
+    output_path: str | None = None
+
+
 class EvalGoldSetCommand(Command):
     """Run evaluation against a gold set."""
 

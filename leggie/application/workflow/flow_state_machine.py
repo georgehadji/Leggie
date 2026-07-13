@@ -11,6 +11,8 @@ from leggie.domain.models import WorkflowState
 # State transition rules: (current_state, event_type) → next_state
 # event_type strings describe what happened to trigger the transition.
 _TRANSITION_TABLE: dict[tuple[WorkflowState, str], WorkflowState] = {
+    (WorkflowState.IDLE, "preview_started"): WorkflowState.PREVIEWING,
+    (WorkflowState.PREVIEWING, "ingest_started"): WorkflowState.INGESTING,
     (WorkflowState.IDLE, "ingest_started"): WorkflowState.INGESTING,
     (WorkflowState.INGESTING, "ingest_completed"): WorkflowState.PARSING,
     (WorkflowState.PARSING, "parse_completed"): WorkflowState.PLANNING,
@@ -22,6 +24,7 @@ _TRANSITION_TABLE: dict[tuple[WorkflowState, str], WorkflowState] = {
     (WorkflowState.IMPROVING, "improvement_completed"): WorkflowState.REPORTING,
     (WorkflowState.REPORTING, "report_completed"): WorkflowState.DONE,
     # Error transitions
+    (WorkflowState.PREVIEWING, "preview_failed"): WorkflowState.FAILED,
     (WorkflowState.INGESTING, "ingest_failed"): WorkflowState.FAILED,
     (WorkflowState.PARSING, "parse_failed"): WorkflowState.FAILED,
     (WorkflowState.PLANNING, "plan_failed"): WorkflowState.FAILED,
