@@ -21,6 +21,9 @@ class AnalyzeBillCommand(Command):
     file_path: str
     output_path: str | None = None
     lenses: list[str] | None = None
+    articles: str | None = None
+    use_verbalized_sampling: bool = False
+    checkpoint_path: str | None = None
     pipeline: str = "deterministic"
     perspective: str | None = None
     fallback: bool = False

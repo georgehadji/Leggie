@@ -82,3 +82,22 @@ class TestBlackboard:
         bb.clear()
         assert bb.total_entries == 0
         assert bb.current_round == 1
+
+    def test_get_entries(self):
+        bb = Blackboard()
+        bb.post(make_finding("A"), agent_id="lens1")
+        bb.post(make_finding("B"), agent_id="lens2")
+        entries = bb.get_entries()
+        assert len(entries) == 2
+        assert entries[0].agent_id == "lens1"
+        assert entries[1].agent_id == "lens2"
+
+    def test_clear_round(self):
+        bb = Blackboard()
+        bb.post(make_finding("R1"), agent_id="lens1")
+        bb.next_round()
+        bb.post(make_finding("R2"), agent_id="lens2")
+        assert bb.total_entries == 2
+        bb.clear_round(1)
+        assert bb.total_entries == 1
+        assert bb.get_round_findings(1) == []

@@ -7,8 +7,13 @@ interface layer thin per Clean Architecture. No direct infrastructure calls.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from leggie.application.cqrs.mediator import Mediator
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,6 +35,18 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("file", type=Path, help="Path to the bill file (PDF/DOCX/HTML/TXT)")
     analyze.add_argument("--output", "-o", type=Path, default=None, help="Output directory for reports")
     analyze.add_argument("--lenses", "-l", nargs="+", default=None, help="Lenses to apply (default: all 5)")
+    analyze.add_argument(
+        "--articles", "-a", type=str, default=None,
+        help="Articles to analyze, e.g. '1-5,7,10' or '1,2,3' (default: all)",
+    )
+    analyze.add_argument(
+        "--verbalized-sampling", action="store_true",
+        help="Enable verbalized sampling (experimental, increases cost)",
+    )
+    analyze.add_argument(
+        "--checkpoint", "-c", type=Path, default=None,
+        help="Path to persist/restore budget spend across runs (survives a crash mid-run)",
+    )
     analyze.add_argument(
         "--pipeline",
         choices=["deterministic", "deliberative"],
@@ -61,8 +78,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _build_mediator():
-    """Build and configure the CQRS mediator with all handlers."""
+def _build_mediator() -> Mediator:
+    """Build and configure the CQRS mediator with all handlers.
+
+    W1: Creates the DI container once at startup and injects it into all handlers.
+    """
     from leggie.application.cqrs.commands.cli_commands import (
         AnalyzeBillCommand,
         EvalGoldSetCommand,
@@ -74,16 +94,25 @@ def _build_mediator():
         ParseDocumentHandler,
     )
     from leggie.application.cqrs.mediator import Mediator
+    from leggie.infrastructure.container import Container
+
+    # Single composition root — one container, one configure_defaults() call (W1)
+    container = Container()
+    container.configure_defaults()
 
     mediator = Mediator()
-    mediator.register_command_handler(ParseDocumentCommand, ParseDocumentHandler())
-    mediator.register_command_handler(AnalyzeBillCommand, AnalyzeBillHandler())
-    mediator.register_command_handler(EvalGoldSetCommand, EvalGoldSetHandler())
+    mediator.register_command_handler(ParseDocumentCommand, ParseDocumentHandler(container=container))
+    mediator.register_command_handler(AnalyzeBillCommand, AnalyzeBillHandler(container=container))
+    mediator.register_command_handler(EvalGoldSetCommand, EvalGoldSetHandler(container=container))
     return mediator
 
 
 async def main() -> int:
     """CLI entry point — dispatches through CQRS mediator."""
+    # Configure structured logging once at startup (W6)
+    from leggie.infrastructure.observability import configure_logging
+    configure_logging()
+
     parser = build_parser()
     args = parser.parse_args()
 
@@ -109,7 +138,7 @@ async def main() -> int:
     return 0
 
 
-async def _handle_parse(args: argparse.Namespace, mediator) -> int:
+async def _handle_parse(args: argparse.Namespace, mediator: Mediator) -> int:
     """Handle the parse command via CQRS."""
     import json
 
@@ -131,7 +160,7 @@ async def _handle_parse(args: argparse.Namespace, mediator) -> int:
     return 0
 
 
-async def _handle_analyze(args: argparse.Namespace, mediator) -> int:
+async def _handle_analyze(args: argparse.Namespace, mediator: Mediator) -> int:
     """Handle the analyze command via CQRS."""
     from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
 
@@ -139,6 +168,9 @@ async def _handle_analyze(args: argparse.Namespace, mediator) -> int:
         file_path=str(args.file),
         output_path=str(args.output) if args.output else None,
         lenses=args.lenses,
+        articles=args.articles,
+        use_verbalized_sampling=args.verbalized_sampling,
+        checkpoint_path=str(args.checkpoint) if args.checkpoint else None,
         pipeline=args.pipeline,
         perspective=args.perspective,
         fallback=args.fallback,
@@ -148,10 +180,12 @@ async def _handle_analyze(args: argparse.Namespace, mediator) -> int:
     if not result.success:
         print(f"{result.error}")
         return 1
+    if result.data:
+        print(result.data)
     return 0
 
 
-async def _handle_eval(args: argparse.Namespace, mediator) -> int:
+async def _handle_eval(args: argparse.Namespace, mediator: Mediator) -> int:
     """Handle the eval command via CQRS."""
     import json
 
@@ -167,7 +201,7 @@ async def _handle_eval(args: argparse.Namespace, mediator) -> int:
         print(f"Error: {result.error}", file=sys.stderr)
         return 1
 
-    for bill_result in result.data:
+    for bill_result in result.data or []:
         print(f"\n{bill_result['bill_id']}:")
         print(f"  Gold labels: {bill_result['total_gold']}")
         print(f"  Findings: {bill_result['total_findings']}")
@@ -182,9 +216,23 @@ async def _handle_eval(args: argparse.Namespace, mediator) -> int:
     return 0
 
 
+def _force_utf8_console() -> None:
+    """Force UTF-8 stdout/stderr so Greek output does not mojibake on Windows.
+
+    Windows consoles default to a legacy code page (e.g. cp1252) that cannot
+    encode Greek. Reconfigure the streams to UTF-8; harmless on POSIX.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            with contextlib.suppress(ValueError, OSError):
+                reconfigure(encoding="utf-8")
+
+
 def entry_point() -> int:
     """Synchronous entry point for CLI."""
     import asyncio
+    _force_utf8_console()
     return asyncio.run(main())
 
 

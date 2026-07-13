@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any
 
 from leggie.domain.models import Finding
+
+from leggie.application.ports.reranker import RerankerPort
 
 _SEVERITY_WEIGHTS = {
     "critical": 1.0,
@@ -107,3 +110,63 @@ class CompositeReranker(Reranker):
             max_overlap = max(max_overlap, overlap)
 
         return 1.0 - max_overlap
+
+
+class ModelBasedReranker(Reranker):
+    """Reranker using a dedicated rerank model (Cohere, NVIDIA via OpenRouter).
+
+    Calls an external RerankerPort to score finding relevance against a query.
+    Batch-calls once per rerank() call, caches scores, falls back to composite.
+    """
+
+    def __init__(
+        self,
+        reranker_port: RerankerPort,
+        query: str = "Which findings identify the most legally significant constitutional or regulatory issues?",
+        model: str = "cohere/rerank-4-pro",
+        composite_fallback: CompositeReranker | None = None,
+    ) -> None:
+        self._port = reranker_port
+        self._query = query
+        self._model = model
+        self._fallback = composite_fallback or CompositeReranker()
+        self._batch_scores: dict[Any, float] | None = None
+
+    async def score(self, finding: Finding, all_findings: list[Finding]) -> ScoredFinding:
+        """Score via model if batch scores cached, else fall back to composite."""
+        if self._batch_scores is None:
+            self._batch_scores = await self._compute_batch_scores(all_findings)
+
+        score = self._batch_scores.get(finding.id)
+        if score is not None:
+            return ScoredFinding(
+                finding=finding,
+                composite_score=score,
+                severity_score=0.0,
+                confidence_score=0.0,
+                novelty_score=0.0,
+            )
+        return await self._fallback.score(finding, all_findings)
+
+    async def _compute_batch_scores(self, findings: list[Finding]) -> dict[Any, float]:
+        """Call the rerank model once for the entire batch."""
+        if not findings:
+            return {}
+
+        documents = [
+            f"Finding [{f.finding_type.value}] [{f.severity.value}]: "
+            f"{f.irac.issue} — {f.irac.conclusion}"
+            for f in findings
+        ]
+
+        try:
+            results = await self._port.rerank(
+                query=self._query,
+                documents=documents,
+                model=self._model,
+            )
+            return {findings[r.index].id: r.relevance_score for r in results if r.index < len(findings)}
+        except Exception:
+            # Fall back to composite scoring
+            scored = [await self._fallback.score(f, findings) for f in findings]
+            return {s.finding.id: s.composite_score for s in scored}

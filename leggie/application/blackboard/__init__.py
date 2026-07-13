@@ -9,8 +9,9 @@ react to new postings → Controller schedules bounded rounds.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from leggie.domain.models import Finding
@@ -35,7 +36,7 @@ class BlackboardRound:
     completed: bool = False
 
 
-ObserverCallback = callable  # (entry, blackboard) → None
+ObserverCallback = Callable[..., None]  # (entry, blackboard) → None
 
 
 class Blackboard:
@@ -63,7 +64,7 @@ class Blackboard:
     def current_round(self) -> int:
         return self._current_round
 
-    def post(self, finding: Finding, agent_id: str = "", metadata: dict | None = None) -> BlackboardEntry:
+    def post(self, finding: Finding, agent_id: str = "", metadata: dict[str, Any] | None = None) -> BlackboardEntry:
         """Post a finding to the current round."""
         entry = BlackboardEntry(
             finding=finding,
@@ -84,6 +85,13 @@ class Blackboard:
             for entry in round_data.entries:
                 findings.append(entry.finding)
         return findings
+
+    def get_entries(self) -> list[BlackboardEntry]:
+        """Get all entries across all rounds with full metadata."""
+        entries: list[BlackboardEntry] = []
+        for round_data in self._rounds:
+            entries.extend(round_data.entries)
+        return entries
 
     def get_round_findings(self, round_number: int) -> list[Finding]:
         """Get findings from a specific round."""
@@ -122,6 +130,18 @@ class Blackboard:
     @property
     def total_entries(self) -> int:
         return sum(len(r.entries) for r in self._rounds)
+
+    def clear_round(self, round_number: int) -> None:
+        """Remove all entries from a specific round.
+
+        Non-destructive: the round dataclass itself remains, but its
+        entries list is cleared. Round history is preserved via the
+        round_number and completed flag.
+        """
+        for round_data in self._rounds:
+            if round_data.round_number == round_number:
+                round_data.entries.clear()
+                return
 
     def clear(self) -> None:
         """Clear all rounds (for testing)."""

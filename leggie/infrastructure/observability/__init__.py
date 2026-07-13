@@ -16,11 +16,19 @@ import structlog
 from leggie.config.settings import get_settings
 
 
+_LOGGING_CONFIGURED: bool = False
+
+
 def configure_logging(level: str | None = None) -> None:
     """Configure structured logging with structlog.
 
-    Call once at application startup.
+    Call once at application startup. Safe to call multiple times
+    (idempotent — only the first call applies).
     """
+    global _LOGGING_CONFIGURED
+    if _LOGGING_CONFIGURED:
+        return
+    _LOGGING_CONFIGURED = True
     settings = get_settings()
     log_level = level or settings.log_level
 
@@ -46,7 +54,8 @@ def configure_logging(level: str | None = None) -> None:
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Get a structured logger for the given module name."""
-    return structlog.get_logger(name or __name__)
+    logger: structlog.stdlib.BoundLogger = structlog.get_logger(name or __name__)
+    return logger
 
 
 # ── Trace ID context ──────────────────────────────────────────────
@@ -94,5 +103,5 @@ class Timer:
 
     async def __aexit__(self, *args: Any) -> None:
         import time
-        elapsed = time.monotonic() - self._start
+        elapsed = time.monotonic() - (self._start or time.monotonic())
         self._logger.info("timing.completed", operation=self._operation, elapsed_ms=round(elapsed * 1000, 2), **self._context)

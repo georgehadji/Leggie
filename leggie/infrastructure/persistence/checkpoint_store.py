@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -32,8 +30,9 @@ class CheckpointStore:
         if not self._path.exists():
             return None
         try:
-            with open(self._path, "r", encoding="utf-8") as f:
-                return json.load(f)
+            with open(self._path, encoding="utf-8") as f:
+                data: dict[str, Any] = json.load(f)
+                return data
         except (json.JSONDecodeError, OSError):
             return None
 

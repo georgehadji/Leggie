@@ -3,7 +3,7 @@
 import pytest
 
 from leggie.application.agents.orchestrator import Orchestrator
-from leggie.domain.models import Article, Document
+from leggie.domain.models import Article, Document, Event, EventType
 
 SAMPLE_DOC = Document(
     title="Test Bill",
@@ -56,6 +56,44 @@ class TestOrchestrator:
         orch = Orchestrator()
         findings = await orch.analyze_document(SAMPLE_DOC)
         assert len(findings) >= 2  # Articles with constitutional/EU triggers
+
+    @pytest.mark.asyncio
+    async def test_analyze_document_matches_serial_result(self):
+        """Parallel fan-out must yield the same findings as the serial path."""
+        orch = Orchestrator()
+        serial_findings: list = []
+        for article in SAMPLE_DOC.articles:
+            serial_findings.extend(await orch.analyze_article(article))
+        parallel_findings = await orch.analyze_document(SAMPLE_DOC)
+
+        serial_set = {(f.lens, f.irac.issue) for f in serial_findings}
+        parallel_set = {(f.lens, f.irac.issue) for f in parallel_findings}
+        assert serial_set == parallel_set
+
+    @pytest.mark.asyncio
+    async def test_analyze_document_isolates_article_failure(self):
+        """One article crashing must not abort the rest of the batch."""
+        events: list[Event] = []
+
+        def record_degradation(ev: Event) -> None:
+            events.append(ev)
+
+        orch = Orchestrator(on_degradation=record_degradation)
+        original = orch.analyze_article
+
+        async def failing_analyze(article: Article, lens_names: list[str] | None = None):
+            if article.id == "2":
+                raise RuntimeError("simulated article failure")
+            return await original(article, lens_names)
+
+        orch.analyze_article = failing_analyze  # type: ignore[method-assign]
+        findings = await orch.analyze_document(SAMPLE_DOC)
+
+        # Articles 1 and 3 should still produce findings.
+        assert len(findings) >= 2
+        degraded = [e for e in events if e.event_type == EventType.DEGRADED]
+        assert len(degraded) == 1
+        assert degraded[0].data["article_id"] == "2"
 
     @pytest.mark.asyncio
     async def test_analyze_with_unknown_lens_skips(self):

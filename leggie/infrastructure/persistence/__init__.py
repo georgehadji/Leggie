@@ -65,9 +65,10 @@ class JsonEventStore:
 
     async def append(self, event: Event) -> None:
         """Append an event to the store."""
+        event_type = getattr(event.event_type, "value", event.event_type)
         data = {
             "id": str(event.id),
-            "event_type": event.event_type.value,
+            "event_type": event_type,
             "aggregate_id": event.aggregate_id,
             "data": event.data,
             "timestamp": event.timestamp.isoformat(),

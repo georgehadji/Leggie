@@ -1,6 +1,5 @@
 """Tests for CheckpointStore — atomic checkpoint persistence."""
 
-import pytest
 from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
 
 

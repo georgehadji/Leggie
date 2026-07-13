@@ -19,11 +19,7 @@ class TestBudgetGuard:
 
     def test_block_when_exceeded(self):
         guard = BudgetGuard(max_tokens=1_000, max_cost=1.0)
-        # First exceed: guard degrades before blocking
-        action = guard.check(prompt_tokens=2_000, completion_tokens=500, model="claude-sonnet-4-20250514")
-        assert action == BudgetAction.DEGRADE
-        guard.apply_degrade()
-        # Still exceeded after degrade: now block
+        # Budget exceeded: BLOCK immediately (hard ceiling)
         action = guard.check(prompt_tokens=2_000, completion_tokens=500, model="claude-sonnet-4-20250514")
         assert action == BudgetAction.BLOCK
 
@@ -54,8 +50,9 @@ class TestBudgetGuard:
     def test_degrade_strategy(self):
         guard = BudgetGuard(max_tokens=100_000, max_cost=1.0)
         guard._state.degrade_strategy = "fewer_paths"
+        # At exactly 100% of token budget (not exceeding): 80% threshold triggers DEGRADE
         action = guard.check(prompt_tokens=90_000, completion_tokens=10_000, model="claude-sonnet-4-20250514")
-        assert action in (BudgetAction.DEGRADE, BudgetAction.ALLOW)
+        assert action == BudgetAction.DEGRADE
 
     def test_reset(self):
         guard = BudgetGuard(max_tokens=100_000, max_cost=5.0)

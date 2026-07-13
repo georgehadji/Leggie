@@ -16,6 +16,18 @@ from pydantic import BaseModel, Field, field_validator
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
 
+def is_greek(text: str, min_ratio: float = 0.50) -> bool:
+    """Check if text contains at least *min_ratio* Greek-script characters.
+
+    Pure domain function — no I/O.
+    Greek Unicode range: U+0370–U+03FF (Greek & Coptic), U+1F00–U+1FFF (Extended).
+    """
+    if not text:
+        return False
+    greek_chars = sum(1 for ch in text if '\u0370' <= ch <= '\u03ff' or '\u1f00' <= ch <= '\u1fff')
+    return (greek_chars / max(len(text), 1)) >= min_ratio
+
+
 class FindingType(StrEnum):
     """Typology of legal findings per U3 — typed hallucination categories."""
 
@@ -88,6 +100,9 @@ class EventType(StrEnum):
     WORKFLOW_COMPLETED = "workflow_completed"
     WORKFLOW_FAILED = "workflow_failed"
     BUDGET_TRIPPED = "budget_tripped"
+    DEGRADED = "degraded"  # LLM call failed, pipeline degraded output
+    DEDUP_REMOVED = "dedup_removed"  # Near-duplicate findings collapsed
+    AGGREGATION_COMPLETED = "aggregation_completed"  # Blackboard aggregation finished
 
 
 # ── Value Objects ──────────────────────────────────────────────────────────────

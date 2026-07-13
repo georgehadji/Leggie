@@ -16,31 +16,31 @@ from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.domain.models import Citation, CitationScheme
 
 # Citation regex patterns
-FEK_PATTERN: Pattern = re.compile(
+FEK_PATTERN: Pattern[str] = re.compile(
     r"(?:ΦΕΚ|Φ\.?Ε\.?Κ\.?|Εφημερίδα.*?Κυβερνήσεως)\s+"
     r"(?:(?:Τεύχος\s+)?([ΑαΒβΓγΔδΕεΣστΤ]’?)\s+)?"
     r"(\d+)\s*[/\\]\s*(\d{4})",
     re.UNICODE,
 )
 
-CELEX_PATTERN: Pattern = re.compile(
+CELEX_PATTERN: Pattern[str] = re.compile(
     r"(?:CELEX|Celex|celex)[:\s]*(\d{4,5}[A-Z]{1,2}\d+)",
     re.UNICODE,
 )
 
-ECLI_PATTERN: Pattern = re.compile(
+ECLI_PATTERN: Pattern[str] = re.compile(
     r"(?:ECLI|Ecli|ecli)[:\s]*([A-Z]{2}:[A-Z\u0386-\u03CE]+:\d{4}:\d+)",
     re.UNICODE,
 )
 
-URL_PATTERN: Pattern = re.compile(
+URL_PATTERN: Pattern[str] = re.compile(
     r"(https?://(?:www\.)?(?:et\.gr|eur-lex\.europa\.eu|nomothesia\.gr|legislation\.gr|"
     r"hellenicparliament\.gr|diavgeia\.gov\.gr)/[^\s)]+)",
     re.UNICODE,
 )
 
 # Individual law references: Ν. ΧΧΧΧ/Έτος
-LAW_REF_PATTERN: Pattern = re.compile(
+LAW_REF_PATTERN: Pattern[str] = re.compile(
     r"Ν\.?\s*(\d+)\s*[/\\]\s*(\d{4})",
     re.UNICODE,
 )
@@ -118,8 +118,12 @@ class GreekCitationParser(CitationParserPort):
             resolved = citation.identifier in self._resolution_index
             evidence = "resolved against internal index" if resolved else "not found in index"
         else:
-            resolved = True
-            evidence = "no resolution index configured — assumed valid"
+            # Fail closed: with no index we have not actually checked anything,
+            # so we must not report the citation as resolved. Structural parsing
+            # (parse()) already succeeded — this only means "unverified", not
+            # "invalid".
+            resolved = False
+            evidence = "no resolution index configured — not independently verified"
 
         return Citation(
             scheme=citation.scheme,

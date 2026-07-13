@@ -98,7 +98,37 @@ Leggie is a **deterministic, event-sourced legal-analysis workflow** whose LLM i
 
 ---
 
-## 9. The deliberative pipeline — a bounded exception, not a departure
+## 9. Live runtime vs. extension seams
+
+Not every component in the codebase is part of the current analysis pipeline.
+The following table clarifies what is live versus what is scaffolding for future work:
+
+| Component | Status | Details |
+|---|---|---|
+| **BillAnalysisFlow** | ✅ Live | Explicit state-machine workflow controls the full pipeline. |
+| **CheckpointStore** | ✅ Live | File-based crash-resume checkpointing per run. |
+| **BlackboardAggregator** | ✅ Live | In-process blackboard aggregation (dedup → rerank → skeptic → CoVe). |
+| **StatePort** | ✅ Live | Now correctly bound to `InMemoryStateStore`. Async state/checkpoint persistence via port abstraction. |
+| **EventBusPort** | ✅ Live | `InMemoryEventBus` handles publish/subscribe for in-process events. |
+| **LLMPort / RouterPort** | ✅ Live | Model-backed analysis and cascade routing; requires API key. Graceful fallback to `None` without key. |
+| **RerankerPort** | 🔌 Conditional | Resolved only when `settings.analysis.reranker == "model"`. Default composite reranker needs no port. |
+| **Stage template** | 🔧 Extension seam | `Stage` ABC with Template Method lifecycle — not used by `BillAnalysisFlow`. Available for future pluggable stages. |
+| **JsonEventStore** | 🔧 Utility | File-based JSONL event store available for durable event persistence — not wired into the default runtime. Events are in-memory by default. |
+| **BlackboardPort** | 🔧 Port seam | `BlackboardAdapter` exists and is container-bound, but `BlackboardAggregator` constructs a `Blackboard` directly. Port is ready for future infrastructure-backed blackboard storage. |
+| **RetrievalPort** | 🔧 Experimental | `SimpleRetrievalAdapter` exists as a local-file retriever. NOT wired into the analysis pipeline. |
+| **`application/di.py`** | 🚫 Intentional guard | Raises `ImportError` to prevent old import paths. DI composition root is `leggie.infrastructure.container`. |
+
+### Offline / no-API-key behavior
+
+Without `LEGGIE_LLM__OPENROUTER_API_KEY`:
+- `leggie analyze` runs in deterministic fallback mode (regex-based pattern matching where available).
+- LLMPort resolution returns `None`; flow components that need an LLM degrade gracefully.
+- Reranking defaults to `composite` (scoring-only, no model call).
+- Verbalized sampling is disabled by default.
+
+---
+
+## 10. The deliberative pipeline — a bounded exception, not a departure
 
 `--pipeline deliberative` (§1's default remains `deterministic`) delegates multi-model
 generation/critique/synthesis to an external service (Reasoner) rather than reimplementing
@@ -118,4 +148,4 @@ it inside Leggie. This is a deliberate, narrow exception to §1's rule, not a re
   deterministic path's findings. An optional citation appendix (deterministic ΦΕΚ/CELEX/ECLI
   parser over the prose) is the only verification sliver retained.
 
-See `implementation_plan.md` for the full design rationale and work breakdown.
+See `docs/deliberative_pipeline_plan.md` for the full design rationale and work breakdown.

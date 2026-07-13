@@ -75,6 +75,7 @@ class TestGreekCitationParser:
         )
         resolved = await parser.resolve(cite)
         assert resolved.resolved is True
+        assert "resolved against internal index" in (resolved.resolution_evidence or "")
 
         cite2 = Citation(
             scheme=CitationScheme.FEK,
@@ -83,6 +84,7 @@ class TestGreekCitationParser:
         )
         resolved2 = await parser.resolve(cite2)
         assert resolved2.resolved is False
+        assert "not found in index" in (resolved2.resolution_evidence or "")
 
     @pytest.mark.asyncio
     async def test_resolve_without_index(self, parser):
@@ -92,7 +94,10 @@ class TestGreekCitationParser:
             original_text="ΦΕΚ Α 137/2023",
         )
         resolved = await parser.resolve(cite)
-        assert resolved.resolved is True  # No index = assumed valid
+        # Fail closed: no index means nothing was actually checked, so it must
+        # not be reported as resolved.
+        assert resolved.resolved is False
+        assert "not independently verified" in (resolved.resolution_evidence or "")
 
     def test_build_index(self, parser):
         citations = [

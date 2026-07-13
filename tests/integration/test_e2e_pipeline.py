@@ -46,23 +46,23 @@ class TestEndToEnd:
     """Full pipeline integration tests."""
 
     @pytest.mark.asyncio
-    async def test_full_pipeline_findings_and_reports(self, bill_file):
+    async def test_full_pipeline_findings_and_reports(self, bill_file, tmp_path):
         """End-to-end: bill → findings + reports."""
         from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
 
         flow = BillAnalysisFlow()
-        findings, reports = await flow.run(bill_file)
+        findings, reports = await flow.run(bill_file, output_dir=tmp_path)
 
         # Should find issues across multiple lenses
         assert len(findings) > 0, "Should produce at least one finding"
 
     @pytest.mark.asyncio
-    async def test_full_pipeline_reports_rendered(self, bill_file):
+    async def test_full_pipeline_reports_rendered(self, bill_file, tmp_path):
         """Both report types rendered end-to-end."""
         from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
 
         flow = BillAnalysisFlow()
-        findings, reports = await flow.run(bill_file)
+        findings, reports = await flow.run(bill_file, output_dir=tmp_path)
 
         assert len(reports) == 2, "Should produce 2 reports"
         assert reports[0].report_type == "executive_summary"
@@ -74,12 +74,12 @@ class TestEndToEnd:
             assert len(md) > 200, f"{report.report_type} should have content"
 
     @pytest.mark.asyncio
-    async def test_full_pipeline_events_audit_trail(self, bill_file):
+    async def test_full_pipeline_events_audit_trail(self, bill_file, tmp_path):
         """Audit trail recorded for the full run."""
         from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
 
         flow = BillAnalysisFlow()
-        await flow.run(bill_file)
+        await flow.run(bill_file, output_dir=tmp_path)
 
         events = flow.get_event_log()
         assert len(events) >= 6, "Should record at least 6 events"
@@ -88,30 +88,30 @@ class TestEndToEnd:
         assert "workflow_completed" in event_types
 
     @pytest.mark.asyncio
-    async def test_full_pipeline_state_complete(self, bill_file):
+    async def test_full_pipeline_state_complete(self, bill_file, tmp_path):
         """Flow reaches DONE state."""
         from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow, WorkflowState
 
         flow = BillAnalysisFlow()
-        await flow.run(bill_file)
+        await flow.run(bill_file, output_dir=tmp_path)
         assert flow.state == WorkflowState.DONE
 
     @pytest.mark.asyncio
-    async def test_full_pipeline_suggestions_generated(self, bill_file):
+    async def test_full_pipeline_suggestions_generated(self, bill_file, tmp_path):
         """Improvement suggestions produced."""
         from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
 
         flow = BillAnalysisFlow()
-        await flow.run(bill_file)
+        await flow.run(bill_file, output_dir=tmp_path)
         assert len(flow.suggestions) > 0, "Should generate improvement suggestions"
 
     @pytest.mark.asyncio
-    async def test_full_pipeline_reports_properties(self, bill_file):
+    async def test_full_pipeline_reports_properties(self, bill_file, tmp_path):
         """Reports and suggestions accessible via properties."""
         from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
 
         flow = BillAnalysisFlow()
-        await flow.run(bill_file)
+        await flow.run(bill_file, output_dir=tmp_path)
 
         assert len(flow.reports) == 2
         assert len(flow.suggestions) > 0

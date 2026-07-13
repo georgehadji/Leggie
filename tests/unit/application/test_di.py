@@ -98,3 +98,17 @@ class TestContainer:
         container.configure_defaults()
         manager = container.get("reasoner_server_manager")
         assert isinstance(manager, ReasonerServerManager)
+
+
+class TestMigrationShim:
+    """leggie.application.di intentionally fails to prevent old import paths."""
+
+    def test_legacy_di_import_raises_clear_message(self):
+        with pytest.raises(ImportError) as exc_info:
+            # Force reimport of the module that always raises
+            import importlib
+            import leggie.application.di  # noqa: F811
+            importlib.reload(leggie.application.di)
+        msg = str(exc_info.value)
+        assert "leggie.infrastructure.container" in msg
+        assert "moved" in msg.lower() or "Import from there" in msg

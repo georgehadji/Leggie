@@ -1,12 +1,6 @@
 """Tests for config/settings — pydantic-settings validation."""
 
-import pytest
-from leggie.config.settings import (
-    Settings,
-    LLMSettings,
-    BudgetSettings,
-    ReasonerSettings,
-)
+from leggie.config.settings import BudgetSettings, LLMSettings, ReasonerSettings, Settings
 
 
 class TestSettings:
@@ -36,7 +30,8 @@ class TestLLMSettings:
 
     def test_default_model(self):
         s = LLMSettings()
-        assert "claude-sonnet-4" in s.openrouter_default_model
+        # Must be a real, working OpenRouter id (no :free suffix, no invalid date-stamped id)
+        assert s.openrouter_default_model == "google/gemini-2.5-flash"
 
     def test_base_url(self):
         s = LLMSettings()
@@ -46,7 +41,9 @@ class TestLLMSettings:
 class TestBudgetSettings:
     def test_max_tokens_default(self):
         s = BudgetSettings()
-        assert s.max_tokens_per_run == 500_000
+        # Token cap is a hard safety ceiling only; the $ cost cap is the real
+        # governor. Kept well above what $5 buys so it never throttles a run first.
+        assert s.max_tokens_per_run == 20_000_000
 
     def test_max_cost_default(self):
         s = BudgetSettings()
