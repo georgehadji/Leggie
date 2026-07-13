@@ -12,6 +12,7 @@ import pytest
 from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
 from leggie.application.cqrs.handlers import cli_handlers
 from leggie.config.settings import ReasonerSettings, Settings
+from leggie.infrastructure.container import Container
 
 
 class FakeDeliberativeFlow:
@@ -112,7 +113,7 @@ class TestDeterministicPipelineUnchanged:
             cli_handlers.AnalyzeBillHandler, "_handle_deliberative", fake_deliberative
         )
 
-        handler = cli_handlers.AnalyzeBillHandler()
+        handler = cli_handlers.AnalyzeBillHandler(container=Container())
         command = AnalyzeBillCommand(file_path=str(tmp_path / "bill.txt"))
         await handler.handle(command)
 
@@ -127,7 +128,7 @@ class TestDeliberativeRoutingDisabled:
         import leggie.config.settings as settings_module
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
-        handler = cli_handlers.AnalyzeBillHandler()
+        handler = cli_handlers.AnalyzeBillHandler(container=Container())
         command = AnalyzeBillCommand(
             file_path=str(tmp_path / "bill.txt"), pipeline="deliberative"
         )
@@ -153,7 +154,7 @@ class TestDeliberativeRoutingEnabled:
         import leggie.config.settings as settings_module
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
-        handler = cli_handlers.AnalyzeBillHandler()
+        handler = cli_handlers.AnalyzeBillHandler(container=Container())
         bill_path = str(tmp_path / "bill.txt")
         command = AnalyzeBillCommand(
             file_path=bill_path, pipeline="deliberative", perspective="neutral"
@@ -174,7 +175,7 @@ class TestDeliberativeRoutingEnabled:
         import leggie.config.settings as settings_module
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
-        handler = cli_handlers.AnalyzeBillHandler()
+        handler = cli_handlers.AnalyzeBillHandler(container=Container())
         command = AnalyzeBillCommand(
             file_path=str(tmp_path / "bill.txt"), pipeline="deliberative", perspective=None
         )
@@ -198,7 +199,7 @@ class TestDeliberativeRoutingEnabled:
         import leggie.config.settings as settings_module
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
-        handler = cli_handlers.AnalyzeBillHandler()
+        handler = cli_handlers.AnalyzeBillHandler(container=Container())
         command = AnalyzeBillCommand(
             file_path=str(tmp_path / "bill.txt"), pipeline="deliberative"
         )
@@ -224,7 +225,7 @@ class TestDeliberativeRoutingEnabled:
         import leggie.config.settings as settings_module
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
-        handler = cli_handlers.AnalyzeBillHandler()
+        handler = cli_handlers.AnalyzeBillHandler(container=Container())
         command = AnalyzeBillCommand(
             file_path=str(tmp_path / "bill.txt"), pipeline="deliberative"
         )
@@ -251,7 +252,7 @@ class TestDeliberativeFallback:
         import leggie.config.settings as settings_module
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
-        handler = cli_handlers.AnalyzeBillHandler()
+        handler = cli_handlers.AnalyzeBillHandler(container=Container())
         command = AnalyzeBillCommand(
             file_path=str(tmp_path / "bill.txt"), pipeline="deliberative", fallback=False
         )
@@ -288,7 +289,7 @@ class TestDeliberativeFallback:
             cli_handlers.AnalyzeBillHandler, "_handle_deterministic", fake_deterministic
         )
 
-        handler = cli_handlers.AnalyzeBillHandler()
+        handler = cli_handlers.AnalyzeBillHandler(container=Container())
         command = AnalyzeBillCommand(
             file_path=str(tmp_path / "bill.txt"), pipeline="deliberative", fallback=True
         )

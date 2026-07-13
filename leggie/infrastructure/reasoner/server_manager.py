@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-import subprocess
+import subprocess  # nosec B404
 import sys
 import time
 from collections.abc import Awaitable, Callable
@@ -149,7 +149,7 @@ class ReasonerServerManager:
         cmd = [python_exe, "-m", "uvicorn", "asgi:app", "--port", str(self._port())]
         env = dict(os.environ)
         try:
-            return subprocess.Popen(  # noqa: S603
+            return subprocess.Popen(  # nosec B603 - fixed argv, no shell
                 cmd,
                 cwd=str(home_path),
                 env=env,

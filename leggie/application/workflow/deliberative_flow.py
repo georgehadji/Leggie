@@ -11,7 +11,7 @@ replacement: the deterministic `analyze` pipeline is untouched.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.ingest import IngestPort
@@ -199,7 +199,7 @@ class DeliberativeFlow:
         lines = "\n".join(f"- {c.original_text}" for c in citations)
         return f"\n\n# Παράρτημα: Μη-επαληθευμένες παραπομπές\n\n{lines}\n"
 
-    def _record_event(self, event_type: EventType, data: dict) -> None:
+    def _record_event(self, event_type: EventType, data: dict[str, Any]) -> None:
         self._events.append(
             Event(event_type=event_type, aggregate_id=f"deliberative-{id(self)}", data=data)
         )
