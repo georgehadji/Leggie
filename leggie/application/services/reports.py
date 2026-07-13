@@ -18,7 +18,7 @@ from leggie.application.agents.improver import Suggestion
 from leggie.domain.models import Document, Finding, Severity
 
 
-def _add_formatted_paragraph(doc, text: str, style: str | None = None) -> None:
+def _add_formatted_paragraph(doc: Any, text: str, style: str | None = None) -> None:
     """Add a paragraph to *doc* with basic Markdown bold/italic runs."""
     paragraph = doc.add_paragraph(style=style)
     pattern = re.compile(r"(\*\*[^*]+?\*\*|(?<!\w)_(\w[\w ]*?)_(?!\w)|\*[^*]+?\*)")
