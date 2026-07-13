@@ -112,3 +112,78 @@ class TestContainerBindings:
         llm = container.get(LLMPort)
         # May be wrapped in BudgetGuardDecorator, so check it's adapter-like
         assert hasattr(llm, "generate")
+
+
+class TestBlackboardAdapterBehavior:
+    """Behavioral tests for BlackboardAdapter — filtering, agent_id, clear_round."""
+
+    @pytest.mark.asyncio
+    async def test_post_and_retrieve_preserves_agent_id(self, container: Container):
+        """findings posted via the adapter should retain their agent_id on retrieval."""
+        from leggie.application.ports.blackboard import BlackboardEntry
+        from leggie.domain.models import IRAC, Confidence, Finding, FindingType
+
+        board = container.get(BlackboardPort)
+        finding = Finding(
+            finding_type=FindingType.CONSTITUTIONAL,
+            irac=IRAC(issue="test issue", rule="r", application="a", conclusion="c"),
+            confidence=Confidence.from_score(0.5),
+            lens="test", model="test",
+        )
+        entry = BlackboardEntry(finding=finding, agent_id="lens-1", round=1)
+        await board.post_finding(entry)
+        results = await board.get_all_findings()
+        assert len(results) >= 1
+        assert any(r.agent_id == "lens-1" for r in results)
+
+    @pytest.mark.asyncio
+    async def test_get_findings_filters_by_round_min(self, container: Container):
+        """get_findings(round_min=N) excludes entries from earlier rounds."""
+        from leggie.application.ports.blackboard import BlackboardEntry
+        from leggie.application.blackboard import Blackboard as BlackboardService
+        from leggie.domain.models import IRAC, Confidence, Finding, FindingType
+
+        # Post directly to service to control rounds precisely
+        svc = BlackboardService()
+        f1 = Finding(
+            finding_type=FindingType.CONSTITUTIONAL,
+            irac=IRAC(issue="round 1", rule="r", application="a", conclusion="c"),
+            confidence=Confidence.from_score(0.5), lens="test", model="test",
+        )
+        f2 = Finding(
+            finding_type=FindingType.CONSTITUTIONAL,
+            irac=IRAC(issue="round 2", rule="r", application="a", conclusion="c"),
+            confidence=Confidence.from_score(0.5), lens="test", model="test",
+        )
+        svc.post(f1, agent_id="a")
+        svc.next_round()
+        svc.post(f2, agent_id="b")
+
+        # Create adapter wrapping this pre-populated service
+        from leggie.infrastructure.blackboard_adapter import BlackboardAdapter
+        adapter = BlackboardAdapter()
+        adapter._service = svc
+
+        all_ = await adapter.get_findings(round_min=1)
+        assert len(all_) >= 1  # rounds 1+2
+        round2_only = await adapter.get_findings(round_min=2)
+        assert len(round2_only) == 1
+
+    @pytest.mark.asyncio
+    async def test_clear_round_has_observable_behavior(self, container: Container):
+        """clear_round should remove entries from the specified round."""
+        from leggie.application.ports.blackboard import BlackboardEntry
+        from leggie.domain.models import IRAC, Confidence, Finding, FindingType
+
+        board = container.get(BlackboardPort)
+        finding = Finding(
+            finding_type=FindingType.CONSTITUTIONAL,
+            irac=IRAC(issue="to be cleared", rule="r", application="a", conclusion="c"),
+            confidence=Confidence.from_score(0.5), lens="test", model="test",
+        )
+        entry = BlackboardEntry(finding=finding, agent_id="test", round=1)
+        await board.post_finding(entry)
+        assert len(await board.get_all_findings()) >= 1
+        await board.clear_round(1)
+        # After clearing round 1, no findings should remain
+        assert len(await board.get_all_findings()) == 0
