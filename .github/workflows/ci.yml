@@ -23,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ".[dev]"
+          pip install -e ".[dev,lint]"
 
       - name: Lint with ruff
         run: |
@@ -33,6 +33,14 @@ jobs:
         run: |
           mypy leggie/ --ignore-missing-imports
 
-      - name: Run tests
+      - name: Enforce architecture with import-linter
         run: |
-          pytest tests/ -v --tb=short
+          lint-imports
+
+      - name: Run security scan with bandit
+        run: |
+          bandit -c pyproject.toml -r leggie/
+
+      - name: Run tests with coverage gate
+        run: |
+          pytest tests/ -v --tb=short --cov=leggie --cov-fail-under=80

@@ -5,6 +5,12 @@ Each workflow stage follows a fixed skeleton:
 
 Subclasses override the varying steps. This implements the Template Method
 pattern per BUILD_PLAN §2 and §5.4.
+
+NOTE: This is an extension seam for future pluggable stage implementations.
+The current main analysis pipeline (BillAnalysisFlow) uses an explicit
+state-machine approach and does NOT use Stage subclasses. Stage is kept
+as an architectural template API for future workflows or alternative
+execution engines.
 """
 
 from __future__ import annotations
@@ -22,6 +28,7 @@ class StageContext:
 
     Carries state across plan→execute→aggregate→verify.
     """
+
     article_text: str
     article_id: str
     findings: list[Finding] = field(default_factory=list)
@@ -31,6 +38,7 @@ class StageContext:
 @dataclass
 class StageResult:
     """Result of a completed stage."""
+
     success: bool
     findings: list[Finding] = field(default_factory=list)
     error: str | None = None
@@ -38,6 +46,10 @@ class StageResult:
 
 class Stage(ABC):
     """Base class for a workflow stage with Template Method lifecycle.
+
+    This is a workflow template API / extension seam — not currently part
+    of the live BillAnalysisFlow runtime. The current analysis pipeline
+    uses an explicit FlowStateMachine-based approach.
 
     Lifecycle:
         1. plan(context)    — Determine work to do

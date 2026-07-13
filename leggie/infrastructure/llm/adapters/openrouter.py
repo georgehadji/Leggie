@@ -27,7 +27,7 @@ class OpenRouterProvider(BaseLLMProvider):
     """
 
     def __init__(self, api_key: str, base_url: str = "https://openrouter.ai/api/v1",
-                 default_model: str = "openai/gpt-5.6-luna",
+                 default_model: str = "google/gemini-2.5-flash",
                  rate_limiter: RateLimiter | None = None) -> None:
         if not api_key:
             from leggie.infrastructure.llm.base import LLMConfigurationError
@@ -55,7 +55,7 @@ class OpenRouterProvider(BaseLLMProvider):
             "X-Title": "Leggie",
             "content-type": "application/json",
         }
-        messages: list[dict] = []
+        messages: list[dict[str, Any]] = []
         if request.system_prompt:
             messages.append({"role": "system", "content": request.system_prompt})
         messages.append({"role": "user", "content": request.prompt})
@@ -91,11 +91,13 @@ class OpenRouterProvider(BaseLLMProvider):
 
         data = resp.json()
         choice = data.get("choices", [{}])[0]
-        content = choice.get("message", {}).get("content", "")
+        content = choice.get("message", {}).get("content") or ""
+        finish_reason = choice.get("finish_reason", "stop")
         usage = data.get("usage", {})
         return LLMResponse(
             content=content, model=model, tier_used=ModelTier.BUDGET,
             usage={"prompt_tokens": usage.get("prompt_tokens", 0), "completion_tokens": usage.get("completion_tokens", 0)},
+            finish_reason=finish_reason,
             latency_ms=elapsed,
         )
 

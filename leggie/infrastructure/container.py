@@ -12,20 +12,23 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from leggie.application.ports.blackboard import BlackboardPort
 from leggie.application.ports.citation_parser import CitationParserPort
-from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.event_bus import EventBusPort
 from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
+from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.ports.state import StatePort
+from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +50,8 @@ class Container:
         llm = container.get(LLMPort)
     """
 
-    _bindings: dict[type, Callable[[], Any]] = field(default_factory=dict)
-    _singletons: dict[type, Any] = field(default_factory=dict)
+    _bindings: dict[type | str, Callable[[], Any]] = field(default_factory=dict)
+    _singletons: dict[type | str, Any] = field(default_factory=dict)
 
     # ── registration ────────────────────────────────────────────────
 
@@ -56,13 +59,14 @@ class Container:
         """Register a lazy factory for *port_type*."""
         self._bindings[port_type] = factory
 
-    def register_instance(self, port_type: type, instance: Any) -> None:
-        """Register an already-created singleton."""
+    def register_instance(self, port_type: type | str, instance: Any) -> None:
+        """Register an already-created singleton. Accepts a type or a string
+        key for ad-hoc utilities (e.g. "rate_limiter") that have no port."""
         self._singletons[port_type] = instance
 
     # ── resolution ──────────────────────────────────────────────────
 
-    def get(self, port_type: type) -> Any:
+    def get(self, port_type: type | str) -> Any:
         """Resolve *port_type*, creating it once (singleton per type)."""
         if port_type in self._singletons:
             return self._singletons[port_type]
@@ -97,24 +101,46 @@ class Container:
         def _create_llm() -> LLMPort:
             from leggie.config.settings import get_settings
             from leggie.infrastructure.llm import LLMAdapter
+            from leggie.infrastructure.llm.decorators import BudgetGuardDecorator
             s = get_settings()
-            return LLMAdapter(
+            adapter: LLMPort = LLMAdapter(
                 openrouter_key=s.llm.openrouter_api_key,
                 openrouter_base_url=s.llm.openrouter_base_url,
                 default_model=s.llm.openrouter_default_model,
             )
+            # Wrap with budget guard (EN2)
+            if s.budget.max_cost_per_run > 0:
+                from leggie.infrastructure.budget_guard import BudgetGuard
+                guard = BudgetGuard(
+                    max_tokens=s.budget.max_tokens_per_run,
+                    max_cost=s.budget.max_cost_per_run,
+                )
+                adapter = BudgetGuardDecorator(adapter, guard)
+            return adapter
         self.register(LLMPort, _create_llm)
 
         # Router
         from leggie.infrastructure.router import StaticRouter
         self.register(RouterPort, lambda: StaticRouter("config/routes.yaml"))
 
-        # Citation parser
+        # Citation parser with known-good resolution index (D7)
         from leggie.infrastructure.citation import GreekCitationParser
-        self.register(CitationParserPort, lambda: GreekCitationParser())
+        resolution_index: set[str] = set()
+        try:
+            index_path = Path("data/citation_index.json")
+            if index_path.exists():
+                index_data = json.loads(index_path.read_text(encoding="utf-8"))
+                resolution_index = set(index_data.get("identifiers", []))
+        except (OSError, ValueError):
+            resolution_index = set()
+        self.register(
+            CitationParserPort,
+            lambda: GreekCitationParser(resolution_index=resolution_index),
+        )
 
-        # In-memory state (file-based later)
-        self.register(StatePort, lambda: InMemoryEventBus())
+        # In-memory state store
+        from leggie.infrastructure.persistence.state_store import InMemoryStateStore
+        self.register(StatePort, lambda: InMemoryStateStore())
 
         # Ingest / Parse adapters
         from leggie.infrastructure.ingest_adapter import IngestAdapter
@@ -126,20 +152,27 @@ class Container:
         from leggie.infrastructure.rate_limiter import RateLimiter
         self.register_instance("rate_limiter", RateLimiter(max_rate=5.0))
 
-        # Blackboard / Retrieval
+        # Checkpoint store for crash-resume (D10)
+        self.register(CheckpointStore, lambda: CheckpointStore("Outputs/leggie_checkpoint.json"))
+
+        # Blackboard / Retrieval / Reranker
+        from leggie.application.ports.reranker import RerankerPort
         from leggie.infrastructure.blackboard_adapter import BlackboardAdapter
+        from leggie.infrastructure.reranker import OpenRouterReranker
         from leggie.infrastructure.retrieval_adapter import SimpleRetrievalAdapter
         self.register(BlackboardPort, lambda: BlackboardAdapter())
         self.register(RetrievalPort, lambda: SimpleRetrievalAdapter())
 
-        # Budget guard
-        from leggie.config.settings import get_settings
-        from leggie.infrastructure.budget_guard import BudgetGuard
-
-        def _create_budget_guard() -> BudgetGuard:
+        def _create_reranker() -> RerankerPort:
+            from leggie.config.settings import get_settings
             s = get_settings()
-            return BudgetGuard(
-                max_tokens=s.budget.max_tokens_per_run,
-                max_cost=s.budget.max_cost_per_run,
+            return OpenRouterReranker(
+                api_key=s.llm.openrouter_api_key,
+                base_url=s.llm.openrouter_base_url,
             )
-        self.register_instance("budget_guard", _create_budget_guard())
+        self.register(RerankerPort, _create_reranker)
+
+        # Budget guard — the canonical BudgetGuard is created inside _create_llm()
+        # and wrapped in BudgetGuardDecorator. No separate singleton needed here;
+        # callers that need to introspect the guard should duck-type it from the
+        # LLMPort (see BillAnalysisFlow._budget_guard()).

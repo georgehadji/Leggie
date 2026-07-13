@@ -1,0 +1,8 @@
+{
+  "description": "Known-good Greek legal citation identifiers used by the deterministic citation resolver.",
+  "source": "Seed from gold-set citation_texts; extend with verified ΦΕΚ/CELEX/ECLI identifiers as the corpus grows.",
+  "identifiers": [
+    "ΦΕΚ Α 137/2023",
+    "32018L1972"
+  ]
+}

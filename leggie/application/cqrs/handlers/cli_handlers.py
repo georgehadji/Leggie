@@ -2,12 +2,17 @@
 
 These handlers orchestrate infrastructure adapters behind the command interface,
 keeping the interface layer (CLI) thin and testable.
+
+D8: The DI container is the single composition root. Handlers receive a
+configured container and resolve all adapters through it; no ad-hoc factories.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from leggie.application.cqrs.base import CommandHandler, CommandResult
 from leggie.application.cqrs.commands.cli_commands import (
@@ -15,12 +20,63 @@ from leggie.application.cqrs.commands.cli_commands import (
     EvalGoldSetCommand,
     ParseDocumentCommand,
 )
+from leggie.application.ports.citation_parser import CitationParserPort
+from leggie.application.ports.llm import LLMPort
+from leggie.application.ports.reranker import RerankerPort
+from leggie.application.ports.router import RouterPort
+from leggie.application.services.cove_verifier import CoVeVerifier
+
+if TYPE_CHECKING:
+    from leggie.infrastructure.container import Container
+
+logger = logging.getLogger(__name__)
 
 
-class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict]):
+# ── Shared resolver helpers ───────────────────────────────────────────
+
+
+def _resolve_llm_from_container(container: Container) -> LLMPort | None:
+    """Resolve LLMPort from *container*, returning None on configuration errors."""
+    if container.has_binding(LLMPort):
+        from leggie.infrastructure.llm.base import LLMConfigurationError
+
+        try:
+            llm: LLMPort = container.get(LLMPort)
+            return llm
+        except LLMConfigurationError:
+            logger.warning("llm.unconfigured_fallback", exc_info=True)
+            return None
+    return None
+
+
+def _resolve_router_from_container(container: Container) -> RouterPort | None:
+    """Resolve RouterPort from *container*."""
+    if container.has_binding(RouterPort):
+        router: RouterPort = container.get(RouterPort)
+        return router
+    return None
+
+
+def _resolve_cove_from_container(container: Container) -> CoVeVerifier:
+    """Resolve a CoVeVerifier wired with LLM + router + citation parser."""
+    llm = _resolve_llm_from_container(container)
+    router = _resolve_router_from_container(container)
+    parser = None
+    if container.has_binding(CitationParserPort):
+        parser = container.get(CitationParserPort) or None
+    return CoVeVerifier(citation_parser=parser, llm=llm, router=router)
+
+
+# ── Handler classes ───────────────────────────────────────────────────
+
+
+class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]]):
     """Handle bill document parsing."""
 
-    async def handle(self, command: ParseDocumentCommand) -> CommandResult[dict]:
+    def __init__(self, container: Container) -> None:
+        self._container = container
+
+    async def handle(self, command: ParseDocumentCommand) -> CommandResult[dict[str, Any]]:
         try:
             from leggie.infrastructure.ingest import IngestorFactory
             from leggie.infrastructure.parse import DocumentParser
@@ -58,15 +114,45 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict]):
 class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
     """Handle bill analysis using the BillAnalysisFlow."""
 
+    def __init__(self, container: Container) -> None:
+        self._container = container
+
     async def handle(self, command: AnalyzeBillCommand) -> CommandResult[str]:
         try:
             from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
+            from leggie.config.settings import get_settings
+            from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
 
-            # Try to inject LLM port if key is configured
-            llm = _try_get_llm()
-            findings, reports = await BillAnalysisFlow(llm=llm).run(command.file_path)
+            llm = _resolve_llm_from_container(self._container)
+            router = _resolve_router_from_container(self._container)
+            cove = _resolve_cove_from_container(self._container)
+            settings = get_settings()
+            reranker_port = None
+            if settings.analysis.reranker == "model" and self._container.has_binding(RerankerPort):
+                reranker_port = self._container.get(RerankerPort)
 
-            from leggie.domain.models import WorkflowState
+            checkpoint_store = None
+            if command.checkpoint_path:
+                checkpoint_store = CheckpointStore(command.checkpoint_path)
+            elif self._container.has_binding(CheckpointStore):
+                checkpoint_store = self._container.get(CheckpointStore)
+
+            flow = BillAnalysisFlow(
+                llm=llm,
+                router=router,
+                cove=cove,
+                checkpoint_store=checkpoint_store,
+                use_verbalized_sampling=command.use_verbalized_sampling or settings.analysis.use_verbalized_sampling,
+                reranker_name=settings.analysis.reranker,
+                reranker_port=reranker_port,
+            )
+            findings, reports = await flow.run(
+                command.file_path,
+                output_dir=command.output_path or "Outputs",
+                lenses=command.lenses,
+                articles=command.articles,
+            )
+
             summary = f"Analysis complete: {len(findings)} finding(s), {len(reports)} report(s)"
             for f in findings:
                 summary += f"\n  - [{f.finding_type.value}:{f.severity.value}] {f.irac.issue[:80]}"
@@ -76,39 +162,30 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             return CommandResult(success=False, error=str(e))
 
 
-def _try_get_llm():
-    """Try to build an LLM port from settings. Returns None if no API key."""
-    from leggie.config.settings import get_settings
-    s = get_settings()
-    if not s.llm.openrouter_api_key:
-        return None
-    from leggie.infrastructure.llm import LLMAdapter
-    return LLMAdapter(
-        openrouter_key=s.llm.openrouter_api_key,
-        default_model=s.llm.openrouter_default_model,
-    )
-
-
-class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
+class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
     """Handle gold-set evaluation."""
 
-    async def handle(self, command: EvalGoldSetCommand) -> CommandResult[list]:
+    def __init__(self, container: Container) -> None:
+        self._container = container
+
+    async def handle(self, command: EvalGoldSetCommand) -> CommandResult[list[Any]]:
         try:
-            import json
             from pathlib import Path
+
+            from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
             from leggie.infrastructure.persistence.eval_harness import EvalScorer, GoldSet
 
             gold_set = GoldSet(command.gold_set_path)
-            llm = _try_get_llm()
+            llm = _resolve_llm_from_container(self._container)
+            router = _resolve_router_from_container(self._container)
 
             results = []
             for bill_id in gold_set.bill_ids:
-                labels = gold_set.get_labels(bill_id)
-                # Try to find a bill file matching this bill_id
+                gold_set.get_labels(bill_id)
                 bill_path = _find_bill_file(bill_id, Path(command.gold_set_path).parent)
                 if bill_path and llm:
-                    from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
-                    flow = BillAnalysisFlow(llm=llm)
+                    cove = _resolve_cove_from_container(self._container)
+                    flow = BillAnalysisFlow(llm=llm, router=router, cove=cove)
                     findings, _ = await flow.run(bill_path)
                 else:
                     findings = []

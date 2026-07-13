@@ -45,3 +45,52 @@ class SkepticVerdictResponse(BaseModel):
     verdict: str = Field(description="supports, refutes, neutral")
     reason: str = Field(description="Brief explanation")
     confidence_adjustment: float = Field(default=0.0, description="Adjust finding confidence by this amount", ge=-0.5, le=0.5)
+
+
+# ── Chain-of-Verification (CoVe) LLM schemas ─────────────────────────────
+# Implements the 4-step CoVe loop: baseline → plan questions → factored
+# answers → cross-check + revise. See services/cove_verifier.py.
+
+
+class CoVeQuestionsResponse(BaseModel):
+    """Phase 2 — verification questions planned for a baseline finding.
+
+    Questions MUST be open-ended (factual answer required), never yes/no,
+    so the model cannot simply agree with its own baseline claim.
+    """
+    questions: list[str] = Field(
+        default_factory=list,
+        description="Open-ended, factual verification questions (Greek). No yes/no questions.",
+    )
+
+
+class CoVeAnswerResponse(BaseModel):
+    """Phase 3 — factored answer to a single verification question.
+
+    Answered against source text only, WITHOUT the baseline finding in context.
+    """
+    answer: str = Field(description="Factual answer grounded in the source text (Greek).")
+    supported_by_source: bool = Field(
+        default=False,
+        description="True only if the source text directly supports the answer.",
+    )
+
+
+class CoVeCrossCheckResponse(BaseModel):
+    """Phase 4 — cross-check baseline claim against factored answers."""
+    consistency: str = Field(
+        description="One of: consistent, inconsistent, partially_consistent",
+    )
+    reason: str = Field(description="Brief justification (Greek).")
+    keep: bool = Field(
+        default=True,
+        description="False => the finding is contradicted and should be dropped.",
+    )
+    revised_conclusion: str = Field(
+        default="",
+        description="Corrected conclusion when partially_consistent; empty otherwise.",
+    )
+    confidence_adjustment: float = Field(
+        default=0.0, ge=-0.5, le=0.5,
+        description="Adjust finding confidence by this amount.",
+    )

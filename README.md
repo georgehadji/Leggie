@@ -46,7 +46,10 @@ flowchart LR
 
 ### Prerequisites
 - Python 3.12+
-- Optional API keys for LLM-powered analysis (not required for Phase 1–2 pattern-based lenses)
+- Optional: `LEGGIE_LLM__OPENROUTER_API_KEY` for LLM-powered analysis
+  - Without an API key, analysis falls back to pattern-based (regex) lenses where available
+  - Reranking defaults to `composite` (scoring-based, no model needed)
+  - See [.env.example](.env.example) for all configuration options
 
 ### Installation
 

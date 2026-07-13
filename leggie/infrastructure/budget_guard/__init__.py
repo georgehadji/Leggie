@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum, auto
-from typing import Literal
+from typing import Any, Literal
 
 
 class BudgetAction(StrEnum):
@@ -38,17 +38,18 @@ class BudgetGuard:
 
     # Approximate cost per 1M tokens (USD) via OpenRouter pricing
     COST_PER_1M_TOKENS: dict[str, float] = {
-        "google/gemini-2.5-flash": 0.15,
-        "google/gemini-2.5-flash:free": 0.0,
+        "google/gemini-2.5-flash-lite": 0.10,
+        "google/gemini-2.5-flash": 0.30,
         "google/gemini-2.5-pro": 1.25,
-        "anthropic/claude-sonnet-4-20250514": 3.00,
-        "anthropic/claude-opus-4-20250514": 15.00,
-        "openai/gpt-4o": 2.50,
+        "google/gemini-3-flash-preview": 0.43,
+        "google/gemini-3.1-pro-preview": 2.00,
+        "anthropic/claude-haiku-4.5": 1.00,
+        "anthropic/claude-sonnet-4.6": 3.00,
+        "anthropic/claude-opus-4.8": 15.00,
         "openai/gpt-4o-mini": 0.15,
-        "openai/gpt-5.6-luna": 3.00,
-        "openai/gpt-5.6-luna-pro": 15.00,
-        "openai/gpt-5.6-terra": 2.00,
-        "openai/gpt-5.6-terra-pro": 10.00,
+        "openai/gpt-5-mini": 0.27,
+        "openai/gpt-5.4": 2.50,
+        "deepseek/deepseek-v3.2": 0.28,
     }
 
     def __init__(self, max_tokens: int = 500_000, max_cost: float = 5.0) -> None:
@@ -61,9 +62,6 @@ class BudgetGuard:
         total_cost = self._state.cost_used + estimated_cost
 
         if total_tokens > self._state.max_tokens or total_cost > self._state.max_cost:
-            # Check if degrade path is possible
-            if not self._state.degraded and self._state.degrade_strategy is not None:
-                return BudgetAction.DEGRADE
             return BudgetAction.BLOCK
 
         # Warn at 80% threshold
@@ -110,7 +108,7 @@ class BudgetGuard:
         rate = self.COST_PER_1M_TOKENS.get(model, 3.0)
         return rate * (prompt_tokens + completion_tokens) / 1_000_000
 
-    def save_state(self) -> dict:
+    def save_state(self) -> dict[str, Any]:
         """Serialize budget state for checkpointing."""
         return {
             "max_tokens": self._state.max_tokens,
@@ -121,7 +119,7 @@ class BudgetGuard:
             "degrade_level": self._state.degrade_level,
         }
 
-    def load_state(self, state: dict) -> None:
+    def load_state(self, state: dict[str, Any]) -> None:
         """Restore budget state from a checkpoint."""
         self._state.tokens_used = state.get("tokens_used", 0)
         self._state.cost_used = state.get("cost_used", 0.0)
@@ -142,7 +140,7 @@ class BudgetGuard:
         p = Path(path)
         if not p.exists():
             return None
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             state = json.load(f)
         guard = cls(max_tokens=state["max_tokens"], max_cost=state["max_cost"])
         guard.load_state(state)

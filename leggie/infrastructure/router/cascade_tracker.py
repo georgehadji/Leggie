@@ -80,7 +80,7 @@ class CascadeTracker:
         avg_latency = sum(d.latency_ms for d in self._decisions) / total if total > 0 else 0
 
         # Per-tier breakdown
-        tier_stats: dict[str, dict] = {}
+        tier_stats: dict[str, dict[str, Any]] = {}
         for d in self._decisions:
             if d.tier_attempted not in tier_stats:
                 tier_stats[d.tier_attempted] = {"attempts": 0, "successes": 0, "cost": 0.0, "tokens": 0}

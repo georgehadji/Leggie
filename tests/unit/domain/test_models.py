@@ -20,6 +20,7 @@ from leggie.domain.models import (
     Paragraph,
     Severity,
     SubParagraph,
+    is_greek,
 )
 
 
@@ -246,3 +247,40 @@ class TestEvent:
         )
         with pytest.raises(Exception):
             event.event_type = EventType.ANALYSIS_STARTED
+
+
+class TestIsGreek:
+    """Tests for is_greek() domain helper (FX1)."""
+
+    def test_pure_greek(self):
+        text = "Αυτό είναι ένα ελληνικό κείμενο"
+        assert is_greek(text) is True
+
+    def test_pure_english(self):
+        text = "This is an English text"
+        assert is_greek(text) is False
+
+    def test_mixed_dominantly_greek(self):
+        text = "Article 1: Περιέχει ελληνικό κείμενο για ανάλυση"
+        assert is_greek(text, min_ratio=0.4) is True
+
+    def test_mixed_below_threshold(self):
+        text = "English text with one greek word: καλημέρα"
+        assert is_greek(text, min_ratio=0.5) is False
+
+    def test_empty_string(self):
+        assert is_greek("") is False
+
+    def test_default_threshold(self):
+        # Default 50% — barely Greek-sparse text
+        text = "αβγδε f g h i j"
+        assert is_greek(text) is False  # 5/15 ≈ 0.33 < 0.50
+
+    def test_custom_low_threshold(self):
+        text = "αβγδε f g h i j"
+        assert is_greek(text, min_ratio=0.30) is True
+
+    def test_greek_extended_range(self):
+        # U+1F00–U+1FFF Greek Extended (e.g., polytonic)
+        text = "\u1f00\u1f01\u1f02 — polytonic"
+        assert is_greek(text, min_ratio=0.15) is True

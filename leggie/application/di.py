@@ -1,9 +1,10 @@
-"""Dependency Injection container — re-exported from infrastructure.
+"""Dependency Injection container — migrated to infrastructure/container.py.
 
-Moved to leggie/infrastructure/container.py per Clean Architecture: the
-composition root belongs in Infrastructure, not Application.
+This module is retained as a placeholder. Import from
+leggie.infrastructure.container instead.
 """
 
-from leggie.infrastructure.container import BindingNotFoundError, Container
-
-__all__ = ["Container", "BindingNotFoundError"]
+raise ImportError(
+    "The DI container has moved to leggie.infrastructure.container. "
+    "Import from there instead."
+)

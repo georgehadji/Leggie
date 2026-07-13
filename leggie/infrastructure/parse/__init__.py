@@ -19,9 +19,8 @@ from typing import Any
 
 from leggie.domain.models import Article, Document, Paragraph, SubParagraph
 
-
 # ── Cross-reference stop-list (FIX_PLAN D1.4) ───────────────────────────────
-_STOP_PATTERN: Pattern = re.compile(
+_STOP_PATTERN: Pattern[str] = re.compile(
     r"(?:"
     r"του\s+ν\b|του\s+Κώδικα|ΚΠολΔ|ΚΠΔ|\bΠΚ\b|\bΑΚ\b|"
     r"του\s+Συντάγματος|"
@@ -36,23 +35,23 @@ _STOP_PATTERN: Pattern = re.compile(
 # Line-anchored: ^\s*Άρθρο\s+ at start of line (re.MULTILINE)
 # Number shape: \d+[Α-Ωα-ω]?  — integer with optional single Greek suffix
 # Title: remainder of the heading line
-ARTICLE_HEADING: Pattern = re.compile(
+ARTICLE_HEADING: Pattern[str] = re.compile(
     r"^\s*Άρθρο\s+(\d+[Α-Ωα-ω]?)\s*[—–\-]?\s*(.*?)$",
     re.UNICODE | re.MULTILINE,
 )
 
 # Paragraph patterns
-PARAGRAPH_PATTERN: Pattern = re.compile(r"(\d+)\.\s*(.*?)(?=\n\d+\.|\Z)", re.DOTALL)
-SUB_PARAGRAPH_PATTERN: Pattern = re.compile(
+PARAGRAPH_PATTERN: Pattern[str] = re.compile(r"(\d+)\.\s*(.*?)(?=\n\d+\.|\Z)", re.DOTALL)
+SUB_PARAGRAPH_PATTERN: Pattern[str] = re.compile(
     r"([α-ωΑ-Ω])\)\s*(.*?)(?=\n\s*[α-ωΑ-Ω]\)|\Z)", re.DOTALL
 )
 
 # Citation patterns
-FEK_CITATION: Pattern = re.compile(
+FEK_CITATION: Pattern[str] = re.compile(
     r"ΦΕΚ\s+(?:[ΑαΒβΓγΔδΕεΣΤστ]’?)\s*(\d+)/(\d{4})", re.UNICODE
 )
-CELEX_CITATION: Pattern = re.compile(r"CELEX[:/\s]*([A-Za-z0-9]+)", re.UNICODE)
-ECLI_CITATION: Pattern = re.compile(r"ECLI[:/\s]*([A-Za-z0-9:]+)", re.UNICODE)
+CELEX_CITATION: Pattern[str] = re.compile(r"CELEX[:/\s]*([A-Za-z0-9]+)", re.UNICODE)
+ECLI_CITATION: Pattern[str] = re.compile(r"ECLI[:/\s]*([A-Za-z0-9:]+)", re.UNICODE)
 
 
 class ParseError(Exception):
@@ -93,7 +92,7 @@ class DocumentParser:
         return text.strip()
 
     def _extract_articles(self, text: str) -> list[Article]:
-        """Extract articles using line-anchored heading detection.
+        r"""Extract articles using line-anchored heading detection.
 
         F0.1: Line-anchor headings via ^ with re.MULTILINE.
         F0.2: Number constrained to \d+[Α-Ωα-ω]? (no multi-token garbage).
@@ -126,7 +125,8 @@ class DocumentParser:
         for i, cand in enumerate(candidates):
             num_str = cand["num"]
             # Extract leading digits for monotonic check
-            num_int = int(re.match(r"\d+", num_str).group()) if re.match(r"\d+", num_str) else 0
+            leading_digits = re.match(r"\d+", num_str)
+            num_int = int(leading_digits.group()) if leading_digits else 0
 
             # F0.4: Monotonic-sequence guard
             # Allow small gaps (1..3, 3..5) but reject extreme jumps
@@ -139,10 +139,7 @@ class DocumentParser:
             last_num = num_int
 
             # Content: from this heading start to next heading start (or end)
-            if i + 1 < len(candidates):
-                content_end = candidates[i + 1]["start"]
-            else:
-                content_end = len(text)
+            content_end = candidates[i + 1]["start"] if i + 1 < len(candidates) else len(text)
             raw = text[cand["start"]:content_end].strip()
 
             paragraphs = self._extract_paragraphs(raw)
@@ -196,9 +193,9 @@ class DocumentParser:
                 return line[:200]
         return "Untitled Document"
 
-    def extract_citations(self, text: str) -> list[dict]:
+    def extract_citations(self, text: str) -> list[dict[str, Any]]:
         """Extract all citation references from text."""
-        citations: list[dict] = []
+        citations: list[dict[str, Any]] = []
         for match in FEK_CITATION.finditer(text):
             citations.append({
                 "type": "fek",
