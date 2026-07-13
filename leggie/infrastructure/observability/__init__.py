@@ -51,7 +51,8 @@ def configure_logging(level: str | None = None) -> None:
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Get a structured logger for the given module name."""
-    return structlog.get_logger(name or __name__)
+    logger: structlog.stdlib.BoundLogger = structlog.get_logger(name or __name__)
+    return logger
 
 
 # ── Trace ID context ──────────────────────────────────────────────
@@ -103,7 +104,7 @@ class Timer:
     async def __aexit__(self, *args: Any) -> None:
         import time
 
-        elapsed = time.monotonic() - self._start
+        elapsed = time.monotonic() - (self._start or 0.0)
         self._logger.info(
             "timing.completed",
             operation=self._operation,

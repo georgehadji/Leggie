@@ -6,6 +6,7 @@ Enables checkpointing and resumption of bill analysis runs.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 from leggie.domain.models import WorkflowState
 
@@ -24,11 +25,11 @@ class StatePort(ABC):
         ...
 
     @abstractmethod
-    async def get_checkpoint(self, run_id: str, stage: str) -> dict | None:
+    async def get_checkpoint(self, run_id: str, stage: str) -> dict[str, Any] | None:
         """Get checkpoint data for a specific stage of a run."""
         ...
 
     @abstractmethod
-    async def save_checkpoint(self, run_id: str, stage: str, data: dict) -> None:
+    async def save_checkpoint(self, run_id: str, stage: str, data: dict[str, Any]) -> None:
         """Save checkpoint data for a specific stage."""
         ...

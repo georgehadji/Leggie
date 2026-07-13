@@ -13,6 +13,7 @@ Phase 4+: adds LLM verification rounds.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from leggie.domain.models import Citation, Finding
 
@@ -48,7 +49,7 @@ def _normalize(text: str) -> str:
 class CoVeVerifier:
     """Chain-of-Verification evidence loop."""
 
-    def __init__(self, citation_parser=None) -> None:
+    def __init__(self, citation_parser: Any | None = None) -> None:
         self._citation_parser = citation_parser
 
     def validate_quote(self, quote: str, source_text: str) -> bool:

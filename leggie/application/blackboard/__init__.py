@@ -9,6 +9,7 @@ react to new postings → Controller schedules bounded rounds.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -37,7 +38,7 @@ class BlackboardRound:
     completed: bool = False
 
 
-ObserverCallback = callable  # (entry, blackboard) → None
+ObserverCallback = Callable[["BlackboardEntry", "Blackboard"], None]
 
 
 class Blackboard:
@@ -66,7 +67,7 @@ class Blackboard:
         return self._current_round
 
     def post(
-        self, finding: Finding, agent_id: str = "", metadata: dict | None = None
+        self, finding: Finding, agent_id: str = "", metadata: dict[str, Any] | None = None
     ) -> BlackboardEntry:
         """Post a finding to the current round."""
         entry = BlackboardEntry(

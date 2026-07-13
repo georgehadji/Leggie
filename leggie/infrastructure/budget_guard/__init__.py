@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 
 class BudgetAction(StrEnum):
@@ -114,7 +114,7 @@ class BudgetGuard:
         rate = self.COST_PER_1M_TOKENS.get(model, 3.0)
         return rate * (prompt_tokens + completion_tokens) / 1_000_000
 
-    def save_state(self) -> dict:
+    def save_state(self) -> dict[str, Any]:
         """Serialize budget state for checkpointing."""
         return {
             "max_tokens": self._state.max_tokens,
@@ -125,7 +125,7 @@ class BudgetGuard:
             "degrade_level": self._state.degrade_level,
         }
 
-    def load_state(self, state: dict) -> None:
+    def load_state(self, state: dict[str, Any]) -> None:
         """Restore budget state from a checkpoint."""
         self._state.tokens_used = state.get("tokens_used", 0)
         self._state.cost_used = state.get("cost_used", 0.0)

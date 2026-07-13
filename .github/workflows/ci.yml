@@ -23,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ".[dev]"
+          pip install -e ".[dev,lint]"
 
       - name: Lint with ruff
         run: |
@@ -32,6 +32,10 @@ jobs:
       - name: Type check with mypy
         run: |
           mypy leggie/ --ignore-missing-imports
+
+      - name: Check architecture layering with import-linter
+        run: |
+          lint-imports
 
       - name: Run tests
         run: |

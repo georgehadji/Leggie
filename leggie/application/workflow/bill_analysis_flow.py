@@ -9,15 +9,20 @@ Phase 1: ingest → parse → analyze (Constitutional lens) → report.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-from leggie.application.agents.improver import ImprovementEngine
+from leggie.application.agents.improver import ImprovementEngine, Suggestion
 from leggie.application.agents.orchestrator import Orchestrator
 from leggie.application.agents.skeptic import CalibratedSkeptic
 from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
 from leggie.application.services.cove_verifier import CoVeVerifier
-from leggie.application.services.reports import ArticleByArticleRenderer, ExecutiveSummaryRenderer
+from leggie.application.services.reports import (
+    ArticleByArticleRenderer,
+    ExecutiveSummaryRenderer,
+    Report,
+)
 from leggie.application.services.rerank import CompositeReranker
 from leggie.application.workflow.flow_state_machine import FlowStateMachine
 from leggie.domain.models import (
@@ -71,8 +76,8 @@ class BillAnalysisFlow:
         self._improver = ImprovementEngine()
         self._ingester = ingester or _lazy_ingest_adapter()
         self._parser = parser or _lazy_parse_adapter()
-        self._reports: list = []
-        self._suggestions: list = []
+        self._reports: list[Report] = []
+        self._suggestions: list[Suggestion] = []
         self._events: list[Event] = []
         self._findings: list[Finding] = []
 
@@ -86,7 +91,7 @@ class BillAnalysisFlow:
 
     async def run(
         self, file_path: str | Path, output_dir: str | Path = "Outputs"
-    ) -> tuple[list[Finding], list]:
+    ) -> tuple[list[Finding], list[Report]]:
         """Run the full analysis workflow on a bill file.
 
         Args:
@@ -227,8 +232,8 @@ class BillAnalysisFlow:
                         "evidence": [e.text_excerpt for e in f.evidence if e.text_excerpt],
                     }
                 )
-            with open(findings_path, "w", encoding="utf-8") as f:
-                json.dump(findings_data, f, indent=2, ensure_ascii=False)
+            with open(findings_path, "w", encoding="utf-8") as findings_file:
+                json.dump(findings_data, findings_file, indent=2, ensure_ascii=False)
 
             logger.info(
                 "flow.outputs_saved",
@@ -252,12 +257,12 @@ class BillAnalysisFlow:
         return self._findings, self._reports
 
     @property
-    def reports(self) -> list:
+    def reports(self) -> list[Report]:
         """Get rendered reports from last run."""
         return list(self._reports)
 
     @property
-    def suggestions(self) -> list:
+    def suggestions(self) -> list[Suggestion]:
         """Get generated suggestions from last run."""
         return list(self._suggestions)
 
@@ -285,7 +290,7 @@ class BillAnalysisFlow:
                 },
             )
 
-    def _record_event(self, event_type: EventType, data: dict) -> None:
+    def _record_event(self, event_type: EventType, data: dict[str, Any]) -> None:
         """Record an audit event."""
         self._events.append(
             Event(

@@ -47,14 +47,14 @@ class Mediator:
     """
 
     def __init__(self) -> None:
-        self._command_handlers: dict[type[Command], CommandHandler] = {}
-        self._query_handlers: dict[type[Query], QueryHandler] = {}
+        self._command_handlers: dict[type[Command], CommandHandler[Any, Any]] = {}
+        self._query_handlers: dict[type[Query], QueryHandler[Any, Any]] = {}
         self._behaviors: list[IPipelineBehavior] = []
 
     def register_command_handler(
         self,
         command_type: type[Command],
-        handler: CommandHandler,
+        handler: CommandHandler[Any, Any],
     ) -> None:
         """Register a handler for a command type."""
         self._command_handlers[command_type] = handler
@@ -62,7 +62,7 @@ class Mediator:
     def register_query_handler(
         self,
         query_type: type[Query],
-        handler: QueryHandler,
+        handler: QueryHandler[Any, Any],
     ) -> None:
         """Register a handler for a query type."""
         self._query_handlers[query_type] = handler
@@ -71,24 +71,26 @@ class Mediator:
         """Add middleware to the execution pipeline."""
         self._behaviors.append(behavior)
 
-    async def send(self, command: Command) -> CommandResult:
+    async def send(self, command: Command) -> CommandResult[Any]:
         """Execute a command through the pipeline."""
         handler = self._command_handlers.get(type(command))
         if handler is None:
             raise HandlerNotRegisteredError(f"No handler registered for {type(command).__name__}")
-        return await self._run_pipeline(command, handler.handle)
+        result: CommandResult[Any] = await self._run_pipeline(command, handler.handle)
+        return result
 
-    async def query(self, query: Query) -> QueryResult:
+    async def query(self, query: Query) -> QueryResult[Any]:
         """Execute a query through the pipeline."""
         handler = self._query_handlers.get(type(query))
         if handler is None:
             raise HandlerNotRegisteredError(f"No handler registered for {type(query).__name__}")
-        return await self._run_pipeline(query, handler.handle)
+        result: QueryResult[Any] = await self._run_pipeline(query, handler.handle)
+        return result
 
     async def _run_pipeline(
         self,
         request: Any,
-        handler_fn: Callable,
+        handler_fn: Callable[..., Any],
     ) -> Any:
         """Run the request through all pipeline behaviors and then the handler."""
         if not self._behaviors:
@@ -102,7 +104,9 @@ class Mediator:
         for behavior in reversed(self._behaviors):
             prev = current
 
-            async def make_next(b: IPipelineBehavior, next_fn: Callable) -> Callable:
+            async def make_next(
+                b: IPipelineBehavior, next_fn: Callable[..., Any]
+            ) -> Callable[..., Any]:
                 async def wrapped(req: Any) -> Any:
                     return await b.handle(req, next_fn)
 

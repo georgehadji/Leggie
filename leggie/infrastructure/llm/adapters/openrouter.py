@@ -61,7 +61,7 @@ class OpenRouterProvider(BaseLLMProvider):
             "X-Title": "Leggie",
             "content-type": "application/json",
         }
-        messages: list[dict] = []
+        messages: list[dict[str, Any]] = []
         if request.system_prompt:
             messages.append({"role": "system", "content": request.system_prompt})
         messages.append({"role": "user", "content": request.prompt})

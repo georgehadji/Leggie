@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -16,7 +17,7 @@ class RetrievalResult:
     content: str
     source: str  # corpus/document identifier
     score: float
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class RetrievalPort(ABC):
@@ -39,6 +40,6 @@ class RetrievalPort(ABC):
         ...
 
     @abstractmethod
-    async def corpus_stats(self, corpus: str = "default") -> dict:
+    async def corpus_stats(self, corpus: str = "default") -> dict[str, Any]:
         """Get statistics about a corpus (size, last indexed, etc.)."""
         ...

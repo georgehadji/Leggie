@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 from leggie.domain.models import Finding
 
@@ -19,7 +20,7 @@ class BlackboardEntry:
     agent_id: str
     finding: Finding
     round: int = 0
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class BlackboardPort(ABC):

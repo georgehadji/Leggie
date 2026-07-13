@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from leggie.application.cqrs.base import CommandHandler, CommandResult
 from leggie.application.cqrs.commands.cli_commands import (
@@ -15,12 +16,13 @@ from leggie.application.cqrs.commands.cli_commands import (
     EvalGoldSetCommand,
     ParseDocumentCommand,
 )
+from leggie.application.ports.llm import LLMPort
 
 
-class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict]):
+class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]]):
     """Handle bill document parsing."""
 
-    async def handle(self, command: ParseDocumentCommand) -> CommandResult[dict]:
+    async def handle(self, command: ParseDocumentCommand) -> CommandResult[dict[str, Any]]:
         try:
             from leggie.infrastructure.ingest import IngestorFactory
             from leggie.infrastructure.parse import DocumentParser
@@ -74,7 +76,7 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             return CommandResult(success=False, error=str(e))
 
 
-def _try_get_llm():
+def _try_get_llm() -> LLMPort | None:
     """Try to build an LLM port from settings. Returns None if no API key."""
     from leggie.config.settings import get_settings
 
@@ -89,10 +91,10 @@ def _try_get_llm():
     )
 
 
-class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
+class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[dict[str, Any]]]):
     """Handle gold-set evaluation."""
 
-    async def handle(self, command: EvalGoldSetCommand) -> CommandResult[list]:
+    async def handle(self, command: EvalGoldSetCommand) -> CommandResult[list[dict[str, Any]]]:
         try:
             import json
             from pathlib import Path
@@ -102,7 +104,7 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list]):
             gold_set = GoldSet(command.gold_set_path)
             llm = _try_get_llm()
 
-            results = []
+            results: list[dict[str, Any]] = []
             for bill_id in gold_set.bill_ids:
                 # Try to find a bill file matching this bill_id
                 bill_path = _find_bill_file(bill_id, Path(command.gold_set_path).parent)

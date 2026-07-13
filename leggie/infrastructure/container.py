@@ -47,22 +47,22 @@ class Container:
         llm = container.get(LLMPort)
     """
 
-    _bindings: dict[type, Callable[[], Any]] = field(default_factory=dict)
-    _singletons: dict[type, Any] = field(default_factory=dict)
+    _bindings: dict[type | str, Callable[[], Any]] = field(default_factory=dict)
+    _singletons: dict[type | str, Any] = field(default_factory=dict)
 
     # ── registration ────────────────────────────────────────────────
 
-    def register(self, port_type: type, factory: Callable[[], Any]) -> None:
+    def register(self, port_type: type | str, factory: Callable[[], Any]) -> None:
         """Register a lazy factory for *port_type*."""
         self._bindings[port_type] = factory
 
-    def register_instance(self, port_type: type, instance: Any) -> None:
+    def register_instance(self, port_type: type | str, instance: Any) -> None:
         """Register an already-created singleton."""
         self._singletons[port_type] = instance
 
     # ── resolution ──────────────────────────────────────────────────
 
-    def get(self, port_type: type) -> Any:
+    def get(self, port_type: type | str) -> Any:
         """Resolve *port_type*, creating it once (singleton per type)."""
         if port_type in self._singletons:
             return self._singletons[port_type]
@@ -76,7 +76,7 @@ class Container:
         self._singletons[port_type] = instance
         return instance
 
-    def has_binding(self, port_type: type) -> bool:
+    def has_binding(self, port_type: type | str) -> bool:
         """Check if a binding exists for *port_type*."""
         return port_type in self._bindings or port_type in self._singletons
 
