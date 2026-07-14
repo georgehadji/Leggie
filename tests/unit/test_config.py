@@ -63,9 +63,9 @@ class TestSettingsEnvOverride:
 
 
 class TestReasonerSettings:
-    def test_reasoner_disabled_by_default(self):
+    def test_reasoner_enabled_by_default(self):
         s = ReasonerSettings()
-        assert s.enabled is False
+        assert s.enabled is True
 
     def test_reasoner_default_base_url(self):
         s = ReasonerSettings()
@@ -101,4 +101,4 @@ class TestReasonerSettings:
         s = Settings()
         assert hasattr(s, "reasoner")
         assert isinstance(s.reasoner, ReasonerSettings)
-        assert s.reasoner.enabled is False
+        assert s.reasoner.enabled is True

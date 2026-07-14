@@ -55,18 +55,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     analyze.add_argument(
         "--checkpoint", "-c", type=Path, default=None,
-        help="Path to persist/restore budget spend across runs (survives a crash mid-run)",
+        help="Path to persist/restore run state across runs (survives a crash mid-run): "
+        "budget spend for the deterministic pipeline, Stage-1 output for the deliberative one",
     )
     analyze.add_argument(
         "--pipeline",
         choices=["deterministic", "deliberative"],
-        default="deterministic",
-        help="Analysis pipeline: deterministic (default, 5-lens) or deliberative (opt-in)",
+        default="deliberative",
+        help="Analysis pipeline: deliberative (default, Reasoner-backed two-stage) or "
+        "deterministic (5-lens, no external service)",
     )
     analyze.add_argument(
         "--perspective",
         default=None,
-        help="Party perspective for the deliberative pipeline (default: neutral)",
+        help="Evaluation perspective for the deliberative pipeline: 'neutral' (default) or "
+        "'niki' (conservative-patriotic opposition)",
     )
     analyze.add_argument(
         "--fallback",

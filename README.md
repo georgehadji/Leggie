@@ -65,8 +65,11 @@ pip install -e ".[dev]"
 # Parse a bill to JSON
 leggie parse bill.txt
 
-# Analyze a bill (runs all 5 lenses)
+# Analyze a bill (deliberative pipeline is now the default — needs Reasoner configured)
 leggie analyze bill.txt
+
+# Analyze with the deterministic 5-lens pipeline (no external service)
+leggie analyze bill.txt --pipeline deterministic
 
 # Evaluate against a gold set
 leggie eval --gold-set tests/eval/gold_set_sample.json
@@ -75,12 +78,14 @@ leggie eval --gold-set tests/eval/gold_set_sample.json
 leggie --version
 ```
 
-### Deliberative pipeline (opt-in)
+### Deliberative pipeline (default)
 
-Leggie's default `analyze` is the deterministic 5-lens pipeline above. A second,
-**explicitly opt-in** pipeline delegates multi-model deliberation to
-[Reasoner](#) — a separate service that runs an 8-phase, cross-lab
-generate-critique-synthesize engine — for a two-stage prose report:
+Leggie's default `analyze` is the **deliberative** pipeline: it delegates
+multi-model deliberation to [Reasoner](#) — a separate service that runs an
+8-phase, cross-lab generate-critique-synthesize engine — for a two-stage prose
+report. The deterministic 5-lens pipeline remains available (and needs no
+external service) via `--pipeline deterministic`; it stays the source of truth
+for verified `Finding` objects. The deliberative report is two stages:
 
 1. **Stage 1 (generation)** — a structured report (introduction, summary,
    changes per Μέρος/Κεφάλαιο, purpose/provisions/consequences) plus a
@@ -90,27 +95,35 @@ generate-critique-synthesize engine — for a two-stage prose report:
    ambiguities, constitutional/EU-ECHR conflicts, loopholes, a Top-20 problem
    ranking, Top-10 amendments, and a 2-page executive briefing.
 
-This pipeline is **non-deterministic and billable**, so it never runs unless
-explicitly enabled:
+This pipeline is **non-deterministic and billable** and needs the Reasoner
+backend configured. It is enabled by default (`LEGGIE_REASONER__ENABLED=true`),
+so set the Reasoner endpoint/keys or select `--pipeline deterministic`:
 
 ```bash
-# .env
-LEGGIE_REASONER__ENABLED=true
+# .env — required for the (default) deliberative pipeline
+LEGGIE_REASONER__ENABLED=true                  # default
 LEGGIE_REASONER__HOME=/path/to/reasoner/repo   # for auto-start
 LEGGIE_REASONER__API_KEY=...                   # Reasoner ADMIN_API_KEY
 
-leggie analyze bill.txt --pipeline deliberative --perspective neutral
+# Default run (deliberative). --perspective: neutral (default) or niki
+leggie analyze bill.txt --perspective niki
+
+# Resumable: Stage 1 is checkpointed, so a Stage-2 failure never re-bills Stage 1
+leggie analyze bill.txt --checkpoint .cache/run1.json
 ```
 
 Output is a **prose Markdown report** (`Outputs/{bill}_deliberative.md`) with
 three sections — Περίληψη, Κριτική (Stage 1), Έλεγχος/Audit (Stage 2) — plus
 an optional citation appendix. It does **not** produce `Finding` objects and
-does not go through Skeptic/CoVe verification; the deterministic `analyze`
-path remains the source of truth for verified findings.
+does not go through Skeptic/CoVe verification; the deterministic
+`--pipeline deterministic` path remains the source of truth for verified findings.
 
-If Reasoner is unreachable, `analyze --pipeline deliberative` aborts with an
-actionable message by default. Pass `--fallback` to run the deterministic
-pipeline instead. See `.env.example` for all `LEGGIE_REASONER__*` settings.
+**Perspectives** are data, not code branches: `neutral` (default) evaluates
+without political framing; `niki` evaluates from a conservative-patriotic
+opposition (ΝΙΚΗ) viewpoint. If Reasoner is unreachable the run aborts with an
+actionable message; pass `--fallback` (or `--pipeline deterministic`) to use the
+deterministic pipeline instead. See `.env.example` for all `LEGGIE_REASONER__*`
+settings.
 
 ### Python API
 
@@ -264,7 +277,7 @@ pytest tests/unit/application/test_constitutional_lens.py -v
 | **2 — Ensemble** | ✅ Complete | 5 lenses, parallel fan-out (TaskGroup + semaphore), reranker |
 | **3 — Adversarial + Evidence** | ✅ Complete | Calibrated Skeptic, CoVe, citation verification, blackboard |
 | **4 — Improvement + Reports** | ✅ Complete | Improvement engine, Exec Summary + Article-by-Article |
-| **5 — Deliberative pipeline** | ✅ Complete | Opt-in Reasoner-backed two-stage pipeline (`--pipeline deliberative`), prose report, budget pre-flight, citation appendix |
+| **5 — Deliberative pipeline** | ✅ Complete | **Default** Reasoner-backed two-stage pipeline, prose report, neutral/niki perspectives, per-preset budget pre-flight, Stage-1 checkpoint/resume, idempotent retries, citation appendix |
 | **6+ — Post-MVP** | ⬜ Planned | Knowledge graph, debate rounds, learned router, interactive chat, more lenses |
 
 ---

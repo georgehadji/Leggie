@@ -141,7 +141,11 @@ class TestOtherHandlers:
         container.configure_defaults()
         handler = AnalyzeBillHandler(container=container)
         result = await handler.handle(
-            AnalyzeBillCommand(file_path=str(bill), output_path=str(tmp_path / "out"))
+            AnalyzeBillCommand(
+                file_path=str(bill),
+                output_path=str(tmp_path / "out"),
+                pipeline="deterministic",
+            )
         )
 
         assert result.success is True
@@ -173,10 +177,10 @@ class TestOtherHandlers:
         args = parser.parse_args(["analyze", "bill.txt", "-a", "1-3,5"])
         assert args.articles == "1-3,5"
 
-    def test_analyze_default_pipeline_is_deterministic(self):
+    def test_analyze_default_pipeline_is_deliberative(self):
         parser = build_parser()
         args = parser.parse_args(["analyze", "bill.txt"])
-        assert args.pipeline == "deterministic"
+        assert args.pipeline == "deliberative"
 
     def test_analyze_deliberative_pipeline_flag(self):
         parser = build_parser()

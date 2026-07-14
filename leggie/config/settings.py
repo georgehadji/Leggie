@@ -106,7 +106,7 @@ class ReasonerSettings(BaseSettings):
     )
 
     enabled: bool = Field(
-        default=False, description="Master switch to enable deliberative pipeline"
+        default=True, description="Master switch to enable deliberative pipeline (default)"
     )
     home: str = Field(default="", description="Path to Reasoner repository for auto-start")
     base_url: str = Field(default="http://localhost:8003", description="Reasoner backend URL")

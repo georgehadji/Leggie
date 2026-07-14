@@ -175,8 +175,10 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             return CommandResult(
                 success=False,
                 error=(
-                    "Deliberative pipeline is disabled. Set LEGGIE_REASONER__ENABLED=true "
-                    "and configure LEGGIE_REASONER__HOME / API key — see .env.example."
+                    "Deliberative pipeline (the default) is disabled. Set "
+                    "LEGGIE_REASONER__ENABLED=true and configure LEGGIE_REASONER__HOME / "
+                    "API key (see .env.example), or run with --pipeline deterministic to use "
+                    "the 5-lens pipeline that needs no external service."
                 ),
             )
 
@@ -187,6 +189,7 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 DeliberativeFlow,
             )
             from leggie.infrastructure.citation import GreekCitationParser
+            from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
             from leggie.infrastructure.reasoner.adapter import ReasonerAdapter
             from leggie.infrastructure.reasoner.server_manager import ReasonerServerManager
 
@@ -196,6 +199,9 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 request_timeout=float(settings.reasoner.request_timeout),
             )
             server_manager = ReasonerServerManager(settings.reasoner)
+            checkpoint_store = (
+                CheckpointStore(command.checkpoint_path) if command.checkpoint_path else None
+            )
             flow = DeliberativeFlow(
                 reasoner=reasoner,
                 stage1_preset=settings.reasoner.stage1_preset,
@@ -203,6 +209,7 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 server_manager=server_manager,
                 citation_parser=GreekCitationParser(),
                 max_tokens_per_run=settings.budget.max_tokens_per_run,
+                checkpoint_store=checkpoint_store,
             )
             report_path = await flow.run(
                 command.file_path,
@@ -216,7 +223,7 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             return CommandResult(
                 success=False,
                 error=f"Reasoner unavailable: {e}. Retry with --fallback to use the "
-                "deterministic pipeline instead.",
+                "deterministic pipeline instead, or run with --pipeline deterministic.",
             )
         except DeliberativeBudgetExceededError as e:
             return CommandResult(success=False, error=str(e))

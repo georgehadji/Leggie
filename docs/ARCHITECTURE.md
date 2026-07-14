@@ -130,7 +130,8 @@ Without `LEGGIE_LLM__OPENROUTER_API_KEY`:
 
 ## 10. The deliberative pipeline — a bounded exception, not a departure
 
-`--pipeline deliberative` (§1's default remains `deterministic`) delegates multi-model
+The deliberative pipeline (now the `analyze` **default**; the deterministic 5-lens path
+remains available via `--pipeline deterministic`) delegates multi-model
 generation/critique/synthesis to an external service (Reasoner) rather than reimplementing
 it inside Leggie. This is a deliberate, narrow exception to §1's rule, not a reversal of it:
 
@@ -138,8 +139,11 @@ it inside Leggie. This is a deliberate, narrow exception to §1's rule, not a re
   Stage 2 audit → assemble → persist) is hard-coded in `DeliberativeFlow`. Leggie never lets
   an LLM choose its own control flow here either — it just hands one *step* of that fixed DAG
   to a specialist external system, the same way a lens-worker hands a step to an LLM call.
-- **Opt-in, never default.** `LEGGIE_REASONER__ENABLED=false` by default; the deterministic
-  `analyze` path (§2–§7 above) is byte-for-byte unaffected by this pipeline's existence.
+- **Default, but gated on Reasoner.** `LEGGIE_REASONER__ENABLED=true` by default; when
+  Reasoner is unconfigured/unreachable the run aborts with an actionable message (or
+  `--fallback` / `--pipeline deterministic` uses the deterministic path, which is byte-for-byte
+  unaffected by this pipeline's existence). Stage 1 (the expensive fan-out) is checkpointed and
+  each Reasoner call carries a stable `client_run_id`, so retries and resumes never re-bill it.
 - **Non-determinism is quarantined.** Raw synthesis, models used, tokens, and cost are
   captured as events for replay — the run is *auditable*, even though its content is not
   bit-reproducible run-to-run (unlike the deterministic pipeline's citation parser/scoring).
