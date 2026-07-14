@@ -1,6 +1,6 @@
 """Tests for config/settings — pydantic-settings validation."""
 
-from leggie.config.settings import BudgetSettings, LLMSettings, Settings
+from leggie.config.settings import BudgetSettings, LLMSettings, ReasonerSettings, Settings
 
 
 class TestSettings:
@@ -60,3 +60,45 @@ class TestSettingsEnvOverride:
         s = Settings()
         assert s.app_name == "Leggie"
         # LLM key may or may not be set depending on environment
+
+
+class TestReasonerSettings:
+    def test_reasoner_disabled_by_default(self):
+        s = ReasonerSettings()
+        assert s.enabled is False
+
+    def test_reasoner_default_base_url(self):
+        s = ReasonerSettings()
+        assert s.base_url == "http://localhost:8003"
+
+    def test_reasoner_default_presets(self):
+        s = ReasonerSettings()
+        assert s.stage1_preset == "multi-perspective-premium"
+        assert s.stage2_preset == "subagent-premium"
+
+    def test_reasoner_default_perspective(self):
+        s = ReasonerSettings()
+        assert s.perspective == "neutral"
+
+    def test_reasoner_autostart_enabled(self):
+        s = ReasonerSettings()
+        assert s.autostart is True
+
+    def test_reasoner_startup_timeout_positive(self):
+        s = ReasonerSettings()
+        assert s.startup_timeout == 60
+        assert s.startup_timeout > 0
+
+    def test_reasoner_api_key_empty_by_default(self):
+        s = ReasonerSettings()
+        assert s.api_key == ""
+
+    def test_reasoner_home_empty_by_default(self):
+        s = ReasonerSettings()
+        assert s.home == ""
+
+    def test_reasoner_settings_in_main_settings(self):
+        s = Settings()
+        assert hasattr(s, "reasoner")
+        assert isinstance(s.reasoner, ReasonerSettings)
+        assert s.reasoner.enabled is False

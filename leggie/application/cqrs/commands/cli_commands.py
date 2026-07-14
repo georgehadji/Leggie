@@ -24,6 +24,9 @@ class AnalyzeBillCommand(Command):
     articles: str | None = None
     use_verbalized_sampling: bool = False
     checkpoint_path: str | None = None
+    pipeline: str = "deterministic"
+    perspective: str | None = None
+    fallback: bool = False
 
 
 class PreviewBillCommand(Command):

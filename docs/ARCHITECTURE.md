@@ -125,3 +125,27 @@ Without `LEGGIE_LLM__OPENROUTER_API_KEY`:
 - LLMPort resolution returns `None`; flow components that need an LLM degrade gracefully.
 - Reranking defaults to `composite` (scoring-only, no model call).
 - Verbalized sampling is disabled by default.
+
+---
+
+## 10. The deliberative pipeline — a bounded exception, not a departure
+
+`--pipeline deliberative` (§1's default remains `deterministic`) delegates multi-model
+generation/critique/synthesis to an external service (Reasoner) rather than reimplementing
+it inside Leggie. This is a deliberate, narrow exception to §1's rule, not a reversal of it:
+
+- **Still a fixed DAG, not an autonomous agent.** The two-stage sequence (Stage 1 generate →
+  Stage 2 audit → assemble → persist) is hard-coded in `DeliberativeFlow`. Leggie never lets
+  an LLM choose its own control flow here either — it just hands one *step* of that fixed DAG
+  to a specialist external system, the same way a lens-worker hands a step to an LLM call.
+- **Opt-in, never default.** `LEGGIE_REASONER__ENABLED=false` by default; the deterministic
+  `analyze` path (§2–§7 above) is byte-for-byte unaffected by this pipeline's existence.
+- **Non-determinism is quarantined.** Raw synthesis, models used, tokens, and cost are
+  captured as events for replay — the run is *auditable*, even though its content is not
+  bit-reproducible run-to-run (unlike the deterministic pipeline's citation parser/scoring).
+- **No verification claim.** Output is prose, not `Finding` objects — it explicitly does not
+  go through Skeptic/CoVe, so it does not carry the same admissibility guarantees as the
+  deterministic path's findings. An optional citation appendix (deterministic ΦΕΚ/CELEX/ECLI
+  parser over the prose) is the only verification sliver retained.
+
+See `docs/deliberative_pipeline_plan.md` for the full design rationale and work breakdown.

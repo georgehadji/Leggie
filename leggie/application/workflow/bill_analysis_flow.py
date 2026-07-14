@@ -23,13 +23,18 @@ from leggie.application.agents.skeptic import CalibratedSkeptic
 from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
+from leggie.application.ports.reranker import RerankerPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.services.bill_overview import BillOverviewGenerator
 from leggie.application.services.cove_verifier import CoVeVerifier, article_number
-from leggie.application.ports.reranker import RerankerPort
-from leggie.application.services.reports import ArticleByArticleRenderer, ExecutiveSummaryRenderer, Report
+from leggie.application.services.reports import (
+    ArticleByArticleRenderer,
+    ExecutiveSummaryRenderer,
+    Report,
+)
 from leggie.application.services.rerank import CompositeReranker, ModelBasedReranker
 from leggie.application.workflow.flow_state_machine import FlowStateMachine
+from leggie.application.workflow.ingest_parse import lazy_ingest_adapter, lazy_parse_adapter
 from leggie.config.settings import get_settings
 from leggie.domain.clustering import deduplicate
 from leggie.domain.models import (
@@ -43,18 +48,6 @@ from leggie.domain.models import (
 
 if TYPE_CHECKING:
     from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
-
-
-def _lazy_ingest_adapter() -> IngestPort:
-    """Lazy factory for IngestAdapter to avoid top-level infra import."""
-    from leggie.infrastructure.ingest_adapter import IngestAdapter
-    return IngestAdapter()
-
-
-def _lazy_parse_adapter() -> ParsePort:
-    """Lazy factory for ParseAdapter to avoid top-level infra import."""
-    from leggie.infrastructure.parse_adapter import ParseAdapter
-    return ParseAdapter()
 
 
 class BillAnalysisFlow:
@@ -104,8 +97,8 @@ class BillAnalysisFlow:
         self._cove = cove or CoVeVerifier(llm=llm, router=router)
         self._improver = ImprovementEngine()
         self._overview_generator = BillOverviewGenerator(llm=llm)
-        self._ingester = ingester or _lazy_ingest_adapter()
-        self._parser = parser or _lazy_parse_adapter()
+        self._ingester = ingester or lazy_ingest_adapter()
+        self._parser = parser or lazy_parse_adapter()
         self._dedup_threshold = dedup_threshold
         self._use_blackboard = use_blackboard
         self._reports: list[Report] = []

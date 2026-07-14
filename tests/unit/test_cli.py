@@ -173,6 +173,45 @@ class TestOtherHandlers:
         args = parser.parse_args(["analyze", "bill.txt", "-a", "1-3,5"])
         assert args.articles == "1-3,5"
 
+    def test_analyze_default_pipeline_is_deterministic(self):
+        parser = build_parser()
+        args = parser.parse_args(["analyze", "bill.txt"])
+        assert args.pipeline == "deterministic"
+
+    def test_analyze_deliberative_pipeline_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["analyze", "bill.txt", "--pipeline", "deliberative"])
+        assert args.pipeline == "deliberative"
+
+    def test_analyze_invalid_pipeline_rejected(self):
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["analyze", "bill.txt", "--pipeline", "not-a-real-pipeline"])
+
+    def test_analyze_default_perspective_is_none(self):
+        parser = build_parser()
+        args = parser.parse_args(["analyze", "bill.txt"])
+        assert args.perspective is None
+
+    def test_analyze_perspective_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            ["analyze", "bill.txt", "--pipeline", "deliberative", "--perspective", "neutral"]
+        )
+        assert args.perspective == "neutral"
+
+    def test_analyze_default_fallback_is_false(self):
+        parser = build_parser()
+        args = parser.parse_args(["analyze", "bill.txt"])
+        assert args.fallback is False
+
+    def test_analyze_fallback_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            ["analyze", "bill.txt", "--pipeline", "deliberative", "--fallback"]
+        )
+        assert args.fallback is True
+
     def test_eval_command(self):
         parser = build_parser()
         args = parser.parse_args(["eval", "-g", "gold.json"])
