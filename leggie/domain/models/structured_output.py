@@ -94,3 +94,23 @@ class CoVeCrossCheckResponse(BaseModel):
         default=0.0, ge=-0.5, le=0.5,
         description="Adjust finding confidence by this amount.",
     )
+
+
+# ── Bill preview (Stage 0) schemas ───────────────────────────────────────
+
+
+class BillIntroSummary(BaseModel):
+    """Response schema for the whole-bill intro + summary (preview stage, before ingest/analyze)."""
+    intro: str = Field(description="Short 2-4 sentence introduction to the bill")
+    summary: str = Field(description="Concise summary of what the bill does overall")
+
+
+class ArticleOverviewCandidate(BaseModel):
+    """Response schema for one article's purpose/provisions/consequences (preview stage)."""
+    purpose: str = Field(default="", description="What this article is trying to achieve")
+    key_provisions: list[str] = Field(
+        default_factory=list, description="The most important rules/provisions in this article"
+    )
+    practical_consequences: str = Field(
+        default="", description="Real-world practical effects of this article"
+    )

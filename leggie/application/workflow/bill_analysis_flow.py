@@ -24,6 +24,7 @@ from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
 from leggie.application.ports.router import RouterPort
+from leggie.application.services.bill_overview import BillOverviewGenerator
 from leggie.application.services.cove_verifier import CoVeVerifier, article_number
 from leggie.application.ports.reranker import RerankerPort
 from leggie.application.services.reports import ArticleByArticleRenderer, ExecutiveSummaryRenderer, Report
@@ -32,6 +33,7 @@ from leggie.application.workflow.flow_state_machine import FlowStateMachine
 from leggie.config.settings import get_settings
 from leggie.domain.clustering import deduplicate
 from leggie.domain.models import (
+    BillOverview,
     Document,
     Event,
     EventType,
@@ -101,6 +103,7 @@ class BillAnalysisFlow:
         self._skeptic = skeptic or CalibratedSkeptic(llm=llm, router=router)
         self._cove = cove or CoVeVerifier(llm=llm, router=router)
         self._improver = ImprovementEngine()
+        self._overview_generator = BillOverviewGenerator(llm=llm)
         self._ingester = ingester or _lazy_ingest_adapter()
         self._parser = parser or _lazy_parse_adapter()
         self._dedup_threshold = dedup_threshold
@@ -115,6 +118,7 @@ class BillAnalysisFlow:
         self._input_file_path: str = ""
         self._checkpoint_store: CheckpointStore | None = checkpoint_store
         self._checkpoint_path: Path | None = Path(checkpoint_path) if checkpoint_path else None
+        self._overview: BillOverview | None = None
 
     def _build_reranker(
         self,
@@ -134,12 +138,41 @@ class BillAnalysisFlow:
     def findings(self) -> list[Finding]:
         return list(self._findings)
 
+    @property
+    def overview(self) -> BillOverview | None:
+        """The bill overview produced by `preview()`, if it was called."""
+        return self._overview
+
+    async def preview(self, file_path: str | Path) -> BillOverview:
+        """Stage 0 — ingest + parse, then generate a descriptive bill overview.
+
+        Runs before the deep multi-lens analysis: produces a short intro,
+        an overall summary, and per-article (Άρθρο) purpose / key
+        provisions / practical consequences. Use the resulting article IDs
+        to decide what to pass as `--articles` / `selected_article_ids` to
+        `run()`. This is descriptive, not evaluative — no findings here.
+        """
+        file_path = Path(file_path)
+        self._transition(WorkflowState.PREVIEWING, "preview_started")
+        self._transition(WorkflowState.INGESTING, "ingest_started")
+        text = await self._do_ingest(file_path)
+        self._transition(WorkflowState.PARSING, "ingest_completed")
+        self._doc = self._do_parse(text, file_path)
+
+        overview = await self._overview_generator.generate(self._doc)
+        self._overview = overview
+        self._record_event(EventType.OVERVIEW_GENERATED, {
+            "articles": len(self._doc.articles),
+        })
+        return overview
+
     async def run(
         self,
         file_path: str | Path,
         output_dir: str | Path = "Outputs",
         lenses: list[str] | None = None,
         articles: str | None = None,
+        selected_article_ids: list[str] | None = None,
         checkpoint_path: str | Path | None = None,
     ) -> tuple[list[Finding], list[Any]]:
         """Run the full analysis workflow on a bill file.
@@ -150,6 +183,10 @@ class BillAnalysisFlow:
             lenses: Lens names to apply. None => all configured lenses.
             articles: Article selection expression, e.g. "1-5,7,10" or "1,2,3".
                 None => all parsed articles.
+            selected_article_ids: Explicit list of Άρθρο IDs to restrict analysis
+                to (e.g. the ones picked after reviewing `preview()`'s
+                BillOverview). Applied in addition to `articles`. None => no
+                explicit-id restriction.
             checkpoint_path: When set, creates a CheckpointStore at this path for
                 atomic resume support. Ignored if a checkpoint_store was already
                 supplied to the constructor.
@@ -194,6 +231,8 @@ class BillAnalysisFlow:
         # requested subset is respected on resume.
         if self._doc is not None and articles is not None:
             self._doc = self._filter_document(self._doc, articles)
+        if self._doc is not None and selected_article_ids is not None:
+            self._doc = self._select_article_ids(self._doc, selected_article_ids)
 
         # 1. Ingest
         if self._state == WorkflowState.IDLE:
@@ -210,6 +249,8 @@ class BillAnalysisFlow:
             self._doc = self._do_parse(self._source_text, file_path)
             if articles is not None:
                 self._doc = self._filter_document(self._doc, articles)
+            if selected_article_ids is not None:
+                self._doc = self._select_article_ids(self._doc, selected_article_ids)
             self._source_text = ""  # No longer needed once parsed
             self._transition(WorkflowState.PLANNING, "parse_completed")
 
@@ -442,6 +483,15 @@ class BillAnalysisFlow:
             )
         filtered = [a for a in doc.articles if a.id in keep_ids]
         return doc.model_copy(update={"articles": filtered}, deep=False)
+
+    def _select_article_ids(self, doc: Document, ids: list[str]) -> Document:
+        """Return a new Document keeping only articles whose id is in *ids*."""
+        selected = [a for a in doc.articles if a.id in ids]
+        self._record_event(EventType.ARTICLES_SELECTED, {
+            "selected": ids,
+            "matched": len(selected),
+        })
+        return doc.model_copy(update={"articles": selected}, deep=False)
 
     def _dedup_findings(self, findings: list[Finding]) -> list[Finding]:
         """Remove near-duplicate findings, keeping the best per cluster."""

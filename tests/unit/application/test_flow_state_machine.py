@@ -38,7 +38,8 @@ class TestFlowStateMachine:
     def test_valid_events_for_idle(self):
         events = FlowStateMachine.valid_events_for(WorkflowState.IDLE)
         assert "ingest_started" in events
-        assert len(events) == 1
+        assert "preview_started" in events
+        assert len(events) == 2
 
     def test_valid_events_for_executing(self):
         events = FlowStateMachine.valid_events_for(WorkflowState.EXECUTING)
