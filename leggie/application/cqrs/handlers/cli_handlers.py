@@ -204,11 +204,21 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 citation_parser=GreekCitationParser(),
                 max_tokens_per_run=settings.budget.max_tokens_per_run,
             )
-            report_path = await flow.run(
-                command.file_path,
-                output_dir=command.output_path or "Outputs",
-                perspective=command.perspective or settings.reasoner.perspective,
-            )
+            try:
+                report_path = await flow.run(
+                    command.file_path,
+                    output_dir=command.output_path or "Outputs",
+                    perspective=command.perspective or settings.reasoner.perspective,
+                )
+            finally:
+                # Release whatever ensure_running() may have autostarted — a
+                # no-op if nothing was spawned. Never let a cleanup failure
+                # shadow the flow's real exception/result (e.g. the
+                # ReasonerUnavailableError --fallback depends on).
+                try:
+                    await server_manager.shutdown()
+                except Exception:
+                    logger.warning("reasoner.shutdown_failed", exc_info=True)
             return CommandResult(success=True, data=f"Deliberative report saved to {report_path}")
         except ReasonerUnavailableError as e:
             if command.fallback:

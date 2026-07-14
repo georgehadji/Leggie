@@ -37,6 +37,14 @@ graphify-out/
 # Outputs (generated reports)
 Outputs/
 
+# Ad-hoc run artifacts (smoke logs, scratch CLI output dumps)
+*.log
+analysis_report.docx
+test_events.jsonl
+citation_search.json
+parsed.json
+openrouter_models.json
+
 # OS
 .DS_Store
 Thumbs.db
