@@ -1,8 +1,17 @@
 """Tests for CLI — argparse-based command-line interface."""
 
+import sys
 from pathlib import Path
 
+import pytest
+
 from leggie.interfaces.cli import build_parser
+
+SAMPLE_BILL = """
+ΣΧΕΔΙΟ ΝΟΜΟΥ
+Άρθρο 1 – Δοκιμή
+1. Κείμενο.
+"""
 
 
 class TestBuildParser:
@@ -10,6 +19,133 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["--version"])
         assert args.version is True
+
+    def test_preview_command(self):
+        parser = build_parser()
+        args = parser.parse_args(["preview", "bill.txt"])
+        assert args.command == "preview"
+        assert args.file == Path("bill.txt")
+
+    def test_preview_with_output(self):
+        parser = build_parser()
+        args = parser.parse_args(["preview", "bill.txt", "-o", "prev.json"])
+        assert args.output == Path("prev.json")
+
+
+class TestPreviewHandler:
+    @pytest.mark.asyncio
+    async def test_preview_handler_returns_overview(self, tmp_path):
+        from leggie.application.cqrs.commands.cli_commands import PreviewBillCommand
+        from leggie.application.cqrs.handlers.cli_handlers import PreviewBillHandler
+        from leggie.infrastructure.container import Container
+
+        bill = tmp_path / "bill.txt"
+        bill.write_text(SAMPLE_BILL, encoding="utf-8")
+
+        container = Container()
+        container.configure_defaults()  # no API key -> llm resolves to None -> fallback
+
+        handler = PreviewBillHandler(container=container)
+        result = await handler.handle(PreviewBillCommand(file_path=str(bill)))
+
+        assert result.success is True
+        assert "articles" in result.data
+        assert result.data["articles"][0]["article_id"] == "1"
+
+    @pytest.mark.asyncio
+    async def test_preview_handler_writes_output_file(self, tmp_path):
+        import json
+
+        from leggie.application.cqrs.commands.cli_commands import PreviewBillCommand
+        from leggie.application.cqrs.handlers.cli_handlers import PreviewBillHandler
+        from leggie.infrastructure.container import Container
+
+        bill = tmp_path / "bill.txt"
+        bill.write_text(SAMPLE_BILL, encoding="utf-8")
+        out = tmp_path / "preview.json"
+
+        container = Container()
+        container.configure_defaults()
+        handler = PreviewBillHandler(container=container)
+        result = await handler.handle(
+            PreviewBillCommand(file_path=str(bill), output_path=str(out))
+        )
+
+        assert result.success is True
+        assert out.exists()
+        written = json.loads(out.read_text(encoding="utf-8"))
+        assert written["articles"][0]["article_id"] == "1"
+
+
+class TestCliMainDispatch:
+    @pytest.mark.asyncio
+    async def test_main_preview_dispatch(self, tmp_path, monkeypatch, capsys):
+        """Full CLI path: main() → _handle_preview → mediator → PreviewBillHandler."""
+        from leggie.interfaces.cli import main
+
+        bill = tmp_path / "bill.txt"
+        bill.write_text(SAMPLE_BILL, encoding="utf-8")
+        monkeypatch.setattr(sys, "argv", ["leggie", "preview", str(bill)])
+
+        rc = await main()
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "articles" in out
+
+    @pytest.mark.asyncio
+    async def test_main_preview_writes_file(self, tmp_path, monkeypatch, capsys):
+        from leggie.interfaces.cli import main
+
+        bill = tmp_path / "bill.txt"
+        bill.write_text(SAMPLE_BILL, encoding="utf-8")
+        out_path = tmp_path / "prev.json"
+        monkeypatch.setattr(
+            sys, "argv", ["leggie", "preview", str(bill), "-o", str(out_path)]
+        )
+
+        rc = await main()
+        assert rc == 0
+        assert out_path.exists()
+
+
+class TestOtherHandlers:
+    """Cover the sibling handlers registered alongside PreviewBillHandler."""
+
+    @pytest.mark.asyncio
+    async def test_parse_handler_returns_structure(self, tmp_path):
+        from leggie.application.cqrs.commands.cli_commands import ParseDocumentCommand
+        from leggie.application.cqrs.handlers.cli_handlers import ParseDocumentHandler
+        from leggie.infrastructure.container import Container
+
+        bill = tmp_path / "bill.txt"
+        bill.write_text(SAMPLE_BILL, encoding="utf-8")
+
+        container = Container()
+        container.configure_defaults()
+        handler = ParseDocumentHandler(container=container)
+        result = await handler.handle(ParseDocumentCommand(file_path=str(bill)))
+
+        assert result.success is True
+        assert result.data["articles"][0]["id"] == "1"
+
+    @pytest.mark.asyncio
+    async def test_analyze_handler_completes(self, tmp_path):
+        from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
+        from leggie.application.cqrs.handlers.cli_handlers import AnalyzeBillHandler
+        from leggie.infrastructure.container import Container
+
+        bill = tmp_path / "bill.txt"
+        bill.write_text(SAMPLE_BILL, encoding="utf-8")
+
+        container = Container()
+        container.configure_defaults()
+        handler = AnalyzeBillHandler(container=container)
+        result = await handler.handle(
+            AnalyzeBillCommand(file_path=str(bill), output_path=str(tmp_path / "out"))
+        )
+
+        assert result.success is True
+        assert "Analysis complete" in result.data
 
     def test_parse_command(self):
         parser = build_parser()
