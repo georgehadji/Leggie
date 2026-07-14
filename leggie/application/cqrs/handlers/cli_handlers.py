@@ -113,12 +113,17 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]])
 
 
 class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
-    """Handle bill analysis using the BillAnalysisFlow."""
+    """Handle bill analysis using BillAnalysisFlow (deterministic) or DeliberativeFlow (opt-in)."""
 
     def __init__(self, container: Container) -> None:
         self._container = container
 
     async def handle(self, command: AnalyzeBillCommand) -> CommandResult[str]:
+        if command.pipeline == "deliberative":
+            return await self._handle_deliberative(command)
+        return await self._handle_deterministic(command)
+
+    async def _handle_deterministic(self, command: AnalyzeBillCommand) -> CommandResult[str]:
         try:
             from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
             from leggie.config.settings import get_settings
@@ -159,6 +164,62 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 summary += f"\n  - [{f.finding_type.value}:{f.severity.value}] {f.irac.issue[:80]}"
 
             return CommandResult(success=True, data=summary)
+        except Exception as e:
+            return CommandResult(success=False, error=str(e))
+
+    async def _handle_deliberative(self, command: AnalyzeBillCommand) -> CommandResult[str]:
+        from leggie.config.settings import get_settings
+
+        settings = get_settings()
+        if not settings.reasoner.enabled:
+            return CommandResult(
+                success=False,
+                error=(
+                    "Deliberative pipeline is disabled. Set LEGGIE_REASONER__ENABLED=true "
+                    "and configure LEGGIE_REASONER__HOME / API key — see .env.example."
+                ),
+            )
+
+        try:
+            from leggie.application.ports.reasoner import ReasonerUnavailableError
+            from leggie.application.workflow.deliberative_flow import (
+                DeliberativeBudgetExceededError,
+                DeliberativeFlow,
+            )
+            from leggie.infrastructure.citation import GreekCitationParser
+            from leggie.infrastructure.reasoner.adapter import ReasonerAdapter
+            from leggie.infrastructure.reasoner.server_manager import ReasonerServerManager
+
+            reasoner = ReasonerAdapter(
+                base_url=settings.reasoner.base_url,
+                api_key=settings.reasoner.api_key,
+                request_timeout=float(settings.reasoner.request_timeout),
+            )
+            server_manager = ReasonerServerManager(settings.reasoner)
+            flow = DeliberativeFlow(
+                reasoner=reasoner,
+                stage1_preset=settings.reasoner.stage1_preset,
+                stage2_preset=settings.reasoner.stage2_preset,
+                server_manager=server_manager,
+                citation_parser=GreekCitationParser(),
+                max_tokens_per_run=settings.budget.max_tokens_per_run,
+            )
+            report_path = await flow.run(
+                command.file_path,
+                output_dir=command.output_path or "Outputs",
+                perspective=command.perspective or settings.reasoner.perspective,
+            )
+            return CommandResult(success=True, data=f"Deliberative report saved to {report_path}")
+        except ReasonerUnavailableError as e:
+            if command.fallback:
+                return await self._handle_deterministic(command)
+            return CommandResult(
+                success=False,
+                error=f"Reasoner unavailable: {e}. Retry with --fallback to use the "
+                "deterministic pipeline instead.",
+            )
+        except DeliberativeBudgetExceededError as e:
+            return CommandResult(success=False, error=str(e))
         except Exception as e:
             return CommandResult(success=False, error=str(e))
 

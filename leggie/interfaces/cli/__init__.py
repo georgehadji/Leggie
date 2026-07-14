@@ -57,6 +57,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--checkpoint", "-c", type=Path, default=None,
         help="Path to persist/restore budget spend across runs (survives a crash mid-run)",
     )
+    analyze.add_argument(
+        "--pipeline",
+        choices=["deterministic", "deliberative"],
+        default="deterministic",
+        help="Analysis pipeline: deterministic (default, 5-lens) or deliberative (opt-in)",
+    )
+    analyze.add_argument(
+        "--perspective",
+        default=None,
+        help="Party perspective for the deliberative pipeline (default: neutral)",
+    )
+    analyze.add_argument(
+        "--fallback",
+        action="store_true",
+        help="If the Reasoner backend is unavailable, fall back to the deterministic "
+        "pipeline instead of aborting (deliberative pipeline only)",
+    )
 
     # eval
     eval_cmd = subparsers.add_parser("eval", help="Run evaluation against gold set")
@@ -192,6 +209,9 @@ async def _handle_analyze(args: argparse.Namespace, mediator: Mediator) -> int:
         articles=args.articles,
         use_verbalized_sampling=args.verbalized_sampling,
         checkpoint_path=str(args.checkpoint) if args.checkpoint else None,
+        pipeline=args.pipeline,
+        perspective=args.perspective,
+        fallback=args.fallback,
     )
     result = await mediator.send(cmd)
 
