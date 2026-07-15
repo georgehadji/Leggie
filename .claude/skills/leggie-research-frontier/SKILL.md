@@ -72,15 +72,16 @@ result WOULD look like.
   bills. This is also the documented reopen condition for the learned-router
   decision (**leggie-failure-archaeology** §13).
 
-### F4. Verbalized Sampling for finding recall (D4, unwired)
+### F4. Verbalized Sampling for finding recall (D4 wired 2026-07-12, delta unmeasured)
 - **Why SOTA fails:** single-pass extraction misses low-salience issues;
   naive multi-sampling explodes cost.
-- **Asset:** VS is DESIGNED IN (route `verbalized_sampling`, `VSResponse`
-  schema, `services/verbalized_sampling.py` + `lens_vs.py`) — just never
-  wired to a flag (no caller sets `use_verbalized_sampling`).
-- **Steps:** 1. wire per REMEDIATION Phase 5a (settings flag → CLI →
-  orchestrator); 2. run gold-set eval VS-off vs VS-on (k=3–5), one variable;
-  3. compute recall delta and cost delta.
+- **Asset:** VS is fully wired: route `verbalized_sampling`, `VSResponse`
+  schema, `services/verbalized_sampling.py` + `lens_vs.py`, CLI
+  `--verbalized-sampling` / `LEGGIE_ANALYSIS__USE_VERBALIZED_SAMPLING`.
+  What's missing is the MEASUREMENT, not the wiring.
+- **Steps:** 1. run gold-set eval VS-off vs VS-on (k=3–5), one variable;
+  2. compute recall delta and cost delta; 3. adopt or retire per
+  **leggie-research-methodology** idea lifecycle.
 - **You have a result when:** VS-on shows a recall gain at acceptable cost on
   the gold set, or is retired with the measured negative documented.
 

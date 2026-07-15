@@ -2,31 +2,50 @@
 name: leggie-remediation-campaign
 description: >
   EXECUTABLE, decision-gated campaign for Leggie's hardest live problem as of
-  2026-07-10: the verification-layer work (LLM-powered CoVe + skeptic
-  adversarial gate + wiring, commits cb7fde8/406f969) has landed but has NEVER
-  been proven by live smoke — pipeline yield is unproven since the 1-survivor
-  incident — on top of open defects D3–D10. Load when asked to continue,
-  validate, or prove the remediation work, to fix pipeline yield, or when
-  asking "what should I work on next" in this repo. Every phase has exact
-  commands, expected numbers, and if-X-then-Y branches.
+  2026-07-14: the single-lens live smoke PASSED (v5, 2026-07-11, docs/
+  SMOKE_AUDIT.md) but the FULL 5-lens smoke has never completed — three
+  attempts died to a stale route, an OpenRouter 402 credit wall, and
+  parse-failure degradation. Full-pipeline yield is still unproven, and the
+  new deliberative pipeline has no recorded live run. Load when asked to
+  continue, validate, or prove the remediation work, to fix pipeline yield,
+  or when asking "what should I work on next" in this repo. Every phase has
+  exact commands, expected numbers, and if-X-then-Y branches.
 ---
 
 # Leggie Remediation Campaign
 
-**Goal (falsifiable):** a live smoke on `Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf` meets every
-REMEDIATION_PLAN §10 threshold, and the result is recorded in a landing audit
-doc. Until both are true, the campaign is not done.
+**Goal (falsifiable):** a FULL 5-lens live smoke on
+`Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf` meets every REMEDIATION_PLAN §10 threshold, and
+the result is recorded in a landing audit doc. Until both are true, the
+campaign is not done.
+
+**Campaign state as of 2026-07-14** (evidence: `docs/SMOKE_AUDIT.md`, commit
+02c3ac6, master):
+
+| Milestone | Status |
+|---|---|
+| Verification layer landed (cb7fde8/406f969) | DONE |
+| Phase 0 fixes: parallel fan-out (D3/D6), lens_analysis route wired (was DEAD — orchestrator queried `lens_<name>`), Skeptic/CoVe token ceilings raised, critic → gemini-2.5-pro, citation index loaded (D7) | DONE (02c3ac6, 05aaa8f) |
+| Single-lens smoke | **PASSED** — v5: 299 LLM calls, 4.0% parse failures (<5% gate), 9 refutes/9 supports/1 neutral skeptic verdicts, findings_per_article 0.14 |
+| Full 5-lens smoke | **NOT DONE** — 3 attempts stopped: stale route (fixed), OpenRouter 402 (account credits, not budget guard), parse-failure/truncation degradation (189 parse failures, 111 skeptic_llm_error in full5_final) |
+| Landing audit doc through change control | NOT DONE (SMOKE_AUDIT.md is the interim record) |
+| Deliberative pipeline live run | NOT DONE (landed + leak-fixed PR #7; offline-proven only) |
+
+**Next concrete step** (per SMOKE_AUDIT "Next"): validate the None-content
+fix and tighter JSON prompts on a small article subset —
+`leggie analyze Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf --articles "1-10" 2>&1 | Tee-Object subset.log`
+— then re-attempt the full 5-lens run (Phase 4c). Check OpenRouter credit
+balance BEFORE starting: the 402 wall wasted a full run.
 
 **Re-verify Phase 0 before trusting anything here — this skill goes stale
-fastest.** Numbers below measured 2026-07-10 (evening) on branch
-`fix/model-ids-vfm-and-plan`, HEAD `406f969`, CLEAN working tree.
+fastest.** Baseline numbers below measured 2026-07-10/11.
 
 ## Phase 0 — Snapshot and offline baseline
 
 ```powershell
-git status --short          # EXPECT: clean (verification work landed as cb7fde8 + 406f969)
-git log --oneline -3        # EXPECT: 406f969 defect-hunt V7 / cb7fde8 type errors + reliability tests / 63fb25f phase1
-python -m pytest tests/ -q  # EXPECT: 367 passed (measured 2026-07-10)
+git status --short          # EXPECT: clean-ish (skills/docs churn OK; no leggie/ changes)
+git log --oneline -3        # EXPECT: HEAD at/after 5a20faa (PR #7 merge, 2026-07-14)
+python -m pytest tests/ -q  # EXPECT: 531 passed (measured 2026-07-15)
 mypy leggie/ --ignore-missing-imports   # EXPECT: clean
 ruff check leggie/ tests/   # EXPECT: clean
 lint-imports                # EXPECT: contract kept
@@ -58,10 +77,9 @@ working-tree diff):
 | tests (+~290) | coverage for all of the above |
 | budget_guard, container, llm/__init__, economic_lens, blackboard_aggregator, cli_commands/handlers | supporting wiring + defect-hunt fixes |
 
-STILL OPEN after landing: D3 parallel fan-out (verify: loop at
-`bill_analysis_flow.py` ~line 157), D4 verbalized sampling, D5 model
-reranker, D7 citation index population, D10 stage resume — and, critically,
-**no live smoke has validated any of this**.
+(Historical: at landing time D3/D4/D5/D7/D10 were still open and no live
+smoke existed. Since then D3/D4/D6/D8 closed and single-lens smoke passed —
+current ledger: **leggie-failure-archaeology** §Open defect ledger.)
 
 ## Phase 2 — Confirm the Phase-1 audit HIGH findings stayed closed
 
@@ -83,7 +101,7 @@ From `implementation_audit_report.md`:
 
 ## Phase 3 — Offline validation sweep
 
-Re-run the full Phase-0 command block. **EXPECT:** ≥361 passed (more if you
+Re-run the full Phase-0 command block. **EXPECT:** ≥531 passed (more if you
 added H-2 tests), mypy/ruff/lint-imports clean.
 **Branch:** ruff failure → fix the code, NEVER extend the pyproject ignore
 list (fenced, see §Fences).
@@ -181,9 +199,10 @@ One variable per run (ablation discipline — **leggie-research-methodology**).
 
 ## Provenance and maintenance
 
-Everything here dated 2026-07-10; the tree WILL move.
+Campaign state dated 2026-07-14 (smoke evidence 2026-07-11); the tree WILL move.
 - Re-snapshot: `git status --short && git log --oneline -3`
 - Work landed? `git show HEAD:leggie/application/agents/skeptic.py | grep -c LLMAdversarialGate` (≥1 = landed, Phase 1 is history; 0 = you are on an older commit)
-- Baseline: `python -m pytest tests/ -q` (was 367 passed)
-- D3 still open? `grep -n "for article in self._doc.articles" leggie/application/workflow/bill_analysis_flow.py`
+- Baseline: `python -m pytest tests/ -q` (531 passed 2026-07-15)
+- Smoke record: `head -40 docs/SMOKE_AUDIT.md`
+- Parallel fan-out intact? `grep -n "analyze_document" leggie/application/workflow/bill_analysis_flow.py`
 - H-1 fix present? `grep -n "Initialise response" leggie/infrastructure/llm/__init__.py`

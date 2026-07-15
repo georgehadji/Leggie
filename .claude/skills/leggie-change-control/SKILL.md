@@ -47,7 +47,7 @@ was misclassifying "the pipeline works" as proven by unit tests alone (§3.1).
 
 ```powershell
 # From repo root E:\Documents\Vibe-Coding\Leggie
-python -m pytest tests/ -q            # full suite; baseline 367 passed (measured 2026-07-10 evening)
+python -m pytest tests/ -q            # full suite; baseline 531 passed (measured 2026-07-15)
 mypy leggie/ --ignore-missing-imports # strict mode is set in pyproject; must be clean on touched modules
 ruff check leggie/ tests/             # do NOT widen the ignore list to pass (see §3.5)
 lint-imports                          # import-linter layer contract (install via pip install -e ".[lint]")
@@ -152,7 +152,7 @@ permanent handles.
 
 Facts dated 2026-07-10. Re-verify before trusting:
 
-- Test baseline: `python -m pytest tests/ -q` (was: 367 passed)
+- Test baseline: `python -m pytest tests/ -q` (531 passed 2026-07-15)
 - Ruff ignore list: `grep -A2 "^ignore" pyproject.toml`
 - Import contract: `grep -A8 importlinter pyproject.toml`
 - Budget defaults: `grep -n "max_tokens_per_run\|max_cost_per_run" leggie/config/settings.py`

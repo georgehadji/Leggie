@@ -25,7 +25,7 @@ runtime evidence.
 
 | Tier | Evidence | Command | Required for |
 |---|---|---|---|
-| 1 | full test suite green | `python -m pytest tests/ -q` → baseline **367 passed** (measured 2026-07-10 evening) | every change |
+| 1 | full test suite green | `python -m pytest tests/ -q` → baseline **531 passed** (measured 2026-07-15; was 367 on 2026-07-10) | every change |
 | 2 | mypy strict clean on touched modules + ruff + import-linter | `mypy leggie/ --ignore-missing-imports && ruff check leggie/ tests/ && lint-imports` | every code change |
 | 3 | live smoke with MEASURED numbers | procedure in **leggie-run-and-operate** §3, measurement via **leggie-diagnostics-and-tooling** | class-A (pipeline-behavior) changes |
 | 4 | eval delta vs gold set | `leggie eval --gold-set tests/eval/gold_set_sample.json` before/after | quality claims ("improves recall/precision") |
@@ -107,8 +107,8 @@ produced locally on Windows. Do not cite "CI is green" as tier-3 evidence.
 
 ## Provenance and maintenance
 
-Dated 2026-07-10. Re-verify:
-- Baseline: `python -m pytest tests/ -q` (was 367 passed)
+Dated 2026-07-14. Re-verify:
+- Baseline: `python -m pytest tests/ -q` (531 passed 2026-07-15)
 - Async mode: `grep -n asyncio_mode pyproject.toml`
 - Fake pattern: `grep -rn "class Fake" tests/ | head`
 - Gold set size: `python -c "import json;d=json.load(open('tests/eval/gold_set_sample.json',encoding='utf-8'));print({k:len(v) for k,v in d.items()})"`

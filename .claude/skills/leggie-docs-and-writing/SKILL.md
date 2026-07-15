@@ -109,7 +109,7 @@ a phase (`feat(phase1):`); bodies state ground truth measured before/after
 
 | Claim | Reality (2026-07-10) |
 |---|---|
-| README badge "tests-199 passed" | 367 passing |
+| README badge "tests-199 passed" | 531 passing (2026-07-15) |
 | README badge "code-5,195 lines" | ~7,850 lines in leggie/ (79 files) |
 | README "7 abstract interfaces (ports)" | 10 port classes in `application/ports/` |
 | `.env.example` `MAX_TOKENS_PER_RUN=500000` | code default 20,000,000 (500k was the budget-block bug) |

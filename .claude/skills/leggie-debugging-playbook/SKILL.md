@@ -5,8 +5,10 @@ description: >
   misbehaves: findings missing or near-zero, parse errors in logs, phantom or
   truncated articles, all-INFO noise, skeptic verdicts all neutral, CoVe
   dropping everything, budget blocks, cascade churn, citations stuck
-  "unverified", or Greek text mojibake on Windows. Gives the discriminating
-  experiment for each symptom and where the evidence lives.
+  "unverified", Greek text mojibake on Windows, or deliberative-pipeline
+  failures (Reasoner unavailable, port identity check, pre-flight budget
+  abort, orphaned autostarted process). Gives the discriminating experiment
+  for each symptom and where the evidence lives.
 ---
 
 # Leggie Debugging Playbook
@@ -33,8 +35,13 @@ Cheap reproduction: `leggie parse <file>` is free/deterministic;
 | 8 | Log shows `json_schema rejected, falling back to json_object` repeatedly | model on that route doesn't support strict json_schema (expected for some models; fallback is permanent by design) | acceptable if parse then succeeds; problem only if attempt 2 also fails | route the task to a json_schema-capable model (gemini flash/pro support it) |
 | 9 | Citations all "unverified" | resolution index is EMPTY — by design fail-closed (D7 open): unverified ≠ invalid | `grep -n "resolution_index" leggie/infrastructure/container.py` — no index passed | populate index (REMEDIATION Phase 4) — do NOT "fix" by treating unverified as resolved |
 | 10 | Greek text prints as `Î...` mojibake / UnicodeEncodeError on Windows console | legacy console codepage | CLI already forces UTF-8 (`_force_utf8_console` in `interfaces/cli/__init__.py`); for your own scripts add `sys.stdout.reconfigure(encoding="utf-8")` or run `chcp 65001`; set `PYTHONUTF8=1` | **leggie-build-and-env** |
-| 11 | One article failing kills the whole batch | `asyncio.TaskGroup` sibling cancellation (D6) | check whether article-level fan-out wraps failures (`orchestrator.py analyze_document`); note flow currently loops sequentially (D3) so this bites only after parallelization | REMEDIATION Phase 3a |
+| 11 | One article failing kills the whole batch | should NOT happen anymore: D3/D6 closed 2026-07-11 — flow uses `analyze_document()` with `asyncio.gather(return_exceptions=True)` + per-article except | if it recurs: `grep -n "return_exceptions" leggie/application/agents/orchestrator.py` — absence = regression | `orchestrator.py analyze_document` |
 | 12 | Crash mid-run, restart re-bills completed stages | resume-from-stage not implemented (D10); only budget spend survives via `--checkpoint` | — | use `--checkpoint PATH` to at least preserve spend; full resume is open work |
+| 13 | `Deliberative pipeline is disabled` error | `LEGGIE_REASONER__ENABLED` not true | `python -c "from leggie.config.settings import get_settings; print(get_settings().reasoner)"` | set `LEGGIE_REASONER__ENABLED=true` + `__HOME` + `__API_KEY` in `.env` |
+| 14 | `Reasoner unavailable: ...` on `--pipeline deliberative` | backend not running and autostart failed: `HOME` unset/wrong, uvicorn exited early, or startup_timeout too short | run health probe by hand: `curl -s http://localhost:8003/openapi.json \| head -c 200`; check `LEGGIE_REASONER__HOME` points at a dir with `.venv` and `asgi.py` | fix env or start Reasoner manually; `--fallback` reverts to deterministic pipeline for this run |
+| 15 | `Port 8003 is occupied by a service that is not Reasoner` | another service answered `/openapi.json` without `/api/agent/run/sync` (R8 identity check) | `curl -s http://localhost:8003/openapi.json \| grep agent/run` | free the port or point `LEGGIE_REASONER__BASE_URL` elsewhere |
+| 16 | Deliberative run aborts instantly with `Estimated N tokens exceeds the configured budget` | pre-flight estimate (~3× bill chars/4) over `LEGGIE_BUDGET__MAX_TOKENS_PER_RUN` | check bill size vs budget; estimate happens BEFORE any Reasoner call | raise the ceiling or use `--articles` on the deterministic pipeline instead |
+| 17 | Orphaned uvicorn/python process after a deliberative run | autostarted Reasoner not released — FIXED in PR #7 (commit af4e4a8: handler `finally` calls `server_manager.shutdown()`) | `Get-Process \| Where-Object {$_.ProcessName -match 'python\|uvicorn'}` after a run | if it recurs, check the `finally` block in `cli_handlers.py _handle_deliberative` still shuts down |
 
 ## Where evidence lives
 
@@ -74,8 +81,9 @@ Failed to parse structured response # ladder exhausted → degrade
 
 ## Provenance and maintenance
 
-Dated 2026-07-10. Re-verify:
+Dated 2026-07-14. Re-verify:
 - Signatures still emitted: `grep -rn "cove_quote_fail\|skeptic_llm_error\|json_schema rejected" leggie/`
-- D3 sequential loop: `grep -n "for article in self._doc.articles" leggie/application/workflow/bill_analysis_flow.py`
+- Parallel fan-out intact (D3): `grep -n "analyze_document" leggie/application/workflow/bill_analysis_flow.py`
+- Reasoner shutdown intact: `grep -n "server_manager.shutdown" leggie/application/cqrs/handlers/cli_handlers.py`
 - Budget defaults: `python -c "from leggie.config.settings import get_settings; s=get_settings(); print(s.budget)"`
 - UTF-8 guard: `grep -n "_force_utf8_console" leggie/interfaces/cli/__init__.py`

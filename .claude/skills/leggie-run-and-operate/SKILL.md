@@ -15,7 +15,7 @@ Entry point: `leggie` (installed by `pip install -e .`, per pyproject
 `E:\Documents\Vibe-Coding\Leggie`. Greek output is UTF-8; the CLI forces UTF-8
 console streams on Windows itself.
 
-## 1. Commands (verified 2026-07-10)
+## 1. Commands (verified 2026-07-14)
 
 ### Free / deterministic — safe to run anytime
 
@@ -39,7 +39,37 @@ leggie analyze Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf
 
 # With options
 leggie analyze <file> -o MyOutputs --lenses constitutional eu_gdpr --checkpoint budget.ckpt
+
+# Restrict scope to selected articles (big cost saver on large bills)
+leggie analyze <file> --articles "1-5,7,10" --lenses constitutional
 ```
+
+### Stage 0 preview (cheap LLM call — one overview pass, not per-article lens analysis)
+
+```powershell
+leggie preview Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf -o preview.json
+# Prints JSON: intro, summary, per-article {purpose, provisions, consequences}
+# Then use the article ids to scope a paid run: leggie analyze <file> --articles <ids>
+```
+
+### Deliberative pipeline (opt-in, requires a running/startable Reasoner backend)
+
+```powershell
+# Prereqs in .env: LEGGIE_REASONER__ENABLED=true, LEGGIE_REASONER__HOME=<Reasoner repo>,
+# LEGGIE_REASONER__API_KEY=<ADMIN_API_KEY>  (backend default http://localhost:8003)
+leggie analyze <file> --pipeline deliberative --perspective neutral
+
+# Auto-fall back to the deterministic 5-lens pipeline if Reasoner is unreachable
+leggie analyze <file> --pipeline deliberative --fallback
+```
+
+Two Reasoner stages (Stage 1 structured critique per perspective, Stage 2
+adversarial audit), producing a PROSE Markdown report — no Finding objects,
+no Skeptic/CoVe pass. Output: `Outputs/<stem>_deliberative.md` with a
+citation appendix listing all citations as UNVERIFIED. Pre-flight budget
+check estimates ~3× bill tokens against `LEGGIE_BUDGET__MAX_TOKENS_PER_RUN`
+and aborts before any Reasoner call if exceeded. If autostart spawned the
+backend, the handler shuts it down after the run (PR #7 leak fix).
 
 Valid lens names (exact): `constitutional`, `legal_coherence`, `economic`,
 `implementation`, `eu_gdpr`.
@@ -72,6 +102,7 @@ leggie eval -g tests/eval/gold_set_sample.json -r my_results.json
 | `<stem>_findings.json` | list of surviving findings: `id, type, severity, confidence, lens, issue, rule, conclusion, evidence[]` |
 | `<stem>_executive_summary.md` | rendered executive report |
 | `<stem>_article_by_article.md` | per-article report |
+| `<stem>_deliberative.md` | prose report (deliberative pipeline only): Περίληψη, Stage 1 critique, Stage 2 audit, unverified-citations appendix |
 
 `Outputs/` is **gitignored** — never commit run artifacts. Existing files
 there (e.g. `OE_ΣΧΝ-ΥΠΔΙΚ_findings.json`) are historical exhibits.
@@ -126,8 +157,9 @@ INFO filler. If you see either pattern → **leggie-debugging-playbook** rows 1/
 
 ## Provenance and maintenance
 
-Dated 2026-07-10. Re-verify:
-- Commands/flags: `leggie --help && leggie analyze --help && leggie eval --help && leggie parse --help`
+Dated 2026-07-14. Re-verify:
+- Commands/flags: `leggie --help && leggie analyze --help && leggie eval --help && leggie parse --help && leggie preview --help`
+- Deliberative report path/appendix: `grep -n "_deliberative.md\|citation_appendix" leggie/application/workflow/deliberative_flow.py`
 - Lens names: `grep -A7 "_DEFAULT_LENSES" leggie/application/agents/orchestrator.py`
 - Output naming: `grep -n "_findings.json\|_executive_summary\|_article_by_article" leggie/application/workflow/bill_analysis_flow.py`
 - Budget defaults: `python -c "from leggie.config.settings import get_settings; print(get_settings().budget)"`

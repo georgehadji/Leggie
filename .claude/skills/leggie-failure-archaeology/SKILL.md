@@ -12,7 +12,7 @@ description: >
 # Leggie Failure Archaeology
 
 Entry format: **symptom → root cause → evidence → status**. Statuses:
-SETTLED (fixed and proven), OPEN, PARTIAL. Snapshot date 2026-07-10; the
+SETTLED (fixed and proven), OPEN, PARTIAL. Snapshot date 2026-07-14; the
 working tree has uncommitted changes — re-verify statuses via Provenance.
 
 ## The chronicle
@@ -119,7 +119,7 @@ From `tasks/todo.md` §0 ("What changed vs the initial spec"):
 | Idea | Decision | Rationale (recorded) | Reopen condition |
 |---|---|---|---|
 | 25+ personas | 5 fixed lenses | diversity value collapses fast | eval evidence that lenses miss whole categories |
-| Verbalized Sampling 20 paths | 3–5 paths, currently UNWIRED (D4) | cost; diminishing returns past ~5 | recall delta measured on gold set |
+| Verbalized Sampling 20 paths | 3–5 paths (wired 2026-07-12, delta unmeasured) | cost; diminishing returns past ~5 | recall delta measured on gold set |
 | Multi-round debate | deferred post-MVP | adversarial critic gives most benefit cheaper | skeptic proven insufficient |
 | Knowledge graph | deferred to v3 | parse + retrieval covers 90% | retrieval wired and hitting limits |
 | Learned/telemetry router | REJECTED for static YAML | chicken/egg: needs eval data that doesn't exist | gold set large enough to train/eval routing |
@@ -127,19 +127,43 @@ From `tasks/todo.md` §0 ("What changed vs the initial spec"):
 | 10 report types | 2 (Exec Summary + Article-by-Article) | rest are formatting variants | user demand |
 | Eval last | moved FIRST (Phase 0) | can't prove "superior to experts" without gold set | — |
 
-## Open defect ledger (2026-07-10 snapshot)
+### 14. Deliberative-pipeline integration wave (PRs #3/#6, 2026-07-12→14) — LANDED, live-unproven
+- Symptom/goal: opt-in multi-model deliberative analysis via external Reasoner
+  backend (WU-1…WU-8 commits 37adcff…e2b4848) + Stage 0 bill preview (220ed45)
+  + `--articles` selection (19102f4).
+- Incident within it: **autostarted Reasoner backend process leaked** after
+  deliberative runs — fixed in PR #7 (af8d… commit af4e4a8): handler wraps
+  `flow.run()` in `try/finally` calling `server_manager.shutdown()`, cleanup
+  failure never shadows the real exception (the `ReasonerUnavailableError`
+  that `--fallback` depends on). Evidence: `tests/unit/application/
+  test_deliberative_resource_lifecycle.py` (263 lines).
+- Status: offline-proven only; no recorded live deliberative run.
+
+### 15. Phase 0 live smoke campaign (2026-07-11, commit 02c3ac6) — PARTIAL
+- Single-lens smoke COMPLETED after 5 iterations (v1 timeout → v4/v5 outputs):
+  fixes = parallel fan-out (D3/D6), schema constraint stripping, route fix
+  (orchestrator queried `lens_<name>` so the `lens_analysis` route was DEAD),
+  raised Skeptic/CoVe hard-coded token ceilings, critic → gemini-2.5-pro.
+- v5 numbers: 299 LLM calls, 4.0% parse failures, 9 refutes/9 supports/1
+  neutral skeptic verdicts, findings_per_article 0.14.
+- Full 5-lens run: three attempts ALL stopped (stale route; OpenRouter 402
+  credit wall — account, not budget guard; parse-failure degradation).
+  **Full-pipeline yield remains unproven.** Evidence: `docs/SMOKE_AUDIT.md`.
+
+## Open defect ledger (2026-07-14 snapshot)
 
 | ID | Defect | Status |
 |---|---|---|
-| D3 | sequential article loop (`bill_analysis_flow.py:157`) — parallel `analyze_document()` exists unused | OPEN |
-| D4 | Verbalized Sampling unwired (no flag, no caller) | OPEN |
-| D5 | ModelBasedReranker built, only CompositeReranker constructed | OPEN |
-| D6 | article-level failure isolation (TaskGroup cancels siblings) | check working tree |
-| D7 | citation resolution index empty → "unverified" only | OPEN |
-| D8 | cli_handlers container/ad-hoc duplication | check working tree |
+| D3 | sequential article loop | CLOSED — flow calls parallel `analyze_document()` (`bill_analysis_flow.py:264`) |
+| D4 | Verbalized Sampling unwired | CLOSED — `--verbalized-sampling` flag + `LEGGIE_ANALYSIS__USE_VERBALIZED_SAMPLING` wired into flow |
+| D5 | ModelBasedReranker unwired | PARTIAL — `LEGGIE_ANALYSIS__RERANKER=model` selector exists, but `configure_defaults()` binds no RerankerPort → silently composite |
+| D6 | article-level failure isolation | CLOSED with D3 (smoke v2 onward ran parallel fan-out) |
+| D7 | citation resolution index empty | PARTIAL — container loads `data/citation_index.json` into `GreekCitationParser` (`container.py:134`); index file is tiny (309B) — coverage, not wiring, is the gap |
+| D8 | cli_handlers container/ad-hoc duplication | CLOSED — no `_try_get_*` fallbacks remain in `cli_handlers.py` |
 | D9 | rate limiter | LIKELY FIXED (constructed in LLMAdapter → OpenRouterProvider) — verify consumption |
-| D10 | resume-from-stage | PARTIAL (store exists, flow doesn't use it) |
-| — | verification-layer work (LLM CoVe + skeptic adversarial gate) LANDED as cb7fde8/406f969 (367 tests) but NEVER validated by live smoke | THE current campaign — **leggie-remediation-campaign** |
+| D10 | resume-from-stage | PARTIAL (store exists, flow checkpoints only budget spend) |
+| — | verification layer (LLM CoVe + skeptic gate): single-lens smoke PASSED (v5, 2026-07-11); **full 5-lens smoke never completed** | THE current campaign — **leggie-remediation-campaign** |
+| — | deliberative pipeline: landed + leak-fixed, no live run recorded | OPEN validation |
 
 ## When NOT to use this skill
 

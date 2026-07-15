@@ -11,7 +11,8 @@ description: >
 
 # Leggie Config and Flags Catalog
 
-All facts verified against working-tree source 2026-07-10. Flags drift — run
+All facts verified against working-tree source 2026-07-14 (post PR #6/#7:
+deliberative pipeline, bill preview, article selection). Flags drift — run
 the Provenance commands before trusting this after any commit.
 
 ## 1. Settings (`leggie/config/settings.py`, pydantic-settings, `.env` file)
@@ -29,6 +30,7 @@ prefer that form for consistency.
 | llm | `openrouter_api_key` | `LEGGIE_LLM__OPENROUTER_API_KEY` | `""` (required for analyze) | PROD |
 | llm | `openrouter_base_url` | `LEGGIE_LLM__OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | PROD |
 | llm | `openrouter_default_model` | `LEGGIE_LLM__OPENROUTER_DEFAULT_MODEL` | `google/gemini-2.5-flash` | PROD (validated against offline allowlist at adapter init) |
+| llm | `max_concurrency` | `LEGGIE_LLM__MAX_CONCURRENCY` | `5` (range 1–100) — max concurrent article analyses; smoke runs used 10 | PROD |
 | cascade | `rules_path` | `LEGGIE_CASCADE__RULES_PATH` | `config/routes.yaml` | PROD |
 | cascade | `free_model` / `budget_model` / `premium_model` | `LEGGIE_CASCADE__*_MODEL` | gemini-2.5-flash-lite / -flash / -pro | PROD |
 | cascade | `confidence_floor` | `LEGGIE_CASCADE__CONFIDENCE_FLOOR` | `0.6` | PROD |
@@ -37,6 +39,16 @@ prefer that form for consistency.
 | budget | `max_cost_per_run` | `LEGGIE_BUDGET__MAX_COST_PER_RUN` | `5.0` USD — **the real governor** | PROD |
 | budget | `degrade_on_budget_warning` | `LEGGIE_BUDGET__DEGRADE_ON_BUDGET_WARNING` | `True` | PROD |
 | budget | `degrade_strategy` | `LEGGIE_BUDGET__DEGRADE_STRATEGY` | `fewer_paths` (or `fewer_lenses`, `cheaper_tier`) | PROD |
+| analysis | `use_verbalized_sampling` | `LEGGIE_ANALYSIS__USE_VERBALIZED_SAMPLING` | `False` (CLI `--verbalized-sampling` ORs with this) | EXPERIMENTAL |
+| analysis | `reranker` | `LEGGIE_ANALYSIS__RERANKER` | `composite` (or `model` — needs RerankerPort bound in container) | EXPERIMENTAL |
+| reasoner | `enabled` | `LEGGIE_REASONER__ENABLED` | `False` — master switch; `--pipeline deliberative` errors without it | PROD (opt-in) |
+| reasoner | `home` | `LEGGIE_REASONER__HOME` | `""` — path to Reasoner repo, required for autostart | PROD |
+| reasoner | `base_url` | `LEGGIE_REASONER__BASE_URL` | `http://localhost:8003` | PROD |
+| reasoner | `api_key` | `LEGGIE_REASONER__API_KEY` | `""` (Reasoner ADMIN_API_KEY, secret) | PROD |
+| reasoner | `autostart` | `LEGGIE_REASONER__AUTOSTART` | `True` — spawn `uvicorn asgi:app` from home if not healthy; handler shuts spawned process down after the run (PR #7 leak fix) | PROD |
+| reasoner | `startup_timeout` / `request_timeout` | `LEGGIE_REASONER__STARTUP_TIMEOUT` / `__REQUEST_TIMEOUT` | `60` / `300` seconds | PROD |
+| reasoner | `stage1_preset` / `stage2_preset` | `LEGGIE_REASONER__STAGE1_PRESET` / `__STAGE2_PRESET` | `multi-perspective-premium` / `subagent-premium` | PROD |
+| reasoner | `perspective` | `LEGGIE_REASONER__PERSPECTIVE` | `neutral` — default when CLI `--perspective` omitted | PROD |
 | retrieval | `embed_model` | `LEGGIE_RETRIEVAL__EMBED_MODEL` | `spyrosbriakos/greek_legal_bert_v2` | EXPERIMENTAL — retrieval largely unwired |
 | retrieval | `dense_top_k`/`sparse_top_k`/`hybrid_top_k`/`rrf_constant`/`max_concurrent_cellar`/`cellar_timeout_seconds` | `LEGGIE_RETRIEVAL__*` | 10/10/10/60/4/60 | EXPERIMENTAL |
 | ingest | `max_file_size_mb` | `LEGGIE_INGEST__MAX_FILE_SIZE_MB` | `50` | PROD |
@@ -85,11 +97,15 @@ once broke the whole pipeline (commit 39b42ef).
 |---|---|---|
 | `leggie --version` | — | prints `Leggie v0.1.0` |
 | `leggie parse <file>` | `--output/-o PATH` | deterministic, no LLM, free; prints JSON (UTF-8 forced on Windows console) |
-| `leggie analyze <file>` | `--output/-o DIR`, `--lenses/-l NAME...`, `--checkpoint/-c PATH` | full pipeline, costs money; lens names: `constitutional legal_coherence economic implementation eu_gdpr` |
+| `leggie preview <file>` | `--output/-o PATH` | Stage 0: LLM overview (intro, summary, per-article purpose/provisions/consequences) — cheap LLM call, then suggests `analyze --articles` |
+| `leggie analyze <file>` | `--output/-o DIR`, `--lenses/-l NAME...`, `--articles/-a SPEC`, `--verbalized-sampling`, `--checkpoint/-c PATH`, `--pipeline {deterministic,deliberative}`, `--perspective NAME`, `--fallback` | full pipeline, costs money; lens names: `constitutional legal_coherence economic implementation eu_gdpr`; `--articles '1-5,7,10'` restricts scope; `--pipeline deliberative` requires `LEGGIE_REASONER__ENABLED=true`; `--fallback` reverts to deterministic if Reasoner unreachable |
 | `leggie eval --gold-set/-g PATH` | `--results/-r PATH` | scores vs gold set; prints precision/recall/F1/RDI per bill |
 
-There is NO `--verbalized-sampling` flag and NO reranker selector as of
-2026-07-10 (REMEDIATION_PLAN Phase 5 items D4/D5 remain unwired).
+`--verbalized-sampling` and the reranker selector are now WIRED (D4/D5
+closed): the CLI flag ORs with `settings.analysis.use_verbalized_sampling`;
+`LEGGIE_ANALYSIS__RERANKER=model` selects the model reranker if a
+RerankerPort binding exists in the container (falls back to composite
+otherwise). Verified 2026-07-14 at `cli_handlers.py` AnalyzeBillHandler.
 
 Thread of a flag (worked example, `--lenses`): CLI arg
 (`cli/__init__.py:36`) → `AnalyzeBillCommand.lenses`
@@ -120,4 +136,6 @@ Thread of a flag (worked example, `--lenses`): CLI arg
 - Routes: `cat config/routes.yaml`
 - CLI flags: `python -m leggie.interfaces.cli --help` won't work directly; use `leggie --help`, `leggie analyze --help`
 - Lens names: `grep -A7 "_DEFAULT_LENSES" leggie/application/agents/orchestrator.py`
+- Reasoner settings: `grep -n "class ReasonerSettings" -A 30 leggie/config/settings.py`
+- Deliberative wiring: `grep -n "pipeline\|fallback\|ReasonerUnavailable" leggie/application/cqrs/handlers/cli_handlers.py`
 - Dead settings check: `grep -rn "retrieval\." leggie --include="*.py" | grep -v config`

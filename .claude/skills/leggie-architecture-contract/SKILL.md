@@ -6,7 +6,9 @@ description: >
   import-linter fails. Documents the load-bearing design decisions (Clean/
   Hexagonal layers, ports & adapters, event sourcing, CQRS, DI container,
   static router), the invariants that must hold, the file-by-file pattern map,
-  the data-flow walkthrough, and the known weak points as of 2026-07-10.
+  the data-flow walkthrough, and the known weak points as of 2026-07-14.
+  Covers both pipelines: deterministic 5-lens and the opt-in Reasoner-backed
+  deliberative flow, plus the Stage 0 preview.
 ---
 
 # Leggie Architecture Contract
@@ -33,7 +35,7 @@ Dependencies point inward only. Enforced by import-linter
 (`pyproject.toml [tool.importlinter]`, layers contract). Check with:
 `lint-imports` (needs `pip install -e ".[lint]"`).
 
-## 2. The ports (verified 2026-07-10 — 10 ports, README says 7: README is stale)
+## 2. The ports (verified 2026-07-14 — 11 ports, README says 7: README is stale)
 
 | Port | File | Implemented by |
 |---|---|---|
@@ -43,7 +45,8 @@ Dependencies point inward only. Enforced by import-linter
 | `IngestPort` | `ports/ingest.py` | `IngestAdapter` (`infrastructure/ingest_adapter.py`) |
 | `LLMPort` | `ports/llm.py` | `LLMAdapter` (`infrastructure/llm/__init__.py`) + decorators |
 | `ParsePort` | `ports/parse.py` | `ParseAdapter` (`infrastructure/parse_adapter.py`) |
-| `RerankerPort` | `ports/reranker.py` | model-based reranker (built, wiring optional — D5) |
+| `ReasonerPort` | `ports/reasoner.py` | `ReasonerAdapter` (`infrastructure/reasoner/adapter.py`) — HTTP client to the external Reasoner backend for the deliberative pipeline; lifecycle via `ReasonerServerManager` (`infrastructure/reasoner/server_manager.py`) |
+| `RerankerPort` | `ports/reranker.py` | selector wired: `LEGGIE_ANALYSIS__RERANKER=model` uses it IF a container binding exists — but `configure_defaults()` binds NO RerankerPort adapter as of 2026-07-14, so `model` silently behaves as composite (D5 partially closed) |
 | `RetrievalPort` | `ports/retrieval.py` | retrieval (largely future work) |
 | `RouterPort` | `ports/router.py` | `StaticRouter` (`infrastructure/router/`) |
 | `StatePort` | `ports/state.py` | persistence |
@@ -55,7 +58,7 @@ bill file (PDF/DOCX/HTML/TXT)
  → IngestAdapter.ingest()                      # infrastructure/ingest_adapter.py
  → ParseAdapter.parse() → Document(Article...) # Greek Άρθρο tree
  → BillAnalysisFlow.run()                      # application/workflow/bill_analysis_flow.py
-    → Orchestrator.analyze_article() per article   # SEQUENTIAL loop, flow line ~157 (D3 open)
+    → Orchestrator.analyze_document()              # PARALLEL article fan-out (D3 closed 2026-07-11): asyncio.gather + semaphore, return_exceptions=True isolates per-article failures (D6 closed)
        → 5 lenses via asyncio.TaskGroup per article # agents/orchestrator.py, _DEFAULT_LENSES
     → BlackboardAggregator.aggregate()         # default path (use_blackboard=True)
        → dedup → CompositeReranker → CalibratedSkeptic → CoVeVerifier
@@ -72,6 +75,26 @@ CLI path: `interfaces/cli/__init__.py` → `Mediator` → handlers in
 `application/cqrs/handlers/cli_handlers.py`, with a single DI composition root
 `infrastructure/container.py` (`Container.configure_defaults()`), built once in
 `_build_mediator()`.
+
+### Sibling flows (added post-2026-07-10; both dispatch through the same CQRS handlers)
+
+- **Stage 0 preview** (`leggie preview`): `PreviewBillHandler` →
+  `BillAnalysisFlow.preview()` → one LLM overview call → JSON (intro, summary,
+  per-article purpose/provisions/consequences). Feeds `analyze --articles`.
+- **DeliberativeFlow** (`application/workflow/deliberative_flow.py`,
+  `analyze --pipeline deliberative`): a SIBLING to BillAnalysisFlow, not a
+  replacement. Two Reasoner stages (Prompt01 structured critique with party
+  perspective, Prompt02 adversarial audit) → prose Markdown report
+  (`Outputs/<stem>_deliberative.md`). Deliberately SKIPS Finding mapping,
+  Skeptic, and CoVe (Decision B); citations appended as unverified via
+  `CitationParserPort`. Depends only on ports plus a local `ServerLifecycle`
+  Protocol so the application layer never imports infrastructure; the handler
+  injects `ReasonerServerManager` (health-probe `GET /openapi.json`, verifies
+  `/api/agent/run/sync` exists, autostarts `uvicorn asgi:app` from
+  `LEGGIE_REASONER__HOME`, and is shut down in a `finally` after the run —
+  PR #7 fixed the leaked autostarted process). `ReasonerUnavailableError`
+  propagates uncaught out of the flow; the HANDLER decides abort-vs-fallback
+  (`--fallback` → deterministic pipeline).
 
 ## 4. Invariants (violating any of these is a class-A change — see leggie-change-control)
 
@@ -113,16 +136,18 @@ CLI path: `interfaces/cli/__init__.py` → `Mediator` → handlers in
 | Factory | ingest per format |
 | Interpreter | `GreekCitationParser` regexes (ΦΕΚ/CELEX/ECLI/URL/law-ref) |
 
-## 6. Known weak points (stated plainly; status 2026-07-10)
+## 6. Known weak points (stated plainly; status 2026-07-14)
 
 | ID | Weakness | Status |
 |---|---|---|
-| D3 | Article loop is SEQUENTIAL (`bill_analysis_flow.py:157`); parallel `Orchestrator.analyze_document()` exists but is never called by the flow | OPEN |
+| D3 | Article loop was sequential; flow now calls parallel `analyze_document()` (`bill_analysis_flow.py:264`); concurrency via `LEGGIE_LLM__MAX_CONCURRENCY` | CLOSED 2026-07-11 |
 | D7 | Citation `resolution_index` empty → citations only ever "unverified" (fail-closed, correct but toothless) — `infrastructure/citation/__init__.py` `resolve()` | OPEN |
 | D8 | `cli_handlers.py` retains legacy `_try_get_*` fallbacks beside the container | verify in source |
 | D9 | `RateLimiter(max_rate=5.0)` now constructed inside `LLMAdapter.__init__` and passed to `OpenRouterProvider` — appears wired; confirm consumption in `adapters/openrouter.py` | LIKELY FIXED, verify |
 | D10 | Resume-from-stage: only budget spend is checkpointed by the flow; `infrastructure/persistence/checkpoint_store.py` exists — check whether flow uses it | PARTIAL, verify |
-| — | README claims 7 ports / 199 tests; source has 10 ports / 367 tests | DOC DRIFT |
+| — | README claims 7 ports / 199 tests; source has 11 ports / 531 tests (2026-07-15) | DOC DRIFT |
+| — | Deliberative report skips Skeptic/CoVe by design — its claims are UNVERIFIED prose; do not treat `<stem>_deliberative.md` content as findings-grade evidence | BY DESIGN |
+| — | `LEGGIE_ANALYSIS__RERANKER=model` has no default RerankerPort binding in `configure_defaults()` — setting it silently falls back to composite | OPEN |
 
 ## 7. How to add things
 
@@ -149,6 +174,8 @@ emit `STAGE_COMPLETED` events, keep aggregation logic in a service class.
 
 - Ports: `grep -rn "class.*Port" leggie/application/ports/*.py`
 - Lens names: `grep -n "_DEFAULT_LENSES" -A7 leggie/application/agents/orchestrator.py`
-- Sequential loop (D3): `grep -n "for article in self._doc.articles" leggie/application/workflow/bill_analysis_flow.py`
+- Parallel fan-out (D3): `grep -n "analyze_document" leggie/application/workflow/bill_analysis_flow.py` (hit = parallel; a `for article in` loop = regression)
 - Event types: `grep -n "class EventType" -A16 leggie/domain/models/__init__.py`
 - Layer contract: `lint-imports` or `grep -A10 importlinter pyproject.toml`
+- Reasoner wiring: `grep -n "ReasonerPort\|ServerLifecycle" leggie/application/ports/reasoner.py leggie/application/workflow/deliberative_flow.py`
+- Reranker binding gap: `grep -n "Reranker" leggie/infrastructure/container.py` (empty = still unbound)
