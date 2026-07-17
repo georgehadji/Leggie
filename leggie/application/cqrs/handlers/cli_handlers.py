@@ -25,7 +25,7 @@ from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.reranker import RerankerPort
 from leggie.application.ports.router import RouterPort
-from leggie.application.services.cove_verifier import CoVeVerifier
+from leggie.domain.models import EventType
 
 if TYPE_CHECKING:
     from leggie.infrastructure.container import Container
@@ -58,14 +58,11 @@ def _resolve_router_from_container(container: Container) -> RouterPort | None:
     return None
 
 
-def _resolve_cove_from_container(container: Container) -> CoVeVerifier:
-    """Resolve a CoVeVerifier wired with LLM + router + citation parser."""
-    llm = _resolve_llm_from_container(container)
-    router = _resolve_router_from_container(container)
-    parser = None
+def _resolve_citation_parser_from_container(container: Container) -> CitationParserPort | None:
+    """Resolve CitationParserPort from *container*, for CoVe's citation gate."""
     if container.has_binding(CitationParserPort):
-        parser = container.get(CitationParserPort) or None
-    return CoVeVerifier(citation_parser=parser, llm=llm, router=router)
+        return container.get(CitationParserPort) or None
+    return None
 
 
 # ── Handler classes ───────────────────────────────────────────────────
@@ -131,7 +128,7 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
 
             llm = _resolve_llm_from_container(self._container)
             router = _resolve_router_from_container(self._container)
-            cove = _resolve_cove_from_container(self._container)
+            citation_parser = _resolve_citation_parser_from_container(self._container)
             settings = get_settings()
             reranker_port = None
             if settings.analysis.reranker == "model" and self._container.has_binding(RerankerPort):
@@ -146,7 +143,7 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             flow = BillAnalysisFlow(
                 llm=llm,
                 router=router,
-                cove=cove,
+                citation_parser=citation_parser,
                 checkpoint_store=checkpoint_store,
                 use_verbalized_sampling=command.use_verbalized_sampling or settings.analysis.use_verbalized_sampling,
                 reranker_name=settings.analysis.reranker,
@@ -159,7 +156,10 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 articles=command.articles,
             )
 
+            degraded = sum(1 for e in flow.events if e.event_type == EventType.DEGRADED)
             summary = f"Analysis complete: {len(findings)} finding(s), {len(reports)} report(s)"
+            if degraded:
+                summary += f", {degraded} degradation event(s) (see log for skeptic/cove failures)"
             for f in findings:
                 summary += f"\n  - [{f.finding_type.value}:{f.severity.value}] {f.irac.issue[:80]}"
 
@@ -299,8 +299,8 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
                 gold_set.get_labels(bill_id)
                 bill_path = _find_bill_file(bill_id, Path(command.gold_set_path).parent)
                 if bill_path and llm:
-                    cove = _resolve_cove_from_container(self._container)
-                    flow = BillAnalysisFlow(llm=llm, router=router, cove=cove)
+                    citation_parser = _resolve_citation_parser_from_container(self._container)
+                    flow = BillAnalysisFlow(llm=llm, router=router, citation_parser=citation_parser)
                     findings, _ = await flow.run(bill_path)
                 else:
                     findings = []

@@ -261,6 +261,17 @@ class LLMAdapter(LLMPort):
             pass
 
         # ── All attempts exhausted -> degrade ─────────────────────
+        # D11 evidence: capture what the ladder actually received. usage only
+        # ever carries prompt/completion_tokens (adapters/openrouter.py:96-99
+        # discards completion_tokens_details, so reasoning-token consumption
+        # is not visible here — see docs/REMEDIATION_PLAN_V3.md Phase B).
+        if response is not None:
+            logger.debug(
+                "structured_response_exhausted: schema=%s finish_reason=%s "
+                "usage=%s content_head=%r",
+                schema.__name__, response.finish_reason, response.usage,
+                response.content[:200],
+            )
         raise LLMError(
             f"Failed to parse structured response after all retries "
             f"for schema {schema.__name__}"

@@ -114,6 +114,21 @@ consumer. Behaviourally inert today (the adapter's own limiter is active), so
 it is a cleanup, not a fix — but it is a live trap for the next person who
 tunes `max_rate` in the container and sees no effect.
 
+### Addendum to D11 (found during Phase A, not itself a defect to fix here)
+
+`adapters/openrouter.py:96-99` extracts only `prompt_tokens` and
+`completion_tokens` from OpenRouter's `usage` object into `LLMResponse.usage`;
+`completion_tokens_details.reasoning_tokens` is discarded before it ever
+reaches application code. **This is why D11 was never visible from a
+production log** — even with A4's new debug line (`llm/__init__.py`, logged on
+ladder exhaustion), `response.usage` will never show the reasoning-token
+breakdown Phase B needs. Phase B's discriminating experiment therefore MUST
+be the standalone script hitting OpenRouter directly (§3), not something
+inferred from `smoke.log`. If Phase B confirms D11, capturing
+`reasoning_tokens` in the adapter's `usage` dict going forward is worth a
+follow-up (`LLMResponse.usage` is `dict[str, int]`, so this is additive, not a
+port-signature change) — out of scope for this plan's Phase A/B/C.
+
 ### Gap (not a defect) — 4 of 5 lenses have never been smoked
 
 `constitutional` is the only lens with live evidence. `economic`, `eu_gdpr`,
@@ -126,6 +141,12 @@ full run.**
 
 ## 2. Phase A — Offline: make the ceiling reachable and the failure visible (FREE)
 
+**Status: COMPLETE (2026-07-17).** All four items landed. Evidence: 541
+passed (was 532; +9 targeted tests), mypy/ruff/lint-imports clean. See the D11
+addendum above for a real gap A4 surfaced (adapter drops reasoning-token
+detail) — noted, not fixed here; does not block Phase B, which bypasses the
+adapter by design.
+
 **A1 (D12).** Honour `route.max_tokens` at both call sites.
 - `skeptic.py`: `_select_model()` → return the `RouteResult`, not `route.model`;
   use `route.max_tokens` in the `LLMRequest`. Keep the current 2048 as the
@@ -136,11 +157,22 @@ full run.**
 - No port change, no new method — `RouteResult.max_tokens` already exists.
 
 **A2 (D13).** Count degradation into the run, not just the log.
-- Skeptic: on ladder exhaustion, emit the existing degradation callback
-  (`Event`) rather than only `log.warning`. The flow already threads
-  `on_degradation` (`bill_analysis_flow.py:86-87`).
-- Surface `adversarial_gate_failures` / `adversarial_gate_calls` in the run's
-  event record so the audit doc can cite a number without a log grep.
+- Skeptic and CoVe both gained `on_degradation` constructors, threaded from
+  `BillAnalysisFlow` (which already had the pattern for lenses/orchestrator —
+  skeptic/cove were the gap). On ladder exhaustion / `cove_llm_error`, both now
+  emit `Event(EventType.DEGRADED, data={"gate"|"stage": ..., "finding_id": ...,
+  "error": ...})` through the same callback that already lands events in the
+  checkpoint JSON.
+- `BillAnalysisFlow.events` (new property) and the CLI summary
+  (`cli_handlers.py`) both surface a `DEGRADED` count so the audit doc can cite
+  a number without a log grep — implemented as a count, not the two named
+  fields originally sketched here; the count is what the §6/§8 gate tables
+  actually need.
+- Fixing the wiring gap required giving `BillAnalysisFlow` a `citation_parser`
+  param so it constructs `CoVeVerifier` internally (with `on_degradation`)
+  instead of `cli_handlers.py` pre-building a `CoVeVerifier` with no callback
+  and handing it in — `_resolve_cove_from_container` is gone, replaced by
+  `_resolve_citation_parser_from_container`.
 
 **A3 (D14).** Delete the dead `rate_limiter` registration, or inject it into
 `LLMAdapter`. Prefer **delete** (YAGNI; the adapter's own limiter works).

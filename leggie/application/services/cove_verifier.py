@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TypeVar
 
@@ -29,8 +30,8 @@ from pydantic import BaseModel
 
 from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.llm import LLMPort, LLMRequest
-from leggie.application.ports.router import RouterPort
-from leggie.domain.models import Citation, Confidence, Finding, IRAC
+from leggie.application.ports.router import RouteResult, RouterPort
+from leggie.domain.models import Citation, Confidence, Event, EventType, Finding, IRAC
 from leggie.domain.models.structured_output import (
     CoVeAnswerResponse,
     CoVeCrossCheckResponse,
@@ -44,6 +45,10 @@ _T = TypeVar("_T", bound=BaseModel)
 _ARTICLE_RE = re.compile(r"Άρθρο\s+(\d+)", re.IGNORECASE)
 _VERIFY_TASK = "evidence_verification"
 _MAX_QUESTIONS = 3
+# Per-step ceilings, used only when no router/route is configured (fallback).
+_DEFAULT_QUESTIONS_MAX_TOKENS = 2048
+_DEFAULT_ANSWER_MAX_TOKENS = 1024
+_DEFAULT_CROSSCHECK_MAX_TOKENS = 2048
 
 
 def article_number(text: str) -> str:
@@ -94,12 +99,14 @@ class CoVeVerifier:
         router: RouterPort | None = None,
         model: str = "",
         max_questions: int = _MAX_QUESTIONS,
+        on_degradation: Callable[[Event], None] | None = None,
     ) -> None:
         self._citation_parser = citation_parser
         self._llm = llm
         self._router = router
         self._model = model
         self._max_questions = max_questions
+        self._on_degradation = on_degradation
 
     # ── F3 anti-hallucination gate ──────────────────────────────────────
     def validate_quote(self, quote: str, source_text: str) -> bool:
@@ -220,20 +227,22 @@ class CoVeVerifier:
                     reason=f"Citation not found in resolution index: {citation_note}",
                 )
 
-        model = await self._select_model()
+        route = await self._select_route()
+        model = route.model if route is not None else (self._model or None)
 
         try:
-            questions = await self._plan_llm_questions(finding, model)
+            questions = await self._plan_llm_questions(finding, model, route)
             if not questions:
                 # Nothing to check → pass through unchanged.
                 return CoVeResult(
                     finding=finding, all_verified=True, consistency="consistent",
                     dropped=False, reason="No verifiable factual claims.",
                 )
-            answered = await self._answer_factored(questions, source_text, model)
-            return await self._cross_check(finding, answered, source_text, model, citation_note)
+            answered = await self._answer_factored(questions, source_text, model, route)
+            return await self._cross_check(finding, answered, source_text, model, citation_note, route)
         except Exception as e:  # noqa: BLE001 — verification must never crash the run
             log.warning("cove_llm_error: finding=%s error=%s", finding.id, str(e)[:200])
+            self._emit_degradation(finding, e)
             # Fail open: keep the finding, mark unverified.
             return CoVeResult(
                 finding=finding, all_verified=False, consistency="unknown",
@@ -266,7 +275,7 @@ class CoVeVerifier:
         return False, "; ".join(notes)
 
     async def _plan_llm_questions(
-        self, finding: Finding, model: str | None
+        self, finding: Finding, model: str | None, route: RouteResult | None
     ) -> list[VerificationQuestion]:
         """Phase 2 — plan open-ended verification questions from the baseline."""
         system = (
@@ -284,7 +293,8 @@ class CoVeVerifier:
             f"- Συμπέρασμα: {finding.irac.conclusion}\n\n"
             f"Διατύπωσε τις ανοιχτές ερωτήσεις επαλήθευσης."
         )
-        obj = await self._structured(CoVeQuestionsResponse, prompt, system, model, max_tokens=2048)
+        max_tokens = route.max_tokens if route is not None else _DEFAULT_QUESTIONS_MAX_TOKENS
+        obj = await self._structured(CoVeQuestionsResponse, prompt, system, model, max_tokens=max_tokens)
         if obj is None:
             return []
         return [
@@ -294,7 +304,11 @@ class CoVeVerifier:
         ]
 
     async def _answer_factored(
-        self, questions: list[VerificationQuestion], source_text: str, model: str | None
+        self,
+        questions: list[VerificationQuestion],
+        source_text: str,
+        model: str | None,
+        route: RouteResult | None,
     ) -> list[VerificationQuestion]:
         """Phase 3 — answer each question independently, WITHOUT the baseline.
 
@@ -311,10 +325,17 @@ class CoVeVerifier:
             if source_text else
             "ΚΕΙΜΕΝΟ-ΠΗΓΗ: (δεν δόθηκε· απάντησε μόνο αν το γνωρίζεις με βεβαιότητα)\n\n"
         )
+        # The route's ceiling applies, but never below the per-step floor: a
+        # single factored answer is short and a route configured lower than
+        # 1024 for a different call shape shouldn't starve this one.
+        max_tokens = (
+            max(route.max_tokens, _DEFAULT_ANSWER_MAX_TOKENS)
+            if route is not None else _DEFAULT_ANSWER_MAX_TOKENS
+        )
         for q in questions:
             prompt = f"{src_block}ΕΡΩΤΗΣΗ: {q.question}\n\nΑπάντησε πραγματολογικά."
             obj = await self._structured(
-                CoVeAnswerResponse, prompt, system, model, max_tokens=1024
+                CoVeAnswerResponse, prompt, system, model, max_tokens=max_tokens
             )
             if obj is not None:
                 q.answer = obj.answer
@@ -329,6 +350,7 @@ class CoVeVerifier:
         source_text: str,
         model: str | None,
         citation_note: str = "",
+        route: RouteResult | None = None,
     ) -> CoVeResult:
         """Phase 4 — compare factored answers to the baseline; revise or drop."""
         qa_block = "\n".join(
@@ -355,8 +377,9 @@ class CoVeVerifier:
             f"ΑΠΑΝΤΗΣΕΙΣ ΕΠΑΛΗΘΕΥΣΗΣ:\n{qa_block}\n\n"
             f"Διασταύρωσε και αποφάσισε."
         )
+        max_tokens = route.max_tokens if route is not None else _DEFAULT_CROSSCHECK_MAX_TOKENS
         obj = await self._structured(
-            CoVeCrossCheckResponse, prompt, system, model, max_tokens=2048
+            CoVeCrossCheckResponse, prompt, system, model, max_tokens=max_tokens
         )
         verified_count = sum(1 for q in questions if q.verified)
         failed_count = len(questions) - verified_count
@@ -418,15 +441,36 @@ class CoVeVerifier:
                 return ev.text_excerpt
         return ""
 
-    async def _select_model(self) -> str | None:
-        """Pick the verification model via the router's evidence route, else default."""
+    async def _select_route(self) -> RouteResult | None:
+        """Pick the verification route (model + max_tokens), else fall back to defaults."""
         if self._router is not None:
             try:
-                route = await self._router.route(_VERIFY_TASK)
-                return route.model
+                return await self._router.route(_VERIFY_TASK)
             except Exception:  # noqa: BLE001
                 log.warning("cove_route_failed: using default model")
-        return self._model or None
+        return None
+
+    def _emit_degradation(self, finding: Finding, exc: Exception) -> None:
+        """Emit a degradation event when the LLM CoVe loop fails open (D13).
+
+        Without this, a CoVe pass that errors on every call is silently
+        indistinguishable from a pass that ran cleanly and found nothing to
+        verify — the run reports success either way.
+        """
+        if self._on_degradation is None:
+            return
+        try:
+            self._on_degradation(Event(
+                event_type=EventType.DEGRADED,
+                aggregate_id=f"cove:finding:{finding.id}",
+                data={
+                    "stage": "cove",
+                    "finding_id": str(finding.id),
+                    "error": str(exc)[:500],
+                },
+            ))
+        except Exception:
+            log.warning("on_degradation callback failed", exc_info=True)
 
     async def _structured(
         self, schema: type[_T], prompt: str, system: str, model: str | None, max_tokens: int

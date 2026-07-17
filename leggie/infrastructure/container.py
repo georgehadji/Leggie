@@ -151,9 +151,9 @@ class Container:
         self.register(IngestPort, lambda: IngestAdapter())
         self.register(ParsePort, lambda: ParseAdapter())
 
-        # Rate limiter for LLM calls
-        from leggie.infrastructure.rate_limiter import RateLimiter
-        self.register_instance("rate_limiter", RateLimiter(max_rate=5.0))
+        # No "rate_limiter" binding (D14): nothing ever resolved it —
+        # LLMAdapter constructs its own RateLimiter(max_rate=5.0) directly
+        # (infrastructure/llm/__init__.py). Tuning max_rate here had no effect.
 
         # No CheckpointStore binding (D10): its path depends on the run's output
         # directory, which the container does not know. BillAnalysisFlow.run()
