@@ -249,6 +249,13 @@ A standalone script (scratchpad, not committed) that sends the *exact*
 
 ## 4. Phase C — Fix D11, one variable, measured against a real control (~$0.10)
 
+**Status: PARTIAL (2026-07-17).** Option 1 applied (`b16f17e`) and validated
+against the subset2 control with `Outputs/subset3/` (actual spend $0.0951,
+close to forecast). **D11's specific mechanism is confirmed fixed. The Phase
+C exit gate as a whole does not pass** — a second, distinct failure mode
+survives that is NOT truncation. See results table and D15 below; do not
+proceed to Phase D/E until D15 is root-caused.
+
 **Control already exists:** `subset2.log` + `Outputs/subset2/` — articles 1-10,
 constitutional, current config. That is the before-column; do not re-measure it.
 
@@ -272,25 +279,70 @@ python .claude/skills/leggie-diagnostics-and-tooling/scripts/smoke_log_stats.py 
 python .claude/skills/leggie-diagnostics-and-tooling/scripts/findings_stats.py "Outputs/subset3/OE_ΣΧΝ-ΥΠΔΙΚ_findings.json" --articles 10
 ```
 
-**Exit gate (vs. the subset2 control):**
+**Exit gate (vs. the subset2 control) — actual subset3 results:**
 
-| Metric | subset2 (control) | Required |
-|---|---|---|
-| `skeptic_llm_error` | 5 (of 8 calls, 62.5%) | ≤ 1 (≤ 10% of calls) |
-| `skeptic_verdict` lines | 3, all `supports` | ≥ 6, **≥1 non-`supports`** |
-| `Failed to parse structured response` | 13 / 90 = 14.4% | < 5% of calls |
-| `Response truncated` | 5 (all @2048) | ≤ 1 |
-| findings | 7 (0.70/article) | ≥ 7 — the fix must not *cost* yield |
+| Metric | subset2 (control) | Required | subset3 (actual) | Gate |
+|---|---|---|---|---|
+| `skeptic_llm_error` | 5 / 8 = 62.5% | ≤ 10% of calls | 2 / 6 = **33.3%** | FAIL (big improvement, not enough) |
+| `skeptic_verdict` lines | 3, all `supports` | ≥ 6, **≥1 non-`supports`** | 4, all `supports` | FAIL |
+| `Failed to parse structured response` | 13 / 90 = 14.4% | < 5% of calls | 10 / 83 = **12.0%** | FAIL |
+| `Response truncated` | 5 (all @2048) | ≤ 1 | **0** | **PASS** |
+| findings | 7 (0.70/article) | ≥ 7 | 6 (0.60/article) | FAIL (marginal) |
 
 The verdict-diversity row matters more than it looks: a critic that only ever
 says `supports` is indistinguishable from a critic that is off. v5's
 9-refutes/9-supports split is the shape of a working gate.
 
+**Read this honestly, not as a failed fix.** `Response truncated` going to
+exactly zero is not noise — it's D11's predicted signature disappearing
+completely, confirming the mechanism and the fix. But `Failed to parse
+structured response` barely moved (14.4% → 12.0%) while truncation-caused
+failures vanished, which means **most of subset3's remaining parse failures
+were never truncation to begin with** — a second mechanism was hiding behind
+D11's larger one. That's D15.
+
+### D15 — A second structured-output failure mode, independent of truncation — **HIGH, OPEN**
+
+**Layer:** unknown — needs raw content, which this campaign does not yet have.
+
+**Evidence:** `subset3.log` shows 10 `Failed to parse structured response`
+(2 skeptic, 4 CoVe across `_plan_llm_questions`/`_cross_check`, 2
+`lens_degraded` on the `lens_analysis` route) with **zero** accompanying
+`Response truncated` lines — so `finish_reason` was not `length` for any of
+them. The retry ladder's truncation branch (attempt 3) never engaged; these
+exhausted through attempts 1/2/4 (json_schema → json_object → repair) on
+content that was not cut short by the token ceiling.
+
+A follow-up 3-article DEBUG-level probe (`subset4_debug.log`) to capture the
+new A4 `structured_response_exhausted` log line was **inconclusive by
+accident, not by evidence**: those 3 articles produced zero lens findings
+(0 findings, 0 reports — likely TOC/preamble entries per the known
+duplicate-id pattern from `docs/SMOKE_AUDIT.md`), so skeptic/CoVe never ran
+and the line was never exercised. This is a wasted-run lesson, not a result —
+**do not conclude anything from subset4_debug.log.**
+
+**What's ruled out:** it isn't the `_IRAC_ALIASES` ladder (`_normalize_findings`
+in `structured_parser.py` only touches a `data["findings"]` list, which
+skeptic/CoVe schemas — flat objects like `SkepticVerdictResponse` — never
+have), and A4's own debug line (`llm/__init__.py`, right before the final
+raise) has never actually fired in a captured log yet.
+
+**Next action (before Phase D or a full run):** a small, deliberately-targeted
+paid probe — 2-3 articles **known to produce findings** (not 1-3; reuse
+subset3's finding-bearing article numbers, check `Outputs/subset3/..._findings.json`
+`irac.issue` article refs), at `LEGGIE_LOG_LEVEL=DEBUG`, **piped through a
+filter for `leggie\.` logger lines only** (plain DEBUG dumps ~1M lines of
+httpx/httpcore wire noise per 3 articles — `subset4_debug.log` proved this
+the expensive way). Read the `structured_response_exhausted` line's
+`content_head` and `usage` for a real failure. One variable: log visibility,
+not config.
+
 ---
 
 ## 5. Phase D — Per-lens attribution: smoke the 4 unproven lenses (~$0.20)
 
-Only after Phase C passes. Articles 1-10, one lens per run, one log each:
+**Blocked on D15.** Only after Phase C's exit gate fully passes (not just
+the truncation row). Articles 1-10, one lens per run, one log each:
 
 ```powershell
 foreach ($lens in "economic","eu_gdpr","implementation","legal_coherence") {
