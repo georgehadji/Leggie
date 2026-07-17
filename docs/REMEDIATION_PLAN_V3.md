@@ -195,6 +195,28 @@ All fakes — nothing reaches a provider (`tests/conftest.py` stays intact).
 
 ## 3. Phase B — The discriminating experiment for D11 (~$0.02)
 
+**Status: COMPLETE (2026-07-17). D11 CONFIRMED — every prediction held.**
+
+Ran `phase_b_reasoning_probe.py` (scratchpad, not committed) against finding
+`973a8394-5df5-42bf-bd90-bfd3c189a413` from `Outputs/subset2/..._findings.json`
+(one of subset2's 3 unanimous-`supports` verdicts), talking to OpenRouter
+directly with the exact `LLMAdversarialGate` system+prompt:
+
+| | `max_tokens=2048` (today) | `max_tokens=8192` (proposed) |
+|---|---|---|
+| `finish_reason` | `length` | `stop` |
+| `completion_tokens` | 2032 | 2246 |
+| `reasoning_tokens` | **1962** (97% of budget) | 1857 |
+| content | truncated, unparseable | 1012 chars, valid JSON |
+| cost | $0.0207 | $0.0229 |
+
+Gemini 2.5 Pro spends ~1,900 reasoning tokens on this prompt **regardless of
+the ceiling** — non-negotiable overhead before any JSON is emitted. At 2048
+that leaves ~86 tokens for content (guaranteed truncation); at 8192 it leaves
+~6,300 (comfortable). Actual spend: $0.044 (forecast was $0.02 — Pro
+reasoning costs more per call than a flash-based estimate suggested; still
+trivial). Falsifier did not trigger — proceed to Phase C.
+
 **Do not skip this. It is the cheapest step in the campaign and it decides
 whether Phase C is a fix or a guess.**
 
