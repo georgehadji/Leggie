@@ -147,6 +147,40 @@ class TestOtherHandlers:
         assert result.success is True
         assert "Analysis complete" in result.data
 
+    @pytest.mark.asyncio
+    async def test_analyze_handler_writes_checkpoint_under_output_dir(
+        self, tmp_path, monkeypatch
+    ):
+        """The checkpoint follows -o/--output and never lands in the caller's cwd.
+
+        Regression: the container bound CheckpointStore to the relative path
+        "Outputs/leggie_checkpoint.json", so every run — including this suite —
+        wrote a checkpoint into <cwd>/Outputs/ regardless of the requested
+        output directory.
+        """
+        from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
+        from leggie.application.cqrs.handlers.cli_handlers import AnalyzeBillHandler
+        from leggie.infrastructure.container import Container
+
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        monkeypatch.chdir(cwd)
+
+        bill = tmp_path / "bill.txt"
+        bill.write_text(SAMPLE_BILL, encoding="utf-8")
+        out_dir = tmp_path / "out"
+
+        container = Container()
+        container.configure_defaults()
+        handler = AnalyzeBillHandler(container=container)
+        result = await handler.handle(
+            AnalyzeBillCommand(file_path=str(bill), output_path=str(out_dir))
+        )
+
+        assert result.success is True
+        assert (out_dir / "leggie_checkpoint.json").exists()
+        assert not (cwd / "Outputs").exists()
+
     def test_parse_command(self):
         parser = build_parser()
         args = parser.parse_args(["parse", "test.txt"])

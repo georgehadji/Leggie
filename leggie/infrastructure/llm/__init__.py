@@ -180,6 +180,12 @@ class LLMAdapter(LLMPort):
         # never references an unbound name when both json_schema and
         # json_object modes fail before assigning it.
         response: LLMResponse | None = None
+        # D15/D16: response can stay None through every attempt when the
+        # failure is at the HTTP-envelope level (openrouter.py's json.JSONDecodeError
+        # / empty-choices guards) rather than the LLM's structured-output
+        # content -- track the last exception too, so the final block always
+        # has *something* to log instead of silently gating on `response`.
+        last_exc: Exception | None = None
 
         # ── Attempt 1: json_schema strict mode ────────────────────
         try:
@@ -195,6 +201,7 @@ class LLMAdapter(LLMPort):
             response = await self.generate(req)
             return parser.parse(response.content, schema), response
         except (LLMError, ValueError) as exc:
+            last_exc = exc
             if isinstance(exc, LLMError) and ("400" in str(exc) or "Bad Request" in str(exc)):
                 logger.warning(
                     "json_schema rejected, falling back to json_object: %s", exc
@@ -205,8 +212,8 @@ class LLMAdapter(LLMPort):
             req = replace(request, response_format={"type": "json_object"})
             response = await self.generate(req)
             return parser.parse(response.content, schema), response
-        except (LLMError, ValueError):
-            pass
+        except (LLMError, ValueError) as exc:
+            last_exc = exc
 
         # ── Attempt 3: truncation retry if finish_reason=length ───
         if response and response.finish_reason == "length":
@@ -224,8 +231,8 @@ class LLMAdapter(LLMPort):
             try:
                 response = await self.generate(retry_req)
                 return parser.parse(response.content, schema), response
-            except (LLMError, ValueError):
-                pass
+            except (LLMError, ValueError) as exc:
+                last_exc = exc
 
         # ── Attempt 4: repair round as last resort ────────────────
         content_to_repair = response.content if response else ""
@@ -257,10 +264,39 @@ class LLMAdapter(LLMPort):
                 response = await self.generate(repair_req)
                 obj = parser.parse(response.content, schema)
                 return obj, response
-        except (LLMError, ValueError):
-            pass
+        except (LLMError, ValueError) as exc:
+            last_exc = exc
 
         # ── All attempts exhausted -> degrade ─────────────────────
+        # D11 evidence: capture what the ladder actually received. usage only
+        # ever carries prompt/completion_tokens (adapters/openrouter.py:96-99
+        # discards completion_tokens_details, so reasoning-token consumption
+        # is not visible here — see docs/REMEDIATION_PLAN_V3.md Phase B).
+        #
+        # Deliberately logger.info(), not .debug(): this line never once
+        # appeared in five live confirmation runs (subset3/5/6/7/8) despite
+        # LEGGIE_LOG_LEVEL=DEBUG and offline reproductions proving the code
+        # path and logger both work in isolation -- an unexplained
+        # environment interaction specific to DEBUG level in the real CLI
+        # process. INFO has been 100% reliable in every one of those same
+        # runs (cove_result, skeptic_verdict, cove_llm_error). Don't re-chase
+        # the DEBUG mystery; use the tier that is proven to work.
+        if response is not None:
+            logger.info(
+                "structured_response_exhausted: schema=%s finish_reason=%s "
+                "usage=%s content_head=%r",
+                schema.__name__, response.finish_reason, response.usage,
+                response.content[:200],
+            )
+        elif last_exc is not None:
+            # D15/D16: every attempt failed before a response was ever
+            # assigned -- an HTTP-envelope-level failure (openrouter.py),
+            # not a structured-content parse failure. Distinguish it.
+            logger.info(
+                "structured_response_exhausted: schema=%s no_response_assigned "
+                "last_exc=%r",
+                schema.__name__, str(last_exc)[:300],
+            )
         raise LLMError(
             f"Failed to parse structured response after all retries "
             f"for schema {schema.__name__}"

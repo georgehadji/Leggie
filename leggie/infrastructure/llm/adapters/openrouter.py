@@ -82,15 +82,38 @@ class OpenRouterProvider(BaseLLMProvider):
             )
             elapsed = (time.monotonic() - start) * 1000
 
+        from leggie.infrastructure.llm.base import LLMError
+
         if resp.status_code == 429:
             from leggie.infrastructure.llm.base import LLMRateLimitError
             raise LLMRateLimitError(f"OpenRouter rate limited: {resp.text}")
         if resp.status_code != 200:
-            from leggie.infrastructure.llm.base import LLMError
             raise LLMError(f"OpenRouter API error {resp.status_code}: {resp.text}")
 
-        data = resp.json()
-        choice = data.get("choices", [{}])[0]
+        # D15/D16: a 200 status does not guarantee a well-formed body. Both
+        # failures below were previously an unguarded json.JSONDecodeError /
+        # IndexError -- a plain ValueError/uncaught exception that the
+        # generate_structured retry ladder (llm/__init__.py) either silently
+        # swallowed (leaving `response` at None, masking the real cause as a
+        # generic "structured response" parse failure) or let escape
+        # uncaught. Raising LLMError with a body preview here makes both
+        # cases attributable instead of indistinguishable from an LLM
+        # producing malformed JSON content.
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise LLMError(
+                f"OpenRouter returned 200 but the response body is not valid "
+                f"JSON: {exc}. Body preview: {resp.text[:500]!r}"
+            ) from exc
+
+        choices = data.get("choices") or []
+        if not choices:
+            raise LLMError(
+                f"OpenRouter returned 200 with no choices. "
+                f"Body preview: {str(data)[:500]!r}"
+            )
+        choice = choices[0]
         content = choice.get("message", {}).get("content") or ""
         finish_reason = choice.get("finish_reason", "stop")
         usage = data.get("usage", {})

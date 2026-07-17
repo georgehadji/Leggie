@@ -10,16 +10,18 @@ than the lens tier — its job is to CATCH legal errors the lens missed).
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from leggie.application.ports.llm import LLMPort, LLMRequest
-from leggie.application.ports.router import RouterPort
-from leggie.domain.models import Confidence, Finding, FindingType
+from leggie.application.ports.router import RouteResult, RouterPort
+from leggie.domain.models import Confidence, Event, EventType, Finding, FindingType
 from leggie.domain.models.structured_output import SkepticVerdictResponse
 
 log = logging.getLogger(__name__)
 
 _CRITIC_TASK = "adversarial_critic"
+_DEFAULT_CRITIC_MAX_TOKENS = 2048
 
 
 @dataclass
@@ -85,13 +87,17 @@ class LLMAdversarialGate(SkepticGate):
         llm: LLMPort,
         router: RouterPort | None = None,
         model: str = "",
+        on_degradation: Callable[[Event], None] | None = None,
     ) -> None:
         self._llm = llm
         self._router = router
         self._model = model
+        self._on_degradation = on_degradation
 
     async def examine(self, finding: Finding) -> SkepticVerdict:
-        model = await self._select_model()
+        route = await self._select_route()
+        model = route.model if route is not None else (self._model or None)
+        max_tokens = route.max_tokens if route is not None else _DEFAULT_CRITIC_MAX_TOKENS
         system = (
             "Είσαι επικριτικός ελεγκτής νομικών ευρημάτων για ελληνικό νομοσχέδιο. "
             "Ο στόχος σου είναι να ΑΝΑΤΡΕΨΕΙΣ το εύρημα αν είναι λανθασμένο νομικά ή "
@@ -112,12 +118,13 @@ class LLMAdversarialGate(SkepticGate):
         try:
             request = LLMRequest(
                 prompt=prompt, system_prompt=system, model=model,
-                max_tokens=2048, temperature=0.0,
+                max_tokens=max_tokens, temperature=0.0,
                 response_format={"type": "json_object"},
             )
             obj, _ = await self._llm.generate_structured(request, SkepticVerdictResponse)
         except Exception as e:  # noqa: BLE001 — skeptic must never crash the run
             log.warning("skeptic_llm_error: finding=%s error=%s", finding.id, str(e)[:200])
+            self._emit_degradation(finding, e)
             return SkepticVerdict(str(finding.id), "adversarial", "neutral",
                                   f"Critic error: {str(e)[:120]}")
 
@@ -137,14 +144,49 @@ class LLMAdversarialGate(SkepticGate):
             obj.confidence_adjustment,
         )
 
-    async def _select_model(self) -> str | None:
-        if self._router is not None:
-            try:
-                route = await self._router.route(_CRITIC_TASK)
-                return route.model
-            except Exception:  # noqa: BLE001
-                log.warning("skeptic_route_failed: using default model")
-        return self._model or None
+    async def _select_route(self) -> RouteResult | None:
+        """Pick the critic route (model + max_tokens), else fall back to defaults.
+
+        Logs every outcome at INFO -- see llm/__init__.py's note on why not
+        DEBUG. Same rationale as CoVeVerifier._select_route (docs/
+        REMEDIATION_PLAN_V3.md D15/D19): makes route resolution directly
+        observable instead of inferred from which ceiling a truncation hits.
+        """
+        if self._router is None:
+            log.info("skeptic_route_absent: no router configured, using fallback ceiling")
+            return None
+        try:
+            route = await self._router.route(_CRITIC_TASK)
+            log.info(
+                "skeptic_route_resolved: task=%s model=%s max_tokens=%d",
+                _CRITIC_TASK, route.model, route.max_tokens,
+            )
+            return route
+        except Exception:  # noqa: BLE001
+            log.warning("skeptic_route_failed: using default model")
+            return None
+
+    def _emit_degradation(self, finding: Finding, exc: Exception) -> None:
+        """Emit a degradation event when the adversarial gate ladder is exhausted.
+
+        Without this, a critic that fails on every call is silently
+        indistinguishable from a critic that ran and agreed — the run
+        reports success either way (D13).
+        """
+        if self._on_degradation is None:
+            return
+        try:
+            self._on_degradation(Event(
+                event_type=EventType.DEGRADED,
+                aggregate_id=f"skeptic:adversarial:finding:{finding.id}",
+                data={
+                    "gate": "adversarial",
+                    "finding_id": str(finding.id),
+                    "error": str(exc)[:500],
+                },
+            ))
+        except Exception:
+            log.warning("on_degradation callback failed", exc_info=True)
 
 
 class CalibratedSkeptic:
@@ -160,13 +202,16 @@ class CalibratedSkeptic:
         llm: LLMPort | None = None,
         router: RouterPort | None = None,
         model: str = "",
+        on_degradation: Callable[[Event], None] | None = None,
     ) -> None:
         if gates is not None:
             self._gates = gates
         else:
             self._gates = [NumericGate(), TemporalGate(), FactualGate(), ObligationGate()]
             if llm is not None:
-                self._gates.append(LLMAdversarialGate(llm=llm, router=router, model=model))
+                self._gates.append(LLMAdversarialGate(
+                    llm=llm, router=router, model=model, on_degradation=on_degradation,
+                ))
 
     async def examine(self, finding: Finding) -> list[SkepticVerdict]:
         return [await gate.examine(finding) for gate in self._gates]

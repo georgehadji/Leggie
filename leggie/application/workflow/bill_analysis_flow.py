@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from leggie.application.agents.improver import ImprovementEngine, Suggestion
 from leggie.application.agents.orchestrator import Orchestrator
 from leggie.application.agents.skeptic import CalibratedSkeptic
+from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
@@ -48,6 +49,8 @@ from leggie.domain.models import (
 
 if TYPE_CHECKING:
     from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
+
+CHECKPOINT_FILENAME = "leggie_checkpoint.json"
 
 
 class BillAnalysisFlow:
@@ -78,6 +81,7 @@ class BillAnalysisFlow:
         reranker_port: RerankerPort | None = None,
         checkpoint_store: CheckpointStore | None = None,
         checkpoint_path: str | Path | None = None,
+        citation_parser: CitationParserPort | None = None,
     ) -> None:
         self._fsm = FlowStateMachine()
         self._state = WorkflowState.IDLE
@@ -93,8 +97,13 @@ class BillAnalysisFlow:
             use_verbalized_sampling=use_verbalized_sampling,
         )
         self._reranker = self._build_reranker(reranker_name, reranker_port)
-        self._skeptic = skeptic or CalibratedSkeptic(llm=llm, router=router)
-        self._cove = cove or CoVeVerifier(llm=llm, router=router)
+        self._skeptic = skeptic or CalibratedSkeptic(
+            llm=llm, router=router, on_degradation=self._on_degradation,
+        )
+        self._cove = cove or CoVeVerifier(
+            citation_parser=citation_parser, llm=llm, router=router,
+            on_degradation=self._on_degradation,
+        )
         self._improver = ImprovementEngine()
         self._overview_generator = BillOverviewGenerator(llm=llm)
         self._ingester = ingester or lazy_ingest_adapter()
@@ -130,6 +139,15 @@ class BillAnalysisFlow:
     @property
     def findings(self) -> list[Finding]:
         return list(self._findings)
+
+    @property
+    def events(self) -> list[Event]:
+        """Audit events recorded this run, including DEGRADED (D13):
+
+        without these, a skeptic/CoVe LLM call that fails on every finding is
+        silently indistinguishable from one that ran and agreed.
+        """
+        return list(self._events)
 
     @property
     def overview(self) -> BillOverview | None:
@@ -182,7 +200,8 @@ class BillAnalysisFlow:
                 explicit-id restriction.
             checkpoint_path: When set, creates a CheckpointStore at this path for
                 atomic resume support. Ignored if a checkpoint_store was already
-                supplied to the constructor.
+                supplied to the constructor. Defaults to
+                `output_dir/leggie_checkpoint.json`.
 
         Returns:
             (findings, reports) tuple.
@@ -204,8 +223,12 @@ class BillAnalysisFlow:
         logger = bind_trace_id(get_logger(__name__))
         logger.info("flow.started", bill_path=str(file_path), trace_id=trace_id)
 
-        run_checkpoint_path = Path(checkpoint_path) if checkpoint_path is not None else self._checkpoint_path
-        if self._checkpoint_store is None and run_checkpoint_path is not None:
+        if self._checkpoint_store is None:
+            run_checkpoint_path = (
+                Path(checkpoint_path)
+                if checkpoint_path is not None
+                else self._checkpoint_path or output_path / CHECKPOINT_FILENAME
+            )
             self._checkpoint_store = CheckpointStore(str(run_checkpoint_path))
 
         # Start each run with a clean slate; a compatible checkpoint will restore

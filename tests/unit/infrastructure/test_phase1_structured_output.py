@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from leggie.application.ports.llm import LLMRequest, LLMResponse
 from leggie.domain.models import ModelTier
 from leggie.domain.models.structured_output import (
+    CoVeCrossCheckResponse,
     IRACCandidate,
     LensFindings,
     SkepticVerdictResponse,
@@ -365,6 +366,64 @@ class TestStructuredResponseParser:
         assert len(result.findings) == 0
 
 
+class TestNumericFieldsClampNotReject:
+    """D18: an LLM-emitted numeric field out of its advisory range must CLAMP,
+    not REJECT the whole structured response. Before this fix, a model emitting
+    confidence_adjustment=-0.8 or probability=1.5 raised a pydantic
+    ValidationError -> the ladder exhausted -> the entire verdict/finding-set
+    was discarded. Both consumers already clamp the final Confidence.score, so
+    the raw delta/probability range is advisory only. See
+    docs/REMEDIATION_PLAN_V3.md D18."""
+
+    def make_parser(self) -> StructuredResponseParser:
+        return StructuredResponseParser()
+
+    def test_skeptic_adjustment_out_of_range_clamps(self):
+        parser = self.make_parser()
+        low = parser.parse(
+            json.dumps({"verdict": "refutes", "reason": "x", "confidence_adjustment": -0.8}),
+            SkepticVerdictResponse,
+        )
+        assert low.confidence_adjustment == -0.5
+        high = parser.parse(
+            json.dumps({"verdict": "supports", "reason": "x", "confidence_adjustment": 0.9}),
+            SkepticVerdictResponse,
+        )
+        assert high.confidence_adjustment == 0.5
+
+    def test_skeptic_adjustment_non_numeric_defaults_zero(self):
+        parser = self.make_parser()
+        r = parser.parse(
+            json.dumps({"verdict": "neutral", "reason": "x", "confidence_adjustment": "n/a"}),
+            SkepticVerdictResponse,
+        )
+        assert r.confidence_adjustment == 0.0
+
+    def test_crosscheck_adjustment_out_of_range_clamps(self):
+        parser = self.make_parser()
+        r = parser.parse(
+            json.dumps({
+                "consistency": "partially_consistent", "reason": "x",
+                "keep": True, "confidence_adjustment": -0.7,
+            }),
+            CoVeCrossCheckResponse,
+        )
+        assert r.confidence_adjustment == -0.5
+
+    def test_lens_probability_out_of_range_clamps_not_rejects_whole_set(self):
+        """The failure mode that mattered most: one bad probability must not
+        discard every finding in the response."""
+        parser = self.make_parser()
+        content = json.dumps({"findings": [
+            {"issue": "a", "rule": "r", "application": "ap", "conclusion": "c", "probability": 1.5},
+            {"issue": "b", "rule": "r", "application": "ap", "conclusion": "c", "probability": 0.7},
+        ]})
+        result = parser.parse(content, LensFindings)
+        assert len(result.findings) == 2  # neither discarded
+        assert result.findings[0].probability == 1.0  # clamped
+        assert result.findings[1].probability == 0.7  # untouched
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # 3. LLMAdapter.generate_structured retry ladder tests
 # ═══════════════════════════════════════════════════════════════════════
@@ -675,3 +734,113 @@ class TestOpenRouterFinishReason:
             with patch.object(prov._rate_limiter, "acquire", new_callable=AsyncMock):
                 response = await prov.generate(LLMRequest(prompt="test"))
             assert response.finish_reason == "stop"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 5. D15/D16 -- malformed 200 response bodies (openrouter.py)
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestOpenRouterMalformedBody:
+    """A 200 status does not guarantee a well-formed body -- resp.json()
+    and the choices list were previously unguarded, so a JSON-decode
+    failure or empty-choices response surfaced as an opaque ValueError,
+    indistinguishable from the LLM's own structured-output content being
+    malformed. See docs/REMEDIATION_PLAN_V3.md D15."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_body_raises_llm_error_with_preview(self):
+        prov = OpenRouterProvider(api_key="sk-test")
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.side_effect = json.JSONDecodeError("bad", "not json", 0)
+            mock_resp.text = "not json"
+            mock_client.return_value.__aenter__.return_value.post.return_value = mock_resp
+
+            with (
+                patch.object(prov._rate_limiter, "acquire", new_callable=AsyncMock),
+                pytest.raises(LLMError, match="not valid JSON"),
+            ):
+                await prov.generate(LLMRequest(prompt="test"))
+
+    @pytest.mark.asyncio
+    async def test_empty_choices_raises_llm_error_with_preview(self):
+        prov = OpenRouterProvider(api_key="sk-test")
+        body = {"choices": [], "usage": {}, "model": "test-model"}
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = body
+            mock_client.return_value.__aenter__.return_value.post.return_value = mock_resp
+
+            with (
+                patch.object(prov._rate_limiter, "acquire", new_callable=AsyncMock),
+                pytest.raises(LLMError, match="no choices"),
+            ):
+                await prov.generate(LLMRequest(prompt="test"))
+
+    @pytest.mark.asyncio
+    async def test_missing_choices_key_raises_llm_error(self):
+        """`.get("choices")` missing entirely -- same guard, different shape."""
+        prov = OpenRouterProvider(api_key="sk-test")
+        body = {"usage": {}, "model": "test-model"}
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = body
+            mock_client.return_value.__aenter__.return_value.post.return_value = mock_resp
+
+            with (
+                patch.object(prov._rate_limiter, "acquire", new_callable=AsyncMock),
+                pytest.raises(LLMError, match="no choices"),
+            ):
+                await prov.generate(LLMRequest(prompt="test"))
+
+
+class TestStructuredResponseExhaustedNoResponse:
+    """D15/D16: when every attempt fails before a response is ever assigned
+    (an HTTP-envelope-level failure, not a structured-content parse
+    failure), the ladder must still exhaust cleanly -- not raise an
+    unbound-variable error -- and the caller sees the same LLMError as any
+    other exhaustion path."""
+
+    @pytest.fixture
+    def adapter(self):
+        return LLMAdapter(openrouter_key="sk-test")
+
+    @pytest.mark.asyncio
+    async def test_envelope_failure_on_every_attempt_exhausts_cleanly(self, adapter):
+        async def mock_generate(req):
+            raise LLMError("OpenRouter returned 200 with no choices. Body preview: '{}'")
+
+        with (
+            patch.object(adapter, "generate", side_effect=mock_generate),
+            pytest.raises(LLMError, match="Failed to parse structured response"),
+        ):
+            await adapter.generate_structured(
+                LLMRequest(prompt="test", max_tokens=1000), LensFindings,
+            )
+
+    @pytest.mark.asyncio
+    async def test_envelope_failure_logs_last_exc_not_silent(self, adapter, caplog):
+        """The D13-adjacent gap this closes: response=None used to mean the
+        debug line never fired at all, so an envelope-level failure left
+        zero trace beyond the generic final message."""
+        import logging
+
+        async def mock_generate(req):
+            raise LLMError("OpenRouter returned 200 with no choices. Body preview: '{}'")
+
+        with (
+            caplog.at_level(logging.DEBUG, logger="leggie.infrastructure.llm"),
+            patch.object(adapter, "generate", side_effect=mock_generate),
+            pytest.raises(LLMError),
+        ):
+            await adapter.generate_structured(
+                LLMRequest(prompt="test", max_tokens=1000), LensFindings,
+            )
+
+        assert any(
+            "no_response_assigned" in r.message and "no choices" in r.message
+            for r in caplog.records
+        )

@@ -29,7 +29,6 @@ from leggie.application.ports.reasoner import ReasonerPort
 from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.ports.state import StatePort
-from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
 
 if TYPE_CHECKING:
     from leggie.infrastructure.reasoner.server_manager import ReasonerServerManager
@@ -152,12 +151,14 @@ class Container:
         self.register(IngestPort, lambda: IngestAdapter())
         self.register(ParsePort, lambda: ParseAdapter())
 
-        # Rate limiter for LLM calls
-        from leggie.infrastructure.rate_limiter import RateLimiter
-        self.register_instance("rate_limiter", RateLimiter(max_rate=5.0))
+        # No "rate_limiter" binding (D14): nothing ever resolved it —
+        # LLMAdapter constructs its own RateLimiter(max_rate=5.0) directly
+        # (infrastructure/llm/__init__.py). Tuning max_rate here had no effect.
 
-        # Checkpoint store for crash-resume (D10)
-        self.register(CheckpointStore, lambda: CheckpointStore("Outputs/leggie_checkpoint.json"))
+        # No CheckpointStore binding (D10): its path depends on the run's output
+        # directory, which the container does not know. BillAnalysisFlow.run()
+        # derives it from output_dir; callers that need a specific location
+        # register_instance(CheckpointStore, ...) or pass --checkpoint.
 
         # Blackboard / Retrieval / Reranker
         from leggie.application.ports.reranker import RerankerPort
