@@ -403,13 +403,44 @@ n=1 anomaly.
 
 ## 5. Phase D — Per-lens attribution: smoke the 4 unproven lenses (~$0.20)
 
-**Gate status: D15's small-sample (articles 5/8/9) numbers improved
-substantially (skeptic 33%→0%, CoVe 67%→33%) but Phase C's official exit
-gate (§4) was measured on the full 1-10 sample against the subset2 control —
-that gate has not been re-measured since the D15 fix landed. Re-running
-subset3's exact command once more (~$0.10) would give a real answer instead
-of extrapolating from n=3; this plan does not do that automatically —
-decide explicitly before starting Phase D.
+**Gate status: STILL FAIL, re-measured (`Outputs/subset7/`, articles 1-10,
+$0.0989).** Full comparison against the official Phase C exit gate (§4):
+
+| Metric | subset2 control | Required | subset3 (D11 only) | subset7 (D11+D15) | Gate |
+|---|---|---|---|---|---|
+| `Response truncated` | 5 | ≤1 | 0 | **0** | **PASS** (3rd confirming run) |
+| findings | 7 (0.70/art.) | ≥7 | 6 (0.60/art.) | **7 (0.70/art.)** | **PASS** — matches control exactly |
+| `skeptic_llm_error` | 5/8=62.5% | ≤10% of calls | 2/6=33.3% | 3/7=**42.9%** | FAIL |
+| `skeptic_verdict` diversity | 3, all supports | ≥1 non-supports | 4, all supports | 4, all **supports** | FAIL — never once reproduced since v5 |
+| parse-failure rate | 13/90=14.4% | <5% of calls | 10/83=12.0% | 11/76=**14.5%** | FAIL — flat vs. control |
+
+**Read honestly:** two rows are unambiguous wins, confirmed across three
+separate runs now (subset3/5/6/7) for truncation specifically. But
+skeptic/parse-failure rates did not improve on this larger, differently-composed
+sample the way the paired subset5→subset6 comparison suggested (that
+comparison held articles fixed; this run's specific findings mix differs run
+to run, since the lens itself is not temperature-0, so it is not a clean
+paired comparison — read subset3→subset7 as "still broadly flat," not as
+contradicting subset5→subset6's real, controlled improvement).
+
+**What's left unexplained, in order of likely payoff:**
+1. Verdict diversity stuck at unanimous `supports` across every single
+   constitutional-lens run this campaign has made since v5's one-time
+   9-refutes/9-supports split (2026-07-11) — never reproduced since. Could be:
+   (a) these particular 10 articles/findings are genuinely all sound (not a
+   bug), (b) the critic prompt or model swap has a systematic agreement bias,
+   or (c) something in the aggregation/rerank stage is filtering out findings
+   the critic would have refuted before skeptic ever sees them. Untested.
+2. The two open observability gaps from §D15 (debug line not firing;
+   2048-ceiling truncation with no route-failure warning) — still n=1/n=3,
+   still not reproduced with enough volume to localize.
+
+**Decision needed before Phase D:** the truncation-specific fix (D11) is
+proven and should stay. Whether to treat parse-failure/skeptic-error rate as
+"good enough, ship it" (both are dramatically better than the original
+pre-campaign baseline, even if not meeting the exact §10 numeric bar) or to
+keep investigating item 1 above is a call for the user, not something to
+decide unprompted by spending further.
 
 ```powershell
 foreach ($lens in "economic","eu_gdpr","implementation","legal_coherence") {
