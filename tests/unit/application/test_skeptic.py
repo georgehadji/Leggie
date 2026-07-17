@@ -219,6 +219,36 @@ class TestLLMAdversarialGate:
         assert llm.last_request.max_tokens == 2048
 
     @pytest.mark.asyncio
+    async def test_route_resolution_logged_at_info_not_debug(self, caplog):
+        """D19: route resolution must be observable without DEBUG level --
+        a silent fallback to the wrong ceiling was reproduced twice in live
+        runs (subset6, subset8) with zero warning logged. INFO has been
+        reliable in every live run so far; DEBUG has not."""
+        import logging
+
+        llm = FakeLLM(SkepticVerdictResponse(
+            verdict="supports", reason="ok", confidence_adjustment=0.0))
+        router = FakeRouter(max_tokens=8192, model="routed-model")
+        gate = LLMAdversarialGate(llm=llm, router=router)
+        with caplog.at_level(logging.INFO, logger="leggie.application.agents.skeptic"):
+            await gate.examine(make_finding())
+        assert any(
+            "skeptic_route_resolved" in r.message and "8192" in r.message
+            for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_router_logs_absent_at_info(self, caplog):
+        import logging
+
+        llm = FakeLLM(SkepticVerdictResponse(
+            verdict="supports", reason="ok", confidence_adjustment=0.0))
+        gate = LLMAdversarialGate(llm=llm)  # no router
+        with caplog.at_level(logging.INFO, logger="leggie.application.agents.skeptic"):
+            await gate.examine(make_finding())
+        assert any("skeptic_route_absent" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
     async def test_llm_error_emits_degradation_event(self):
         """D13: a critic that fails on every call must be countable, not
         just logged — otherwise it's silently indistinguishable from a

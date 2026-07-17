@@ -272,8 +272,17 @@ class LLMAdapter(LLMPort):
         # ever carries prompt/completion_tokens (adapters/openrouter.py:96-99
         # discards completion_tokens_details, so reasoning-token consumption
         # is not visible here — see docs/REMEDIATION_PLAN_V3.md Phase B).
+        #
+        # Deliberately logger.info(), not .debug(): this line never once
+        # appeared in five live confirmation runs (subset3/5/6/7/8) despite
+        # LEGGIE_LOG_LEVEL=DEBUG and offline reproductions proving the code
+        # path and logger both work in isolation -- an unexplained
+        # environment interaction specific to DEBUG level in the real CLI
+        # process. INFO has been 100% reliable in every one of those same
+        # runs (cove_result, skeptic_verdict, cove_llm_error). Don't re-chase
+        # the DEBUG mystery; use the tier that is proven to work.
         if response is not None:
-            logger.debug(
+            logger.info(
                 "structured_response_exhausted: schema=%s finish_reason=%s "
                 "usage=%s content_head=%r",
                 schema.__name__, response.finish_reason, response.usage,
@@ -283,7 +292,7 @@ class LLMAdapter(LLMPort):
             # D15/D16: every attempt failed before a response was ever
             # assigned -- an HTTP-envelope-level failure (openrouter.py),
             # not a structured-content parse failure. Distinguish it.
-            logger.debug(
+            logger.info(
                 "structured_response_exhausted: schema=%s no_response_assigned "
                 "last_exc=%r",
                 schema.__name__, str(last_exc)[:300],

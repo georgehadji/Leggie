@@ -315,6 +315,44 @@ class TestCoVeRouteAndDegradation:
         assert llm.requests[2].max_tokens == 2048  # cross-check
 
     @pytest.mark.asyncio
+    async def test_route_resolution_logged_at_info_not_debug(self, caplog):
+        """D19: route resolution must be observable without DEBUG level --
+        a silent fallback to the wrong ceiling was reproduced twice in live
+        runs (subset6, subset8) with zero warning logged. INFO has been
+        reliable in every live run so far; DEBUG has not."""
+        import logging
+
+        llm = FakeLLM({
+            "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι;"]),
+            "CoVeAnswerResponse": CoVeAnswerResponse(answer="ok", supported_by_source=True),
+            "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                consistency="consistent", reason="r", keep=True),
+        })
+        router = FakeRouter(max_tokens=8192)
+        verifier = CoVeVerifier(llm=llm, router=router)
+        with caplog.at_level(logging.INFO, logger="leggie.application.services.cove_verifier"):
+            await verifier.verify(make_finding(), source_text="πηγή")
+        assert any(
+            "cove_route_resolved" in r.message and "8192" in r.message
+            for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_router_logs_absent_at_info(self, caplog):
+        import logging
+
+        llm = FakeLLM({
+            "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι;"]),
+            "CoVeAnswerResponse": CoVeAnswerResponse(answer="ok", supported_by_source=True),
+            "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                consistency="consistent", reason="r", keep=True),
+        })
+        verifier = CoVeVerifier(llm=llm)  # no router
+        with caplog.at_level(logging.INFO, logger="leggie.application.services.cove_verifier"):
+            await verifier.verify(make_finding(), source_text="πηγή")
+        assert any("cove_route_absent" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
     async def test_llm_error_emits_degradation_event(self):
         events: list[Event] = []
         verifier = CoVeVerifier(llm=CrashingLLM(), on_degradation=events.append)

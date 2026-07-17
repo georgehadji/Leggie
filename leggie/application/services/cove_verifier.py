@@ -442,13 +442,28 @@ class CoVeVerifier:
         return ""
 
     async def _select_route(self) -> RouteResult | None:
-        """Pick the verification route (model + max_tokens), else fall back to defaults."""
-        if self._router is not None:
-            try:
-                return await self._router.route(_VERIFY_TASK)
-            except Exception:  # noqa: BLE001
-                log.warning("cove_route_failed: using default model")
-        return None
+        """Pick the verification route (model + max_tokens), else fall back to defaults.
+
+        Logs every outcome at INFO (not DEBUG -- see llm/__init__.py's note on
+        why): a truncation at the fallback ceiling with no accompanying
+        cove_route_failed warning has been observed twice (subset6, subset8)
+        with no prior evidence of *why* route resolution didn't reach 8192.
+        This makes the resolution outcome directly visible instead of
+        inferred after the fact from which ceiling a truncation hit.
+        """
+        if self._router is None:
+            log.info("cove_route_absent: no router configured, using fallback ceilings")
+            return None
+        try:
+            route = await self._router.route(_VERIFY_TASK)
+            log.info(
+                "cove_route_resolved: task=%s model=%s max_tokens=%d",
+                _VERIFY_TASK, route.model, route.max_tokens,
+            )
+            return route
+        except Exception:  # noqa: BLE001
+            log.warning("cove_route_failed: using default model")
+            return None
 
     def _emit_degradation(self, finding: Finding, exc: Exception) -> None:
         """Emit a degradation event when the LLM CoVe loop fails open (D13).

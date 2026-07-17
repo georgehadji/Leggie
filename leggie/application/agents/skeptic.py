@@ -145,12 +145,26 @@ class LLMAdversarialGate(SkepticGate):
         )
 
     async def _select_route(self) -> RouteResult | None:
-        if self._router is not None:
-            try:
-                return await self._router.route(_CRITIC_TASK)
-            except Exception:  # noqa: BLE001
-                log.warning("skeptic_route_failed: using default model")
-        return None
+        """Pick the critic route (model + max_tokens), else fall back to defaults.
+
+        Logs every outcome at INFO -- see llm/__init__.py's note on why not
+        DEBUG. Same rationale as CoVeVerifier._select_route (docs/
+        REMEDIATION_PLAN_V3.md D15/D19): makes route resolution directly
+        observable instead of inferred from which ceiling a truncation hits.
+        """
+        if self._router is None:
+            log.info("skeptic_route_absent: no router configured, using fallback ceiling")
+            return None
+        try:
+            route = await self._router.route(_CRITIC_TASK)
+            log.info(
+                "skeptic_route_resolved: task=%s model=%s max_tokens=%d",
+                _CRITIC_TASK, route.model, route.max_tokens,
+            )
+            return route
+        except Exception:  # noqa: BLE001
+            log.warning("skeptic_route_failed: using default model")
+            return None
 
     def _emit_degradation(self, finding: Finding, exc: Exception) -> None:
         """Emit a degradation event when the adversarial gate ladder is exhausted.

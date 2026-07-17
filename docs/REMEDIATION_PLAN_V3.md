@@ -555,13 +555,34 @@ run. Two independent occurrences, in two different steps of the same
 `CoVeVerifier`, both with zero exception logged, is no longer a comfortable
 "n=1 anomaly" — it looks like `_select_route()` intermittently returns `None`
 (or a route with the wrong `max_tokens`) for a small fraction of calls,
-silently, for a reason not yet identified. **Re-opened as a genuine
-observability/correctness gap, not filed away.** Next step if pursued: log
-`route` at DEBUG (not just on failure) for every `_select_route()` call, so
-a future run can show the resolution rate directly instead of inferring it
-from truncation ceilings after the fact — a $0 code change, gated behind the
-same DEBUG-visibility problem noted in §D15/§D18's observability item, which
-still needs solving first for the log line to actually appear.
+silently, for a reason not yet identified.
+
+### D19 — Made route resolution directly observable (offline fix; live confirmation still pending)
+
+**Fixed the observability blocker, not yet the mystery itself.** Rather than
+keep chasing *why* `logger.debug()` specifically doesn't appear in real CLI
+runs (five isolated offline reproductions — bare adapter, through
+`BudgetGuardDecorator`, through `CoVeVerifier`, all via `python -c` — fire the
+line correctly every time; only one `.py`-file invocation didn't, and a raw
+`print(..., file=sys.stderr)` placed at the same spot *also* silently didn't
+appear, which rules out a logging-specific cause without identifying the real
+one), the pragmatic fix taken: **stop relying on DEBUG.** INFO and WARNING
+have been 100% reliable across every one of five live runs so far
+(`cove_result`, `skeptic_verdict`, `cove_llm_error`, `json_schema rejected`
+all show up every time, unconditionally).
+
+- `llm/__init__.py`: `structured_response_exhausted` promoted `debug → info`.
+- `cove_verifier.py` / `skeptic.py`: `_select_route()` now logs every
+  outcome at INFO — `cove_route_resolved`/`skeptic_route_resolved` (with
+  `model`+`max_tokens`) on success, `cove_route_absent`/`skeptic_route_absent`
+  when no router is configured at all, `cove_route_failed`/`skeptic_route_failed`
+  (unchanged, already WARNING) on exception. A future run will show the
+  resolution rate directly instead of inferring it from which ceiling a
+  truncation happened to hit.
+- 4 new tests asserting the INFO-level messages fire via `caplog`. 554
+  passed, mypy/ruff/lint-imports clean. **No live run yet** — this is
+  instrumentation only; confirming what route resolution actually looks like
+  needs one more paid run, deliberately not done automatically here.
 
 ```powershell
 foreach ($lens in "economic","eu_gdpr","implementation","legal_coherence") {
