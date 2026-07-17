@@ -675,3 +675,113 @@ class TestOpenRouterFinishReason:
             with patch.object(prov._rate_limiter, "acquire", new_callable=AsyncMock):
                 response = await prov.generate(LLMRequest(prompt="test"))
             assert response.finish_reason == "stop"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 5. D15/D16 -- malformed 200 response bodies (openrouter.py)
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestOpenRouterMalformedBody:
+    """A 200 status does not guarantee a well-formed body -- resp.json()
+    and the choices list were previously unguarded, so a JSON-decode
+    failure or empty-choices response surfaced as an opaque ValueError,
+    indistinguishable from the LLM's own structured-output content being
+    malformed. See docs/REMEDIATION_PLAN_V3.md D15."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_body_raises_llm_error_with_preview(self):
+        prov = OpenRouterProvider(api_key="sk-test")
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.side_effect = json.JSONDecodeError("bad", "not json", 0)
+            mock_resp.text = "not json"
+            mock_client.return_value.__aenter__.return_value.post.return_value = mock_resp
+
+            with (
+                patch.object(prov._rate_limiter, "acquire", new_callable=AsyncMock),
+                pytest.raises(LLMError, match="not valid JSON"),
+            ):
+                await prov.generate(LLMRequest(prompt="test"))
+
+    @pytest.mark.asyncio
+    async def test_empty_choices_raises_llm_error_with_preview(self):
+        prov = OpenRouterProvider(api_key="sk-test")
+        body = {"choices": [], "usage": {}, "model": "test-model"}
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = body
+            mock_client.return_value.__aenter__.return_value.post.return_value = mock_resp
+
+            with (
+                patch.object(prov._rate_limiter, "acquire", new_callable=AsyncMock),
+                pytest.raises(LLMError, match="no choices"),
+            ):
+                await prov.generate(LLMRequest(prompt="test"))
+
+    @pytest.mark.asyncio
+    async def test_missing_choices_key_raises_llm_error(self):
+        """`.get("choices")` missing entirely -- same guard, different shape."""
+        prov = OpenRouterProvider(api_key="sk-test")
+        body = {"usage": {}, "model": "test-model"}
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = body
+            mock_client.return_value.__aenter__.return_value.post.return_value = mock_resp
+
+            with (
+                patch.object(prov._rate_limiter, "acquire", new_callable=AsyncMock),
+                pytest.raises(LLMError, match="no choices"),
+            ):
+                await prov.generate(LLMRequest(prompt="test"))
+
+
+class TestStructuredResponseExhaustedNoResponse:
+    """D15/D16: when every attempt fails before a response is ever assigned
+    (an HTTP-envelope-level failure, not a structured-content parse
+    failure), the ladder must still exhaust cleanly -- not raise an
+    unbound-variable error -- and the caller sees the same LLMError as any
+    other exhaustion path."""
+
+    @pytest.fixture
+    def adapter(self):
+        return LLMAdapter(openrouter_key="sk-test")
+
+    @pytest.mark.asyncio
+    async def test_envelope_failure_on_every_attempt_exhausts_cleanly(self, adapter):
+        async def mock_generate(req):
+            raise LLMError("OpenRouter returned 200 with no choices. Body preview: '{}'")
+
+        with (
+            patch.object(adapter, "generate", side_effect=mock_generate),
+            pytest.raises(LLMError, match="Failed to parse structured response"),
+        ):
+            await adapter.generate_structured(
+                LLMRequest(prompt="test", max_tokens=1000), LensFindings,
+            )
+
+    @pytest.mark.asyncio
+    async def test_envelope_failure_logs_last_exc_not_silent(self, adapter, caplog):
+        """The D13-adjacent gap this closes: response=None used to mean the
+        debug line never fired at all, so an envelope-level failure left
+        zero trace beyond the generic final message."""
+        import logging
+
+        async def mock_generate(req):
+            raise LLMError("OpenRouter returned 200 with no choices. Body preview: '{}'")
+
+        with (
+            caplog.at_level(logging.DEBUG, logger="leggie.infrastructure.llm"),
+            patch.object(adapter, "generate", side_effect=mock_generate),
+            pytest.raises(LLMError),
+        ):
+            await adapter.generate_structured(
+                LLMRequest(prompt="test", max_tokens=1000), LensFindings,
+            )
+
+        assert any(
+            "no_response_assigned" in r.message and "no choices" in r.message
+            for r in caplog.records
+        )
