@@ -9,6 +9,7 @@ FIX_PLAN F0 fixes:
 - Cross-ref stop-list: reject if followed by του ν., του Κώδικα, etc.
 - Monotonic-sequence guard: large backward/forward jumps are cross-refs
 - PDF newline repair: join mid-token line breaks
+- Table-of-contents excision: skip the ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ listing
 """
 
 from __future__ import annotations
@@ -28,6 +29,24 @@ _STOP_PATTERN: Pattern[str] = re.compile(
     r"του\s+π\.δ\.|του\s+ν\.\s*\d+"
     r")",
     re.UNICODE | re.IGNORECASE,
+)
+
+# A heading is a cross-reference only when the stop phrase is essentially the
+# whole title ("Άρθρο 552 του ΚΠολΔ"). Greek amending titles legitimately cite
+# other instruments *after* a substantive title ("Άρθρο 61 Προσθήκη άρθρου 58Α
+# και τροποποίηση άρθρου 72 του ν. 4999/2022"), so the stop-list must not be
+# applied to the whole heading line — that rejected 22 real headings on the
+# reference bill.
+_CROSS_REF_TITLE_PREFIX_MIN = 12
+
+
+# ── Table of contents (ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ) ───────────────────────────────
+# Greek bills open with a TOC that lists every article heading verbatim. Those
+# lines are indistinguishable from real headings, so they must be excised
+# before extraction or they become phantom (content-free) articles.
+_TOC_MARKER: Pattern[str] = re.compile(
+    r"^[ \t]*(?:ΠΙΝΑΚΑΣ\s+ΠΕΡΙΕΧΟΜΕΝΩΝ|ΠΕΡΙΕΧΟΜΕΝΑ)[ \t]*$",
+    re.UNICODE | re.MULTILINE,
 )
 
 
@@ -98,17 +117,20 @@ class DocumentParser:
         F0.2: Number constrained to \d+[Α-Ωα-ω]? (no multi-token garbage).
         F0.3: Cross-ref stop-list rejects in-body references.
         F0.4: Monotonic-sequence guard.
+        F0.6: Table-of-contents excision (must precede F0.4 — a TOC running to
+              Άρθρο 91 otherwise poisons the guard's last_num and cascades into
+              dropping every body article below 41).
         """
+        text = text[self._find_body_start(text):]
+
         candidates: list[dict[str, Any]] = []
         for match in ARTICLE_HEADING.finditer(text):
             article_num = match.group(1)
             article_title = match.group(2).strip() if match.group(2) else ""
             line_start = match.start()
-            line_end = match.end()
 
-            # F0.3: Check cross-ref stop-list on the HEADING LINE only (not the body)
-            heading_text = text[line_start:line_end]
-            if _STOP_PATTERN.search(heading_text):
+            # F0.3: Reject headings that are nothing but a cross-reference.
+            if self._is_cross_reference(article_title):
                 continue
 
             # F0.4: Extract the content from this heading to the next heading
@@ -152,6 +174,40 @@ class DocumentParser:
             ))
 
         return articles
+
+    def _find_body_start(self, text: str) -> int:
+        """Return the offset where the enacting body begins (F0.6).
+
+        A Greek bill's ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ repeats every article heading, so
+        the TOC and the body are two ascending runs of the same numbers. The
+        body therefore begins at the first heading that breaks the TOC's
+        ascent. Returns 0 when there is no TOC marker, or when no restart
+        follows it — never excise on a guess.
+        """
+        marker = _TOC_MARKER.search(text)
+        if not marker:
+            return 0
+
+        max_seen = 0
+        for match in ARTICLE_HEADING.finditer(text, marker.end()):
+            leading_digits = re.match(r"\d+", match.group(1))
+            num_int = int(leading_digits.group()) if leading_digits else 0
+            if max_seen > 0 and num_int < max_seen:
+                return match.start()
+            max_seen = max(max_seen, num_int)
+        return 0
+
+    def _is_cross_reference(self, title: str) -> bool:
+        """True when *title* is only a reference to another instrument (F0.3).
+
+        "Άρθρο 552 του ΚΠολΔ" is a cross-reference: the stop phrase *is* the
+        title. "Άρθρο 61 Προσθήκη άρθρου 58Α ... του ν. 4999/2022" is a real
+        amending heading: the stop phrase trails a substantive title.
+        """
+        stop = _STOP_PATTERN.search(title)
+        if not stop:
+            return False
+        return len(title[:stop.start()].strip()) < _CROSS_REF_TITLE_PREFIX_MIN
 
     def _extract_paragraphs(self, article_text: str) -> list[Paragraph]:
         """Extract paragraphs within an article."""

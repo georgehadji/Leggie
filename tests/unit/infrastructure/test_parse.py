@@ -126,6 +126,105 @@ class TestCrossRefRejection:
         assert nums == ["1", "2"]
 
 
+TOC_BILL = """
+ΣΧΕΔΙΟ ΝΟΜΟΥ
+«Ρυθμίσεις για την ψηφιακή διακυβέρνηση»
+ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ
+ΜΕΡΟΣ Α’
+ΓΕΝΙΚΕΣ ΔΙΑΤΑΞΕΙΣ
+Άρθρο 1 Σκοπός
+Άρθρο 2 Αντικείμενο (άρθρο 1 της Οδηγίας (ΕΕ) 2024/1069)
+Άρθρο 3 Τροποποίηση άρθρου 72 του ν. 4999/2022
+ΜΕΡΟΣ Α’
+ΓΕΝΙΚΕΣ ΔΙΑΤΑΞΕΙΣ
+Άρθρο 1 Σκοπός
+1. Σκοπός του παρόντος είναι η ψηφιακή μετάβαση του δημοσίου τομέα.
+2. Οι διατάξεις εφαρμόζονται σε όλο τον δημόσιο τομέα της χώρας.
+
+Άρθρο 2 Αντικείμενο (άρθρο 1 της Οδηγίας (ΕΕ) 2024/1069)
+1. Αντικείμενο του παρόντος είναι η ενσωμάτωση της Οδηγίας στο εθνικό δίκαιο.
+
+Άρθρο 3 Τροποποίηση άρθρου 72 του ν. 4999/2022
+1. Το άρθρο 72 του ν. 4999/2022 αντικαθίσταται ως εξής.
+"""
+
+
+class TestTableOfContents:
+    """A bill's ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ must not become phantom articles.
+
+    Regression: the TOC listed articles 1..91, which drove the monotonic
+    guard's ``last_num`` to 91. When the body restarted at Άρθρο 1 every
+    heading with ``abs(delta) > 50`` was rejected, so real articles 1..40
+    were dropped and the first surviving body article was exactly 91-50=41.
+    """
+
+    def test_toc_entries_do_not_become_articles(self, parser):
+        doc = parser.parse(TOC_BILL)
+        assert [a.id for a in doc.articles] == ["1", "2", "3"]
+
+    def test_no_duplicate_articles_from_toc(self, parser):
+        doc = parser.parse(TOC_BILL)
+        ids = [a.id for a in doc.articles]
+        assert len(ids) == len(set(ids))
+
+    def test_body_articles_keep_their_content(self, parser):
+        doc = parser.parse(TOC_BILL)
+        assert all(a.paragraphs for a in doc.articles)
+        assert "ψηφιακή μετάβαση" in doc.articles[0].paragraphs[0].text
+
+    def test_body_restart_does_not_drop_low_numbered_articles(self, parser):
+        """A TOC running past 50 must not cascade-drop the body's article 1."""
+        toc = "\n".join(f"Άρθρο {n} Τίτλος {n}" for n in range(1, 92))
+        body = "\n\n".join(
+            f"Άρθρο {n} Τίτλος {n}\n1. Κείμενο της διάταξης {n} για τον έλεγχο."
+            for n in range(1, 92)
+        )
+        doc = parser.parse(f"ΣΧΕΔΙΟ ΝΟΜΟΥ\nΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ\n{toc}\n{body}\n")
+        ids = [a.id for a in doc.articles]
+        assert ids == [str(n) for n in range(1, 92)]
+
+    def test_bill_without_toc_is_unaffected(self, parser):
+        doc = parser.parse(SAMPLE_BILL)
+        assert [a.id for a in doc.articles] == ["1", "2", "5"]
+
+
+class TestAmendingTitles:
+    """Greek amending titles cite other instruments — they are REAL headings.
+
+    Regression: ``_STOP_PATTERN`` was applied to the whole heading line, so
+    the standard 'Τροποποίηση άρθρου X του ν. YYYY' title format was
+    rejected outright. On the reference bill this silently dropped 22 real
+    article headings.
+    """
+
+    def test_keeps_title_citing_a_directive(self, parser):
+        text = (
+            "Άρθρο 1 Σκοπός\n1. Κείμενο του άρθρου για τον έλεγχο.\n\n"
+            "Άρθρο 2 Αντικείμενο (άρθρο 1 της Οδηγίας (ΕΕ) 2024/1069)\n"
+            "1. Κείμενο του άρθρου για τον έλεγχο.\n"
+        )
+        doc = parser.parse(text)
+        assert [a.id for a in doc.articles] == ["1", "2"]
+
+    def test_keeps_title_amending_another_law(self, parser):
+        text = (
+            "Άρθρο 60 Σκοπός\n1. Κείμενο του άρθρου για τον έλεγχο.\n\n"
+            "Άρθρο 61 Προσθήκη άρθρου 58Α και τροποποίηση άρθρου 72 του ν. 4999/2022\n"
+            "1. Κείμενο του άρθρου για τον έλεγχο.\n"
+        )
+        doc = parser.parse(text)
+        assert "61" in [a.id for a in doc.articles]
+
+    def test_still_rejects_bare_cross_reference_heading(self, parser):
+        """A heading that is *only* a reference has no substantive title."""
+        text = (
+            "Άρθρο 1 Σκοπός\n1. Κείμενο του άρθρου για τον έλεγχο.\n"
+            "Άρθρο 552 του ΚΠολΔ\n"
+        )
+        doc = parser.parse(text)
+        assert "552" not in [a.id for a in doc.articles]
+
+
 class TestCitationExtraction:
     def test_extract_fek_citation(self, parser):
         text = "Όπως ορίζεται στο ΦΕΚ Α 137/2023"
