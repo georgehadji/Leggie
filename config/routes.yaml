@@ -34,10 +34,14 @@ routes:
   # Skeptic must CATCH legal errors the lens missed.
   # Placed on the premium tier so the critic is strictly stronger than the
   # lens model (google/gemini-2.5-flash) that produced the finding.
+  # max_tokens=8192 (was 2048): Pro spends ~1900 non-disableable reasoning
+  # tokens on this prompt before any content, regardless of ceiling -- 2048
+  # left ~90 tokens for the actual JSON verdict, guaranteeing truncation.
+  # Confirmed D11, docs/REMEDIATION_PLAN_V3.md Phase B (2026-07-17).
   adversarial_critic:
     model: "google/gemini-2.5-pro"
     tier: "premium"
-    max_tokens: 2048
+    max_tokens: 8192
     cascade: true
     cascade_models:
       premium: "google/gemini-2.5-pro"
@@ -63,10 +67,13 @@ routes:
       premium: "google/gemini-2.5-pro"
 
   # ── Quality-critical (low volume: survivors / final reports) ─────
+  # max_tokens=8192 (was 2048): same Pro-reasoning ceiling problem as
+  # adversarial_critic above -- CoVe's plan/cross-check steps hit the same
+  # model. See docs/REMEDIATION_PLAN_V3.md Phase B.
   evidence_verification:
     model: "google/gemini-2.5-pro"
     tier: "premium"
-    max_tokens: 2048
+    max_tokens: 8192
     cascade: true
     cascade_models:
       premium: "google/gemini-2.5-pro"
