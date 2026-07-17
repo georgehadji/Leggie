@@ -301,9 +301,9 @@ failures vanished, which means **most of subset3's remaining parse failures
 were never truncation to begin with** — a second mechanism was hiding behind
 D11's larger one. That's D15.
 
-### D15 — A second structured-output failure mode, independent of truncation — **HIGH, OPEN**
+### D15 — A second structured-output failure mode, independent of truncation — **HIGH, ROOT-CAUSED, PARTIALLY FIXED**
 
-**Layer:** unknown — needs raw content, which this campaign does not yet have.
+**Layer:** Infrastructure (`adapters/openrouter.py`) + Application (`llm/__init__.py`).
 
 **Evidence:** `subset3.log` shows 10 `Failed to parse structured response`
 (2 skeptic, 4 CoVe across `_plan_llm_questions`/`_cross_check`, 2
@@ -324,18 +324,55 @@ and the line was never exercised. This is a wasted-run lesson, not a result —
 **What's ruled out:** it isn't the `_IRAC_ALIASES` ladder (`_normalize_findings`
 in `structured_parser.py` only touches a `data["findings"]` list, which
 skeptic/CoVe schemas — flat objects like `SkepticVerdictResponse` — never
-have), and A4's own debug line (`llm/__init__.py`, right before the final
-raise) has never actually fired in a captured log yet.
+have).
 
-**Next action (before Phase D or a full run):** a small, deliberately-targeted
-paid probe — 2-3 articles **known to produce findings** (not 1-3; reuse
-subset3's finding-bearing article numbers, check `Outputs/subset3/..._findings.json`
-`irac.issue` article refs), at `LEGGIE_LOG_LEVEL=DEBUG`, **piped through a
-filter for `leggie\.` logger lines only** (plain DEBUG dumps ~1M lines of
-httpx/httpcore wire noise per 3 articles — `subset4_debug.log` proved this
-the expensive way). Read the `structured_response_exhausted` line's
-`content_head` and `usage` for a real failure. One variable: log visibility,
-not config.
+**Root cause, found offline (free) after a targeted paid probe (`Outputs/subset5_debug/`,
+articles 5/8/9 — chosen from `leggie parse`'s free id→title dump, all
+confirmed substantive: "Απόρριψη αγωγής...", "Εγγυοδοσία...", "Κυρώσεις...").
+That probe reproduced the failure (3 findings, 1 skeptic error + 2 CoVe
+errors, still zero truncation) but A4's `structured_response_exhausted` debug
+line **still never fired** — 0 matches across the debug log, despite the
+ladder demonstrably exhausting. Chasing *that* absence (not the original
+symptom) found the real bug:
+
+`adapters/openrouter.py:92` called `data = resp.json()` with **no exception
+handling**, and `choice = data.get("choices", [{}])[0]` with no guard against
+an empty `choices` list. A 200 status does not guarantee a well-formed body.
+When either fails, the exception is a plain `json.JSONDecodeError` /
+`IndexError` — a `ValueError` subclass — which the retry ladder's generic
+`except (LLMError, ValueError)` catches **before `response` is ever
+assigned**. A4's debug line only fires `if response is not None`, so this
+failure mode was invisible to it by construction: not a logging-level
+problem, a code-path gap. The two failure modes (LLM produced malformed
+JSON *content* vs. OpenRouter returned a malformed HTTP *envelope*) were
+completely indistinguishable in every log this campaign has ever collected.
+
+**Fixed:**
+- `openrouter.py`: `resp.json()` wrapped, empty/missing `choices` guarded —
+  both now raise `LLMError` carrying a body preview (`resp.text[:500]`),
+  instead of an opaque `ValueError`/`IndexError`.
+- `llm/__init__.py`: the ladder now tracks `last_exc` across all four
+  attempts. The final block logs `structured_response_exhausted` with
+  content/usage when `response is not None` (D11's case, working since
+  Phase A), **or** with `last_exc` when it isn't (D15's case, new) — so the
+  next occurrence of either failure mode is legible without a rerun.
+- 5 new tests (`test_phase1_structured_output.py`): malformed-JSON body,
+  empty `choices`, missing `choices` key, and the ladder exhausting cleanly
+  (not an unbound-variable error) plus logging `last_exc` when `response`
+  stays `None` throughout.
+
+**Not yet done — this is a diagnostic fix, not a confirmed root-cause fix
+for subset3's specific failures.** The next live run will show WHICH of the
+two failure modes is actually firing (via the now-differentiated debug log),
+but that run hasn't happened yet — spend discipline stopped here rather than
+immediately re-running subset5 again. **Before Phase D or a full run:**
+re-run a small probe (articles 5/8/9 again, same command as `subset5_debug`)
+and read whether `structured_response_exhausted` now shows `no_response_assigned`
+(confirms this IS the OpenRouter-envelope mechanism — next question becomes
+"why does OpenRouter/httpx return a malformed 200 body," a genuinely new
+investigation) or `finish_reason=...` with content (D15 has a THIRD,
+still-uncharacterized mechanism, ranked as HIGH/OPEN again). One variable:
+whether the new log line appears and which shape it has.
 
 ---
 
