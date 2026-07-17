@@ -301,7 +301,7 @@ failures vanished, which means **most of subset3's remaining parse failures
 were never truncation to begin with** — a second mechanism was hiding behind
 D11's larger one. That's D15.
 
-### D15 — A second structured-output failure mode, independent of truncation — **HIGH, ROOT-CAUSED, PARTIALLY FIXED**
+### D15 — A second structured-output failure mode, independent of truncation — **MEDIUM, ROOT-CAUSED, FIXED (confirmed improvement; one observability gap left open, see below)**
 
 **Layer:** Infrastructure (`adapters/openrouter.py`) + Application (`llm/__init__.py`).
 
@@ -361,25 +361,55 @@ completely indistinguishable in every log this campaign has ever collected.
   (not an unbound-variable error) plus logging `last_exc` when `response`
   stays `None` throughout.
 
-**Not yet done — this is a diagnostic fix, not a confirmed root-cause fix
-for subset3's specific failures.** The next live run will show WHICH of the
-two failure modes is actually firing (via the now-differentiated debug log),
-but that run hasn't happened yet — spend discipline stopped here rather than
-immediately re-running subset5 again. **Before Phase D or a full run:**
-re-run a small probe (articles 5/8/9 again, same command as `subset5_debug`)
-and read whether `structured_response_exhausted` now shows `no_response_assigned`
-(confirms this IS the OpenRouter-envelope mechanism — next question becomes
-"why does OpenRouter/httpx return a malformed 200 body," a genuinely new
-investigation) or `finish_reason=...` with content (D15 has a THIRD,
-still-uncharacterized mechanism, ranked as HIGH/OPEN again). One variable:
-whether the new log line appears and which shape it has.
+**Confirmation run (`Outputs/subset6_confirm/`, same articles 5/8/9, $0.0371):**
+
+| Metric | subset5 (before this fix) | subset6 (after this fix) |
+|---|---|---|
+| skeptic_llm_error | 1 / 3 findings | **0 / 3** |
+| CoVe error | 2 / 3 findings | **1 / 3** |
+| `Response truncated` | 0 | 1 (at 2048 tokens) |
+| findings | 3 | 3 (same — CoVe fails open, `dropped=False`, so a CoVe error costs verification confidence, not yield) |
+
+**Real, measured improvement on identical articles/config** — skeptic error
+rate 33%→0%, CoVe error rate 67%→33%. Whatever the openrouter.py guard
+changed, it made a practical difference, not just a diagnostic one.
+
+**One thread not closed.** `structured_response_exhausted` — my own new debug
+line — **still did not fire once** in subset6_confirm.log, despite the ladder
+demonstrably exhausting (the CoVe error's message is unambiguously the
+final-raise text, confirmed as the only occurrence of that string in the
+entire repo). This is NOT a general logging bug: an offline reproduction
+(`configure_logging()` called exactly as `main()` does, `LEGGIE_LOG_LEVEL=DEBUG`,
+a mocked LLM returning unparseable-but-braced content) fires the exact same
+debug line correctly. The gap only appears inside a real concurrent CLI run.
+Separately, the one `Response truncated` event fired at exactly 2048 tokens —
+`_DEFAULT_CROSSCHECK_MAX_TOKENS`'s fallback value, not `evidence_verification`'s
+configured 8192 — with no `cove_route_failed` warning logged, meaning the
+router did not raise; why `route` would resolve to `max_tokens=8192` for two
+of three findings' CoVe calls but a 2048-shaped outcome for the third,
+in the same process, same router instance, is unexplained.
+
+**Decision: stop here, do not chase further right now.** Both observations
+are now purely diagnostic/observability gaps — the functional behavior
+(fail-open, degradation events via `on_degradation`, findings preserved) is
+correct regardless of whether the debug line fires or which ceiling a given
+call used. The measured error-rate improvement is real and stands on its
+own. Re-open this investigation if a future full-lens run shows the same
+symptom at higher volume, where the pattern (which finding index, which
+concurrency slot) might become statistically distinguishable instead of an
+n=1 anomaly.
 
 ---
 
 ## 5. Phase D — Per-lens attribution: smoke the 4 unproven lenses (~$0.20)
 
-**Blocked on D15.** Only after Phase C's exit gate fully passes (not just
-the truncation row). Articles 1-10, one lens per run, one log each:
+**Gate status: D15's small-sample (articles 5/8/9) numbers improved
+substantially (skeptic 33%→0%, CoVe 67%→33%) but Phase C's official exit
+gate (§4) was measured on the full 1-10 sample against the subset2 control —
+that gate has not been re-measured since the D15 fix landed. Re-running
+subset3's exact command once more (~$0.10) would give a real answer instead
+of extrapolating from n=3; this plan does not do that automatically —
+decide explicitly before starting Phase D.
 
 ```powershell
 foreach ($lens in "economic","eu_gdpr","implementation","legal_coherence") {
