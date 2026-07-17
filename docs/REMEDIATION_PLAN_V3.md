@@ -1,0 +1,406 @@
+# Remediation Plan V3 — Prove the Full Pipeline
+
+**Date:** 2026-07-17
+**Branch:** `claude/bold-nightingale-be6980` (checkpoint fix; see §0)
+**Supersedes:** nothing — continues `REMEDIATION_PLAN.md` (D1–D10, §10 DoD) and
+`REMEDIATION_PLAN_V2.md`. Those IDs stand; this plan opens **D11–D14**.
+**Scope:** the one thing the project has never done — a FULL 5-lens live smoke
+that meets `REMEDIATION_PLAN.md` §10, plus the first live run of the
+deliberative pipeline, both recorded through change control.
+
+---
+
+## 0. Current state (what already works — do not re-touch)
+
+| Fact | Evidence |
+|---|---|
+| Offline gates green | `pytest tests/ -q` → 532 passed; `mypy leggie/ --ignore-missing-imports` clean; `ruff check leggie/ tests/` clean; `lint-imports` → 1 contract kept (2026-07-17, this branch) |
+| Single-lens smoke PASSED | `docs/SMOKE_AUDIT.md` v5, 2026-07-11: 299 calls, 4.0% parse failures, 19 skeptic verdicts (9 refutes / 9 supports / 1 neutral), $0.3577, 11 findings / 121 entries |
+| D3/D6 parallel fan-out | `bill_analysis_flow.py:271` `analyze_document` |
+| H-1 truncation-retry guard | `llm/__init__.py:179-182` `response: LLMResponse | None = None` |
+| `LLMAdversarialGate` landed | `skeptic.py:169` |
+| `lens_analysis` route live | `config/routes.yaml`, flash @ 6144, cascade to pro |
+| Checkpoint honours `-o` | this branch, `02c87f5` — `output_dir/leggie_checkpoint.json`; container binding removed |
+| Suite is hermetic | `tests/conftest.py` blanks provider credentials (`cdc3abc`) |
+
+**Fenced (from the campaign skill; unchanged):** no Domain model edits to ease
+parsing; no ruff-ignore widening; no `max_cost_per_run` above $5; no new port
+methods; no learned-router / debate / KG re-proposals; "unverified" citations
+stay unverified; numbers only, never "looks better".
+
+---
+
+## 1. Defect inventory (ranked by yield impact)
+
+### D11 — Premium-tier structured calls truncate: reasoning tokens eat a 2048 ceiling — **CRITICAL**
+
+**Layer:** Application (call sites) + config (routes).
+
+**Mechanism (hypothesis, not yet confirmed — Phase B confirms or kills it):**
+`adversarial_critic` and `evidence_verification` both route to
+`google/gemini-2.5-pro` at `max_tokens: 2048`. Gemini 2.5 Pro emits thinking
+tokens that count against the completion ceiling and cannot be disabled on Pro.
+A `SkepticVerdictResponse` is ~100 tokens of JSON, so a 2048-token ceiling
+should never be reached — unless something else is consuming it first. The
+response is cut at `finish_reason=length` before the JSON closes, the ladder's
+attempt-3 doubles to 4096, that is often still short, the ladder exhausts, and
+`skeptic.py:119` swallows the failure into a forced **neutral** verdict.
+
+**Evidence:**
+
+| Observation | Source |
+|---|---|
+| All 5 truncations at *exactly* 2048 tokens | `subset2.log:44,52,62,68,74` — `Response truncated (finish_reason=length, 2048 tokens)` |
+| Truncation immediately precedes ladder exhaustion, repeatedly | `subset.log` — `Response truncated` → 2× POST → `skeptic_llm_error: … Failed to parse structured response after all retries for schema SkepticVerdictResponse` |
+| Skeptic failure rate 5% → **62.5%** | v5: 1 error / 20 calls. subset2: 5 errors / 8 calls (3 verdicts + 5 errors) |
+| Parse-failure rate 4.0% → **14.4%** (gate is 5%) | v5: 12/299. subset2: 13/90 |
+| Skeptic verdicts collapsed to unanimous `supports` | subset2: 3 verdicts, 0 refutes (v5: 9 refutes / 9 supports / 1 neutral) |
+| The only skeptic-affecting change between v5 and subset2 is the Pro critic | `SMOKE_AUDIT.md` §"Config changes applied since v5" — *"Upgrade `adversarial_critic` to Gemini Pro"* |
+| No HTTP errors — all 90 calls returned 200 | `subset2.log` — failure is in content, not transport |
+
+**Why this is the campaign's root cause, not a symptom:** one mechanism
+explains every stalled full-5 observation without a second assumption.
+`full5_final`'s 111 `skeptic_llm_error` + 189 parse failures + 88 truncation
+retries are what this rate produces at 5× the finding volume. It also explains
+why v5 passed (its critic was flash, not Pro) and why the CoVe errors predate
+the critic upgrade (`evidence_verification` was already Pro @ 2048 — v4 showed
+8 `cove_llm_error`). **The v5 → full5 regression was caused by a config change
+made to improve quality, applied without re-validating single-lens first — two
+variables (route wiring + Pro critic) moved at once.**
+
+**Falsifier:** if Phase B shows Pro returning <500 completion tokens with no
+reasoning-token consumption, D11 is wrong and the truncation has another cause.
+
+### D12 — `RouteResult.max_tokens` is dead config for skeptic and CoVe — **HIGH**
+
+**Layer:** Application.
+
+`RouteResult` already carries `max_tokens` (`ports/router.py:20`), but both
+consumers take `route.model` and discard the rest:
+
+| Call site | Hardcoded | Route says |
+|---|---|---|
+| `skeptic.py:115` | `max_tokens=2048` | `adversarial_critic` → 2048 (coincides today; coupling is broken) |
+| `cove_verifier.py:287` | `max_tokens=2048` | `evidence_verification` → 2048 |
+| `cove_verifier.py:317` | `max_tokens=1024` | 2048 |
+| `cove_verifier.py:359` | `max_tokens=2048` | 2048 |
+
+`skeptic.py:140-145` `_select_model()` returns `route.model` only.
+
+**Consequence:** the config knob that would fix D11 does not reach the code.
+Editing `routes.yaml` `max_tokens` for these two routes changes *nothing* —
+which makes the campaign skill's solution-menu option #2 ("raise route
+max_tokens") a **silent no-op** for exactly the two call sites that are
+failing. This must be fixed before any token-ceiling experiment is meaningful.
+
+### D13 — A disabled skeptic is invisible in the run result — **MEDIUM**
+
+**Layer:** Application.
+
+`skeptic.py:119-122` catches `Exception` → logs one line → returns `neutral`.
+Correct in isolation ("skeptic must never crash the run"), but there is no
+aggregate signal: `full5_final` had the adversarial gate effectively **off for
+111 findings** and the run would have reported success. A run whose critic
+failed 62.5% of the time is not a run whose findings were criticised. Failure
+is currently only countable by grepping a log the user happens to have kept —
+and the `full5_final` log is gone.
+
+### D14 — Container's `rate_limiter` singleton is dead — **LOW**
+
+`container.py:156` registers `RateLimiter(max_rate=5.0)`; nothing resolves it.
+`llm/__init__.py:132` constructs its own. Same class of defect as the
+`CheckpointStore` binding fixed on this branch: a container binding with no
+consumer. Behaviourally inert today (the adapter's own limiter is active), so
+it is a cleanup, not a fix — but it is a live trap for the next person who
+tunes `max_rate` in the container and sees no effect.
+
+### Gap (not a defect) — 4 of 5 lenses have never been smoked
+
+`constitutional` is the only lens with live evidence. `economic`, `eu_gdpr`,
+`implementation`, `legal_coherence` have never run against a real bill on their
+own. The campaign has twice jumped 1 lens → 5 lenses in a single step, which
+attributes nothing when it degrades. **Per-lens attribution comes before the
+full run.**
+
+---
+
+## 2. Phase A — Offline: make the ceiling reachable and the failure visible (FREE)
+
+**A1 (D12).** Honour `route.max_tokens` at both call sites.
+- `skeptic.py`: `_select_model()` → return the `RouteResult`, not `route.model`;
+  use `route.max_tokens` in the `LLMRequest`. Keep the current 2048 as the
+  fallback when no router is wired.
+- `cove_verifier.py:287/317/359`: same, via the existing `_structured(...,
+  max_tokens=…)` parameter. The per-step 1024 for answers stays a *floor*, not
+  a hardcode: pass `route.max_tokens`.
+- No port change, no new method — `RouteResult.max_tokens` already exists.
+
+**A2 (D13).** Count degradation into the run, not just the log.
+- Skeptic: on ladder exhaustion, emit the existing degradation callback
+  (`Event`) rather than only `log.warning`. The flow already threads
+  `on_degradation` (`bill_analysis_flow.py:86-87`).
+- Surface `adversarial_gate_failures` / `adversarial_gate_calls` in the run's
+  event record so the audit doc can cite a number without a log grep.
+
+**A3 (D14).** Delete the dead `rate_limiter` registration, or inject it into
+`LLMAdapter`. Prefer **delete** (YAGNI; the adapter's own limiter works).
+
+**A4.** Instrument for Phase B: on ladder exhaustion log
+`response.content[:200]` and `usage` (completion/reasoning token counts) at
+DEBUG. This is what turns the next failure into evidence instead of a rerun.
+
+**Tests:** unit test per item —
+(A1) a fake router returning `max_tokens=8192` ⇒ the `LLMRequest` carries 8192,
+and no-router ⇒ 2048 fallback;
+(A2) a skeptic whose LLM always raises ⇒ verdict neutral **and** one degradation
+event emitted per failure;
+(A3) `pytest tests/unit/test_port_contracts.py` + container tests still green.
+All fakes — nothing reaches a provider (`tests/conftest.py` stays intact).
+
+**Gate:** full offline sweep green (532+ passed, mypy/ruff/lint-imports clean).
+
+---
+
+## 3. Phase B — The discriminating experiment for D11 (~$0.02)
+
+**Do not skip this. It is the cheapest step in the campaign and it decides
+whether Phase C is a fix or a guess.**
+
+A standalone script (scratchpad, not committed) that sends the *exact*
+`LLMAdversarialGate` system+prompt with a real finding from
+`Outputs/subset2/OE_ΣΧΝ-ΥΠΔΙΚ_findings.json` to `google/gemini-2.5-pro`,
+`max_tokens=2048`, and prints the raw OpenRouter `usage` block plus
+`finish_reason`.
+
+**The hypothesis predicts, before the run:**
+- `finish_reason == "length"`
+- `usage.completion_tokens ≈ 2048`
+- `usage.completion_tokens_details.reasoning_tokens` ≫ 0 (most of the 2048)
+- `content` = prose/empty, not closed JSON
+
+**Then vary one thing** — the same call at `max_tokens=8192`:
+- predicts `finish_reason == "stop"`, valid `SkepticVerdictResponse` JSON,
+  reasoning_tokens in the low thousands.
+
+**Branches:**
+- **Predictions hold** → D11 confirmed → Phase C.
+- `reasoning_tokens == 0` and completion is 2048 tokens of JSON → D11 is wrong:
+  the verdict schema/prompt invites an essay → fix the prompt (cap `reason`
+  length in-prompt), not the ceiling. Re-plan from **leggie-debugging-playbook**
+  row 1.
+- 8192 still truncates → Pro's thinking is unbounded for this prompt → the
+  ceiling cannot be the whole fix → go to Phase C option 3 (critic model swap).
+
+---
+
+## 4. Phase C — Fix D11, one variable, measured against a real control (~$0.10)
+
+**Control already exists:** `subset2.log` + `Outputs/subset2/` — articles 1-10,
+constitutional, current config. That is the before-column; do not re-measure it.
+
+Ranked options. **Change exactly one per run** (ablation discipline —
+**leggie-research-methodology**):
+
+| # | Change | Try when | Cost risk |
+|---|---|---|---|
+| 1 | `adversarial_critic` + `evidence_verification` `max_tokens: 2048 → 8192` (works only after A1) | Phase B confirms reasoning consumes the ceiling | Pro output ~$10/M — a real spend increase; watch §6 |
+| 2 | Bound the reasoning instead: pass OpenRouter `reasoning: {max_tokens: 512}` with `max_tokens: 4096` | option 1 works but spend is unacceptable | needs an adapter param — Infrastructure change, more code |
+| 3 | Critic → `google/gemini-2.5-flash` with a raised ceiling | 1 and 2 both fail, or Pro stays unreliable | cheapest; costs the "critic stronger than lens" property — **document the trade, do not silently revert** |
+
+Option 1 first: it is config-only once A1 lands, and it is the direct test of
+the confirmed mechanism.
+
+**Re-run the control command:**
+
+```powershell
+leggie analyze Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf --articles "1-10" -o Outputs/subset3 2>&1 | Tee-Object subset3.log
+python .claude/skills/leggie-diagnostics-and-tooling/scripts/smoke_log_stats.py subset3.log
+python .claude/skills/leggie-diagnostics-and-tooling/scripts/findings_stats.py "Outputs/subset3/OE_ΣΧΝ-ΥΠΔΙΚ_findings.json" --articles 10
+```
+
+**Exit gate (vs. the subset2 control):**
+
+| Metric | subset2 (control) | Required |
+|---|---|---|
+| `skeptic_llm_error` | 5 (of 8 calls, 62.5%) | ≤ 1 (≤ 10% of calls) |
+| `skeptic_verdict` lines | 3, all `supports` | ≥ 6, **≥1 non-`supports`** |
+| `Failed to parse structured response` | 13 / 90 = 14.4% | < 5% of calls |
+| `Response truncated` | 5 (all @2048) | ≤ 1 |
+| findings | 7 (0.70/article) | ≥ 7 — the fix must not *cost* yield |
+
+The verdict-diversity row matters more than it looks: a critic that only ever
+says `supports` is indistinguishable from a critic that is off. v5's
+9-refutes/9-supports split is the shape of a working gate.
+
+---
+
+## 5. Phase D — Per-lens attribution: smoke the 4 unproven lenses (~$0.20)
+
+Only after Phase C passes. Articles 1-10, one lens per run, one log each:
+
+```powershell
+foreach ($lens in "economic","eu_gdpr","implementation","legal_coherence") {
+  leggie analyze Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf --articles "1-10" --lenses $lens `
+    -o "Outputs/lens_$lens" 2>&1 | Tee-Object "lens_$lens.log"
+  python .claude/skills/leggie-diagnostics-and-tooling/scripts/smoke_log_stats.py "lens_$lens.log"
+}
+```
+
+**Per lens:** parse failures < 5% of calls, ≥1 finding, `info_filler_ratio` = 0%,
+no lens-specific crash signature (the `NoneType verbatim_quote` class of bug was
+found in `constitutional_lens.py` and the other four have never been exercised
+live — expect at least one to surface something).
+
+**Branch:** a lens that fails alone will fail in the full run — fix it here,
+where the log has one lens in it, not in a 3,000-line 5-lens log.
+
+**Gate:** all 5 lenses individually green on the subset.
+
+---
+
+## 6. Phase E — The full 5-lens run (the campaign's actual goal) (~$2–3)
+
+**Pre-flight, in order — the 402 wall already cost one full run:**
+1. OpenRouter credit balance ≥ $10 (check the dashboard; the guard does not see it).
+2. `LEGGIE_LLM__MAX_TOKENS_PER_RUN` — confirm not the stale 500k (playbook row 6;
+   `.env.example` drift is known).
+3. `max_cost_per_run` = $5, unchanged. **Fenced: do not raise it to finish a run.**
+4. Budget forecast from Phase C/D actuals: v5 was $0.3577 for 1 lens × 121
+   entries. 5 lenses ≈ 5× lens calls and ≈5× skeptic/CoVe volume ⇒ ~$1.8
+   baseline, plus whatever Phase C's ceiling change adds. **If the forecast
+   exceeds $4, stop and reconsider Phase C option 3 (flash critic) rather than
+   starting a run that will hit the cap mid-flight.**
+5. Checkpoint: this branch writes it to `-o`'s directory, so a mid-run stop is
+   resumable — verify `Outputs/full5_v3/leggie_checkpoint.json` appears early.
+
+```powershell
+$env:LEGGIE_LLM__MAX_CONCURRENCY=10
+leggie analyze Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf -o Outputs/full5_v3 2>&1 | Tee-Object full5_v3.log
+```
+
+**Exit gate — `REMEDIATION_PLAN.md` §10, all rows, numbers only:**
+
+| Gate | Required | Anchor |
+|---|---|---|
+| Yield | findings/article ≥ single-lens 0.14, and > 5× v5's 11 survivors is *not* required — proportionality is | §10 "roughly proportional, not ~1" |
+| Parse failures | < 5% of LLM calls | §10 |
+| Skeptic | non-neutral verdicts present; `skeptic_llm_error` < 10% of gate calls | §10 + D13 counter |
+| CoVe | drop/revise observed on valid inputs; `cove_quote_fail` only where quotes are genuinely absent | §10 |
+| Wall-clock | completes without the serial timeout | §10 "cut materially by parallel fan-out" |
+| Spend | < $5 | budget policy |
+| Filler | `info_filler_ratio` = 0% (historical pathology: 68%) | findings_stats |
+
+**Branch — if it degrades again:** stop, count signatures, attribute to a lens
+or a route using Phase D's per-lens baselines, and change ONE thing. Do not
+restart the full run to "see if it's better".
+
+---
+
+## 7. Phase F — Deliberative pipeline: first live run (gated, separate)
+
+Landed and leak-fixed (PR #7, `af4e4a8`), **offline-proven only**. This is a
+distinct pipeline (`--pipeline deliberative`) with its own failure surface; it
+does not block Phase E and Phase E does not validate it.
+
+**Pre-flight:**
+- Verify the env-var spelling *empirically* — `ReasonerSettings` declares
+  `env_prefix="LEGGIE_REASONER_"` (`settings.py:105`) while `cli_handlers.py`
+  tells users `LEGGIE_REASONER__ENABLED` (double underscore) and
+  `tests/conftest.py` blanks **both** spellings. One of those is wrong. Confirm
+  with a throwaway `python -c "from leggie.config.settings import get_settings;
+  print(get_settings().reasoner)"` under each spelling **before** blaming the
+  Reasoner backend for being unreachable.
+- Reasoner backend reachable at `base_url`; `LEGGIE_REASONER__HOME` set if
+  relying on autostart.
+- Pre-flight budget abort and the autostarted-process release path both have
+  playbook entries — read **leggie-debugging-playbook** §deliberative first.
+
+**Run:** subset first (`--articles "1-5"`), never the full bill cold.
+
+**Gate:** completes; produces findings; the autostarted backend process is
+released on exit (the PR #7 leak — verify no orphaned process); spend recorded.
+
+**Branch:** if the Reasoner is not installed/reachable on this machine, **stop
+and record that** in the audit doc as OPEN. An unrunnable phase is a documented
+gap, not a failure to hide.
+
+---
+
+## 8. Phase G — Land it through change control
+
+The code landed without evidence once already; that gap is what this campaign
+exists to close.
+
+1. Final offline sweep (Phase A's gate, re-run).
+2. Write `docs/SMOKE_AUDIT_V3.md` — template: **leggie-docs-and-writing** §3
+   audit-report. Must contain the measured before/after table (subset2 control
+   → subset3 → per-lens → full5_v3), the §10 gate matrix with PASS/FAIL per row,
+   the D11 mechanism with its Phase B measurement, and spend.
+   **Copy the smoke logs into the audit doc.** The `full5_final` log is gone and
+   its 111 errors are now unreproducible evidence — do not repeat that.
+3. Close H-2 explicitly (campaign Phase 2): either the looks-like-JSON heuristic
+   with a unit test, or a written acceptance of the bounded 1-call residual risk.
+   Pick one; "partial" is not a landing state.
+4. Commit in project style, referencing IDs:
+   `fix: honour route max_tokens in skeptic/CoVe (D11/D12)`,
+   `docs: full 5-lens smoke audit — D11 root cause and §10 gate results`.
+5. README drift while touching docs (**leggie-docs-and-writing** §5): test badge
+   199 → current, code-lines, ports count 7 → 10, `.env.example`
+   `MAX_TOKENS_PER_RUN=500000` → 20,000,000.
+6. Update the campaign skill's state table — it is dated 2026-07-14 and this
+   plan invalidates its "next concrete step".
+
+---
+
+## 9. Execution order & dependencies
+
+```
+A (offline: D12 fix, D13 counter, D14, instrumentation)   FREE
+└─> B (measure reasoning tokens — confirm or kill D11)     ~$0.02
+    └─> C (fix D11, one variable, vs subset2 control)      ~$0.10
+        └─> D (4 unproven lenses, per-lens attribution)    ~$0.20
+            └─> E (FULL 5-LENS — the goal)                 ~$2–3
+                └─> G (audit doc + change control)         FREE
+    F (deliberative live run) ── independent of C/D/E ──────┘  ~$0.10
+```
+
+A→B is mandatory: without A1, Phase C's config change is a no-op (D12).
+B→C is mandatory: without B, C is a guess dressed as a fix.
+D→E is the discipline the last two full-run attempts skipped.
+
+**Total forecast: ~$3.50.** The campaign has already burned more than that on
+runs that produced no output files.
+
+---
+
+## 10. Architecture guardrails (every phase)
+
+- **Dependency rule:** A1/A2 are Application-layer edits reading a value the
+  RouterPort already returns. No new ports, **no new port methods** (fenced).
+- **Config in config:** ceilings belong in `routes.yaml`, reached through
+  `RouteResult` — that is the entire point of D12. Do not fix D11 by editing a
+  new hardcoded number into `skeptic.py`.
+- **No silent failure:** D13 is the plan taking its own no-silent-failure rule
+  seriously. Do not add a second swallow while fixing the first.
+- **Domain untouched:** `Finding`, `IRAC`, `Confidence` are not in scope.
+- **Hermetic tests:** `tests/conftest.py` stays; no test may reach a provider.
+- **One variable per paid run**, control comparison always named.
+
+---
+
+## 11. Definition of done (measurable — no prose verdicts)
+
+1. `Outputs/full5_v3/OE_ΣΧΝ-ΥΠΔΙΚ_findings.json` exists from an all-5-lens run
+   on `Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf` that completed without being stopped.
+2. Every §10 row in Phase E's gate table is PASS with a cited number.
+3. `skeptic_llm_error` < 10% of adversarial-gate calls, and ≥1 non-`supports`
+   verdict — the critic is demonstrably on.
+4. Parse failures < 5% of LLM calls.
+5. Spend < $5, recorded from `flow.budget_state`.
+6. All 5 lenses have at least one green single-lens smoke on record.
+7. `docs/SMOKE_AUDIT_V3.md` committed with the before/after table and the logs
+   pasted in.
+8. Offline: pytest ≥ 532 passed, mypy/ruff/lint-imports clean.
+9. Deliberative pipeline: one live run recorded — PASS, or OPEN with the reason.
+
+Until 1–8 are all true, the campaign is not done. Item 9 may land as OPEN.
