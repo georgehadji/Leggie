@@ -527,16 +527,41 @@ both consumers (`skeptic.review`, `cove._apply_revision`) already clamp the
 not a weakening of a Domain invariant (the fenced `Finding`/`IRAC`/`Confidence`
 entities are unchanged). 4 new tests; 550 passed, mypy/ruff/lint-imports clean.
 
-**Honest scope:** this removes a *confirmed* parse-failure mechanism, but I did
-**not** measure how much of subset7's 14.5% it accounts for — that needs the
-actual failing content, which the §D15 debug-line gap denied us, or a fresh
-live run. It is a strict improvement with no downside regardless. **Before
-claiming the parse-failure gate row moved, re-run subset3's command
-(articles 1-10, ~$0.10) and compare the parse-failure rate to subset7's
-11/76.** If it drops materially, D18 was a dominant cause; if not, another
-mechanism dominates (candidate: markdown-fenced or extra-field responses the
-parser's alias/fence handling doesn't cover) and the investigation continues
-from real content once the observability gap is closed.
+**Confirmation run (`Outputs/subset8/`, same command as subset3/7, $0.1101):**
+
+| Metric | subset7 (pre-D18) | subset8 (post-D18) | Read |
+|---|---|---|---|
+| parse-failure rate | 11/76 = 14.5% | **8/89 = 9.0%** | Real drop (~38% relative) — gate (<5%) still not met, but D18 is a genuine contributing mechanism, not a no-op |
+| CoVe error rate | 4/7 = 57.1% | **2/7 = 28.6%** | Real improvement |
+| skeptic error rate | 3/7 = 42.9% | 4/7 = 57.1% | Worse — noisy, small-n (different findings mix each run; not paired) |
+| `Response truncated` | 0 | **3** (at 2048, 2048, **1024**) | Reopens something — see below |
+| findings | 7 | 7 | Held |
+
+**D18 is confirmed as a real, positive mechanism** — parse-failure rate and
+CoVe error rate both dropped substantially in a like-for-like re-run. It is
+not the *only* mechanism (rate is still well above the 5% gate), and the
+remaining failures need real content to diagnose further, which the §D15
+debug-line gap still denies us.
+
+**But truncation reappeared, and one instance is diagnostic.** A 1024-token
+truncation can only come from `_answer_factored`'s route-`None` fallback
+(`_DEFAULT_ANSWER_MAX_TOKENS`) — `evidence_verification`'s configured ceiling
+is 8192, and no code path produces 1024 except that specific fallback. This
+is the **same unexplained pattern as subset6's confirmation run** (a 2048
+truncation with no `cove_route_failed` warning, `route.max_tokens` not
+reaching the request) — now reproduced a second time, on a *different* CoVe
+call site (`_answer_factored` instead of `_cross_check`), across a different
+run. Two independent occurrences, in two different steps of the same
+`CoVeVerifier`, both with zero exception logged, is no longer a comfortable
+"n=1 anomaly" — it looks like `_select_route()` intermittently returns `None`
+(or a route with the wrong `max_tokens`) for a small fraction of calls,
+silently, for a reason not yet identified. **Re-opened as a genuine
+observability/correctness gap, not filed away.** Next step if pursued: log
+`route` at DEBUG (not just on failure) for every `_select_route()` call, so
+a future run can show the resolution rate directly instead of inferring it
+from truncation ceilings after the fact — a $0 code change, gated behind the
+same DEBUG-visibility problem noted in §D15/§D18's observability item, which
+still needs solving first for the log line to actually appear.
 
 ```powershell
 foreach ($lens in "economic","eu_gdpr","implementation","legal_coherence") {
