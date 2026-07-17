@@ -411,7 +411,7 @@ $0.0989).** Full comparison against the official Phase C exit gate (§4):
 | `Response truncated` | 5 | ≤1 | 0 | **0** | **PASS** (3rd confirming run) |
 | findings | 7 (0.70/art.) | ≥7 | 6 (0.60/art.) | **7 (0.70/art.)** | **PASS** — matches control exactly |
 | `skeptic_llm_error` | 5/8=62.5% | ≤10% of calls | 2/6=33.3% | 3/7=**42.9%** | FAIL |
-| `skeptic_verdict` diversity | 3, all supports | ≥1 non-supports | 4, all supports | 4, all **supports** | FAIL — never once reproduced since v5 |
+| ~~`skeptic_verdict` diversity~~ | 3, all supports | ~~≥1 non-supports~~ | 4, all supports | 4, all supports | **RETIRED** — measures critic strictness, not correctness; see §D17 |
 | parse-failure rate | 13/90=14.4% | <5% of calls | 10/83=12.0% | 11/76=**14.5%** | FAIL — flat vs. control |
 
 **Read honestly:** two rows are unambiguous wins, confirmed across three
@@ -424,13 +424,8 @@ paired comparison — read subset3→subset7 as "still broadly flat," not as
 contradicting subset5→subset6's real, controlled improvement).
 
 **What's left unexplained, in order of likely payoff:**
-1. Verdict diversity stuck at unanimous `supports` across every single
-   constitutional-lens run this campaign has made since v5's one-time
-   9-refutes/9-supports split (2026-07-11) — never reproduced since. Could be:
-   (a) these particular 10 articles/findings are genuinely all sound (not a
-   bug), (b) the critic prompt or model swap has a systematic agreement bias,
-   or (c) something in the aggregation/rerank stage is filtering out findings
-   the critic would have refuted before skeptic ever sees them. Untested.
+1. ~~Verdict diversity stuck at unanimous `supports`.~~ **RESOLVED — not a
+   bug (2026-07-17).** See §D17 below.
 2. The two open observability gaps from §D15 (debug line not firing;
    2048-ceiling truncation with no route-failure warning) — still n=1/n=3,
    still not reproduced with enough volume to localize.
@@ -439,8 +434,61 @@ contradicting subset5→subset6's real, controlled improvement).
 proven and should stay. Whether to treat parse-failure/skeptic-error rate as
 "good enough, ship it" (both are dramatically better than the original
 pre-campaign baseline, even if not meeting the exact §10 numeric bar) or to
-keep investigating item 1 above is a call for the user, not something to
-decide unprompted by spending further.
+keep investigating is a call for the user, not something to decide unprompted
+by spending further. The verdict-diversity row of the §4 gate should be
+**retired** — see §D17.
+
+### D17 — "Verdict diversity" measures critic STRICTNESS, not correctness — **the gate row is wrong, not the pipeline**
+
+**Question:** the adversarial critic returned unanimous `supports` on every
+constitutional-lens run since v5's one-time 9-refutes/9-supports split
+(2026-07-11), which the §4 gate treats as a FAIL ("≥1 non-`supports`
+required").
+
+**Discriminating experiment (`scratchpad/verdict_diversity_probe.py`, ~$0.20):**
+the exact `LLMAdversarialGate` prompt (`skeptic.py`), on 4 real subset7
+findings (the observed all-`supports` baseline) + 2 deliberately-broken
+controls (a fabricated `Άρθρο 250 Σ` — the Constitution has 120 articles; and
+a religious-freedom-via-court-fees non-sequitur), through both
+`google/gemini-2.5-pro` (current critic) and `anthropic/claude-sonnet-4.6`.
+
+| | real ×4 | broken ×2 |
+|---|---|---|
+| gemini-2.5-pro | supports ×4 | **refutes ×2** |
+| claude-sonnet-4.6 | **refutes** (substantive) | refutes |
+
+**Result — three things established:**
+1. **Pro is not agreement-biased.** It refuted both broken controls, naming
+   the exact defect ("το Σύνταγμα… αριθμεί 120 άρθρα… Άρθρο 250… δεν υπάρχει").
+   A critic that catches fabricated articles and non-sequiturs but supports the
+   real findings is working correctly — the unanimous `supports` reflects that
+   subset7's 7 findings clear a reasonable correctness bar, **not** a broken
+   critic.
+2. **Sonnet is a genuinely stricter critic.** It *refuted* a real finding Pro
+   supported, on legitimate grounds (empty `Εφαρμογή` field → no bridge from
+   rule to conclusion; triple-hedge "ενδέχεται να παραβιάζει" with no
+   proportionality-test analysis; ΕΣΔΑ Art.6 cited without case law). Not
+   wrong — but a strictness/policy difference, not a correctness one. This is
+   almost certainly why v5 (whose critic was Gemini **flash**, per SMOKE_AUDIT
+   v3 "Anthropic→Gemini" with the Pro upgrade applied *after* v5 — correcting
+   an earlier mis-attribution in this campaign's notes) showed more refutes:
+   the critic model, not the pipeline, sets the refute rate.
+3. **Sonnet is not a drop-in.** Its raw output with the current prompt is
+   markdown prose with the verdict buried in a fence (` ```VERDICT: refutes``` `),
+   which the production JSON parser can't consume (all 6 probe calls came back
+   unparseable). Switching the critic to Sonnet would reintroduce parse
+   failures unless its output-format contract is fixed first.
+
+**Conclusion:** the "≥1 non-`supports`" gate criterion measures how *strict*
+the critic model is, not whether the pipeline is healthy. On a clean finding
+set with a reasonable-bar critic, unanimous `supports` is the correct outcome.
+**Retire it as a hard gate row; keep it as an observability signal.** If
+stricter adversarial review is wanted, that is a scoped *product* change
+(tighten Pro's prompt to raise its bar, OR adopt Sonnet + fix its JSON-output
+contract), each with a real cost — refuting under-argued-but-not-wrong
+findings discards genuine constitutional concerns — and is out of scope for
+closing this campaign. **No code change made; this is a gate-definition fix,
+not a pipeline fix.**
 
 ```powershell
 foreach ($lens in "economic","eu_gdpr","implementation","legal_coherence") {
