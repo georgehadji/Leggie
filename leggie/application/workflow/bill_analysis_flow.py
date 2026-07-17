@@ -49,6 +49,8 @@ from leggie.domain.models import (
 if TYPE_CHECKING:
     from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
 
+CHECKPOINT_FILENAME = "leggie_checkpoint.json"
+
 
 class BillAnalysisFlow:
     """End-to-end bill analysis workflow.
@@ -182,7 +184,8 @@ class BillAnalysisFlow:
                 explicit-id restriction.
             checkpoint_path: When set, creates a CheckpointStore at this path for
                 atomic resume support. Ignored if a checkpoint_store was already
-                supplied to the constructor.
+                supplied to the constructor. Defaults to
+                `output_dir/leggie_checkpoint.json`.
 
         Returns:
             (findings, reports) tuple.
@@ -204,8 +207,12 @@ class BillAnalysisFlow:
         logger = bind_trace_id(get_logger(__name__))
         logger.info("flow.started", bill_path=str(file_path), trace_id=trace_id)
 
-        run_checkpoint_path = Path(checkpoint_path) if checkpoint_path is not None else self._checkpoint_path
-        if self._checkpoint_store is None and run_checkpoint_path is not None:
+        if self._checkpoint_store is None:
+            run_checkpoint_path = (
+                Path(checkpoint_path)
+                if checkpoint_path is not None
+                else self._checkpoint_path or output_path / CHECKPOINT_FILENAME
+            )
             self._checkpoint_store = CheckpointStore(str(run_checkpoint_path))
 
         # Start each run with a clean slate; a compatible checkpoint will restore
