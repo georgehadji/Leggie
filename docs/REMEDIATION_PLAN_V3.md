@@ -426,9 +426,18 @@ contradicting subset5→subset6's real, controlled improvement).
 **What's left unexplained, in order of likely payoff:**
 1. ~~Verdict diversity stuck at unanimous `supports`.~~ **RESOLVED — not a
    bug (2026-07-17).** See §D17 below.
-2. The two open observability gaps from §D15 (debug line not firing;
+2. ~~Parse-failure rate flat at ~14.5%.~~ **One concrete mechanism found and
+   fixed (2026-07-17), aggregate effect unmeasured.** See §D18 below.
+3. The two open observability gaps from §D15 (debug line not firing;
    2048-ceiling truncation with no route-failure warning) — still n=1/n=3,
-   still not reproduced with enough volume to localize.
+   still not reproduced with enough volume to localize. The debug-line-not-firing
+   was chased to ground offline (§D18 note): the ladder + logging code is
+   correct — it fires in five isolated reproductions including the full
+   BudgetGuard→Adapter→CoVe stack — so the real-run non-appearance is an
+   environment interaction (most likely the CLI's UTF-8 stdout reassignment
+   binding the log handler to a stale stream, plus Greek `content_head`
+   triggering encode errors that `logging` swallows). Cosmetic; not chased
+   further.
 
 **Decision needed before Phase D:** the truncation-specific fix (D11) is
 proven and should stay. Whether to treat parse-failure/skeptic-error rate as
@@ -489,6 +498,45 @@ contract), each with a real cost — refuting under-argued-but-not-wrong
 findings discards genuine constitutional concerns — and is out of scope for
 closing this campaign. **No code change made; this is a gate-definition fix,
 not a pipeline fix.**
+
+### D18 — Out-of-range numeric DTO fields REJECTED the whole structured response — **HIGH, one mechanism fixed; aggregate effect on the 14.5% unmeasured**
+
+**Free offline analysis** of the two schemas that fail most
+(`SkepticVerdictResponse`, `CoVeCrossCheckResponse`) plus the lens schema:
+each had a hard-bounded float — `confidence_adjustment` (`ge=-0.5, le=0.5`)
+and `IRACCandidate/VSCandidate.probability` (`ge=0.0, le=1.0`). A model that
+emits e.g. `confidence_adjustment: -0.8` or `probability: 1.5` produces valid
+JSON that **pydantic then rejects** with a `ValidationError` — a `ValueError`
+the `generate_structured` ladder catches, retries identically (temperature 0),
+and exhausts, discarding the entire verdict / whole finding-set. Verified
+offline: `StructuredResponseParser.parse` rejected these payloads before the
+fix, clamps-and-accepts after.
+
+Same *class* as the earlier "strip `minimum`/`maximum` from the json_schema so
+providers don't 400" fix (`test_number_constraints_stripped_for_provider_compatibility`),
+but on the **pydantic-validation** side, which that fix never touched — so a
+model freed to emit out-of-range values in `json_object` fallback mode then
+hit a local hard bound.
+
+**Fix (`structured_output.py`):** replaced the hard `ge/le` bounds with
+`mode="before"` field validators that **clamp** (`-0.8 → -0.5`, `1.5 → 1.0`,
+non-numeric → the field's neutral default) instead of raising. Safe because
+both consumers (`skeptic.review`, `cove._apply_revision`) already clamp the
+*final* `Confidence.score` into `[0,1]`, and the real invariant
+(`Confidence.score ∈ [0,1]`) is untouched — so this is a DTO-robustness change,
+not a weakening of a Domain invariant (the fenced `Finding`/`IRAC`/`Confidence`
+entities are unchanged). 4 new tests; 550 passed, mypy/ruff/lint-imports clean.
+
+**Honest scope:** this removes a *confirmed* parse-failure mechanism, but I did
+**not** measure how much of subset7's 14.5% it accounts for — that needs the
+actual failing content, which the §D15 debug-line gap denied us, or a fresh
+live run. It is a strict improvement with no downside regardless. **Before
+claiming the parse-failure gate row moved, re-run subset3's command
+(articles 1-10, ~$0.10) and compare the parse-failure rate to subset7's
+11/76.** If it drops materially, D18 was a dominant cause; if not, another
+mechanism dominates (candidate: markdown-fenced or extra-field responses the
+parser's alias/fence handling doesn't cover) and the investigation continues
+from real content once the observability gap is closed.
 
 ```powershell
 foreach ($lens in "economic","eu_gdpr","implementation","legal_coherence") {

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from leggie.application.ports.llm import LLMRequest, LLMResponse
 from leggie.domain.models import ModelTier
 from leggie.domain.models.structured_output import (
+    CoVeCrossCheckResponse,
     IRACCandidate,
     LensFindings,
     SkepticVerdictResponse,
@@ -363,6 +364,64 @@ class TestStructuredResponseParser:
         result = parser.parse(content, LensFindings)
         assert isinstance(result, LensFindings)
         assert len(result.findings) == 0
+
+
+class TestNumericFieldsClampNotReject:
+    """D18: an LLM-emitted numeric field out of its advisory range must CLAMP,
+    not REJECT the whole structured response. Before this fix, a model emitting
+    confidence_adjustment=-0.8 or probability=1.5 raised a pydantic
+    ValidationError -> the ladder exhausted -> the entire verdict/finding-set
+    was discarded. Both consumers already clamp the final Confidence.score, so
+    the raw delta/probability range is advisory only. See
+    docs/REMEDIATION_PLAN_V3.md D18."""
+
+    def make_parser(self) -> StructuredResponseParser:
+        return StructuredResponseParser()
+
+    def test_skeptic_adjustment_out_of_range_clamps(self):
+        parser = self.make_parser()
+        low = parser.parse(
+            json.dumps({"verdict": "refutes", "reason": "x", "confidence_adjustment": -0.8}),
+            SkepticVerdictResponse,
+        )
+        assert low.confidence_adjustment == -0.5
+        high = parser.parse(
+            json.dumps({"verdict": "supports", "reason": "x", "confidence_adjustment": 0.9}),
+            SkepticVerdictResponse,
+        )
+        assert high.confidence_adjustment == 0.5
+
+    def test_skeptic_adjustment_non_numeric_defaults_zero(self):
+        parser = self.make_parser()
+        r = parser.parse(
+            json.dumps({"verdict": "neutral", "reason": "x", "confidence_adjustment": "n/a"}),
+            SkepticVerdictResponse,
+        )
+        assert r.confidence_adjustment == 0.0
+
+    def test_crosscheck_adjustment_out_of_range_clamps(self):
+        parser = self.make_parser()
+        r = parser.parse(
+            json.dumps({
+                "consistency": "partially_consistent", "reason": "x",
+                "keep": True, "confidence_adjustment": -0.7,
+            }),
+            CoVeCrossCheckResponse,
+        )
+        assert r.confidence_adjustment == -0.5
+
+    def test_lens_probability_out_of_range_clamps_not_rejects_whole_set(self):
+        """The failure mode that mattered most: one bad probability must not
+        discard every finding in the response."""
+        parser = self.make_parser()
+        content = json.dumps({"findings": [
+            {"issue": "a", "rule": "r", "application": "ap", "conclusion": "c", "probability": 1.5},
+            {"issue": "b", "rule": "r", "application": "ap", "conclusion": "c", "probability": 0.7},
+        ]})
+        result = parser.parse(content, LensFindings)
+        assert len(result.findings) == 2  # neither discarded
+        assert result.findings[0].probability == 1.0  # clamped
+        assert result.findings[1].probability == 0.7  # untouched
 
 
 # ═══════════════════════════════════════════════════════════════════════
