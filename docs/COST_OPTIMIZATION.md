@@ -80,6 +80,7 @@ The Gemini 2.5 family is the **only proven Greek-legal pair** in the current pip
 | **xAI** | `x-ai/grok-4.5` | $2.00 | $6.00 | Yes | More capable, but more expensive than Gemini Pro for the critic role. |
 | **MoonshotAI** | `moonshotai/kimi-k2.5` | $0.375 | $2.025 | Yes | Cheap 1M ctx; good candidate for large-context summarization. |
 | **MoonshotAI** | `moonshotai/kimi-k2.7-code` | $0.72 | $3.49 | Yes | Code/math focused; less obviously suited to legal reasoning. |
+| **MoonshotAI** | `moonshotai/kimi-k3` | $3.00 | $15.00 | Yes | 2.8T multimodal reasoning, 1M ctx; premium-tier quality-critical routes. |
 | **MiniMax** | `minimax/minimax-m2.5` | $0.15 | $0.90 | Yes | Very cheap; untested for Greek law. |
 | **MiniMax** | `minimax/minimax-m3` | $0.30 | $1.20 | Yes | Comparable cost to Gemini Flash; candidate for lens_analysis. |
 | **NVIDIA** | `nvidia/nemotron-3-super-120b-a12b` | $0.08 | $0.45 | Yes | Extremely cheap; safety/classification focused, legal reasoning unknown. |

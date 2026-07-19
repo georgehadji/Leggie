@@ -35,7 +35,7 @@ class CascadeSettings(BaseSettings):
     rules_path: str = Field(default="config/routes.yaml", description="Path to routing rules YAML")
     free_model: str = "google/gemini-2.5-flash-lite"
     budget_model: str = "google/gemini-2.5-flash"
-    premium_model: str = "google/gemini-2.5-pro"
+    premium_model: str = "moonshotai/kimi-k3"
     confidence_floor: float = Field(default=0.6, ge=0.0, le=1.0)
     premium_fallback_enabled: bool = True
 

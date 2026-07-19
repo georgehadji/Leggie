@@ -8,7 +8,7 @@
 # Tier defaults:
 #   FREE/cheap    google/gemini-2.5-flash-lite   (~$0.10/1M in)
 #   BUDGET/work   google/gemini-2.5-flash        (~$0.30/1M in)  — proven Greek-capable workhorse
-#   PREMIUM       google/gemini-2.5-pro          (~$1.25/1M in)  — long-context Greek quality
+#   PREMIUM       moonshotai/kimi-k3               (~$3.00/1M in)  — 2.8T multimodal reasoning
 
 routes:
   # ── Core analysis (cost driver: 5 lenses × N articles) ───────────
@@ -34,13 +34,18 @@ routes:
   # Skeptic must CATCH legal errors the lens missed.
   # Placed on the premium tier so the critic is strictly stronger than the
   # lens model (google/gemini-2.5-flash) that produced the finding.
+  # gemini-2.5-pro is a reasoning model: its thinking tokens are billed
+  # against max_tokens and emitted before any content. Measured 2026-07-17,
+  # it spends ~1900-2200 tokens reasoning per verdict, so the old 2048 budget
+  # left ~70 tokens for the JSON and truncated every response. Keep this
+  # comfortably above the reasoning floor.
   adversarial_critic:
     model: "google/gemini-2.5-pro"
     tier: "premium"
-    max_tokens: 2048
+    max_tokens: 8192
     cascade: true
     cascade_models:
-      premium: "google/gemini-2.5-pro"
+      premium: "moonshotai/kimi-k3"
 
   # ── Simple / cheap tasks ─────────────────────────────────────────
   classification:
@@ -64,18 +69,18 @@ routes:
 
   # ── Quality-critical (low volume: survivors / final reports) ─────
   evidence_verification:
-    model: "google/gemini-2.5-pro"
+    model: "moonshotai/kimi-k3"
     tier: "premium"
     max_tokens: 2048
     cascade: true
     cascade_models:
-      premium: "google/gemini-2.5-pro"
+      premium: "moonshotai/kimi-k3"
 
   report_generation:
-    model: "google/gemini-2.5-pro"
+    model: "moonshotai/kimi-k3"
     tier: "premium"
     max_tokens: 8192
     cascade: true
     cascade_models:
       budget: "google/gemini-2.5-flash"
-      premium: "google/gemini-2.5-pro"
+      premium: "moonshotai/kimi-k3"

@@ -61,6 +61,8 @@ _OFFLINE_MODEL_ALLOWLIST: set[str] = {
     "mistral/mistral-large-2411",
     # Qwen
     "qwen/qwen-2.5-72b",
+    # MoonshotAI
+    "moonshotai/kimi-k3",
 }
 
 
@@ -181,9 +183,15 @@ class LLMAdapter(LLMPort):
         # json_object modes fail before assigning it.
         response: LLMResponse | None = None
 
+        # Retained so the truncation retry can re-use the strict schema. A
+        # bare json_object retry asks for *some* JSON without saying which
+        # fields, so the model invents its own key names and the result can
+        # never validate — no token budget rescues that.
+        schema_format: dict[str, Any] | None = None
+
         # ── Attempt 1: json_schema strict mode ────────────────────
         try:
-            response_format = {
+            schema_format = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": schema.__name__,
@@ -191,7 +199,7 @@ class LLMAdapter(LLMPort):
                     "schema": pydantic_to_json_schema(schema),
                 },
             }
-            req = replace(request, response_format=response_format)
+            req = replace(request, response_format=schema_format)
             response = await self.generate(req)
             return parser.parse(response.content, schema), response
         except (LLMError, ValueError) as exc:
@@ -199,6 +207,7 @@ class LLMAdapter(LLMPort):
                 logger.warning(
                     "json_schema rejected, falling back to json_object: %s", exc
                 )
+                schema_format = None
 
         # ── Attempt 2: json_object mode (fallback) ────────────────
         try:
@@ -219,7 +228,7 @@ class LLMAdapter(LLMPort):
             retry_req = replace(
                 request,
                 max_tokens=doubled,
-                response_format={"type": "json_object"},
+                response_format=schema_format or {"type": "json_object"},
             )
             try:
                 response = await self.generate(retry_req)
