@@ -10,7 +10,6 @@ configured container and resolve all adapters through it; no ad-hoc factories.
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -20,17 +19,20 @@ from leggie.application.cqrs.commands.cli_commands import (
     EvalGoldSetCommand,
     ParseDocumentCommand,
     PreviewBillCommand,
+    ReplayRunCommand,
 )
 from leggie.application.ports.citation_parser import CitationParserPort
+from leggie.application.ports.event_bus import EventBusPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.reranker import RerankerPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.services.cove_verifier import CoVeVerifier
+from leggie.infrastructure.observability import get_logger
 
 if TYPE_CHECKING:
     from leggie.infrastructure.container import Container
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ── Shared resolver helpers ───────────────────────────────────────────
@@ -84,7 +86,9 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]])
 
             text = await IngestorFactory.ingest(Path(command.file_path))
             parser = DocumentParser()
-            doc = parser.parse(text, title=Path(command.file_path).stem)
+            doc, report = parser.parse_with_integrity(
+                text, title=Path(command.file_path).stem
+            )
             citations = parser.extract_citations(text)
 
             output = {
@@ -101,6 +105,15 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]])
                     for a in doc.articles
                 ],
                 "citations": citations,
+                "integrity": {
+                    "articles_parsed": report.articles_parsed,
+                    "distinct_ids": report.distinct_ids,
+                    "is_clean": report.is_clean,
+                    "duplicate_ids": list(report.duplicate_ids),
+                    "missing_numbers": list(report.missing_numbers),
+                    "rejected_count": len(report.rejected),
+                    "toc_span": report.toc_span,
+                },
             }
 
             if command.output_path:
@@ -109,7 +122,7 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]])
 
             return CommandResult(success=True, data=output)
         except Exception as e:
-            return CommandResult(success=False, error=str(e))
+            return CommandResult.failure(e)
 
 
 class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
@@ -151,6 +164,7 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 use_verbalized_sampling=command.use_verbalized_sampling or settings.analysis.use_verbalized_sampling,
                 reranker_name=settings.analysis.reranker,
                 reranker_port=reranker_port,
+                allow_degraded_parse=command.allow_degraded_parse,
             )
             findings, reports = await flow.run(
                 command.file_path,
@@ -165,7 +179,7 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
 
             return CommandResult(success=True, data=summary)
         except Exception as e:
-            return CommandResult(success=False, error=str(e))
+            return CommandResult.failure(e)
 
     async def _handle_deliberative(self, command: AnalyzeBillCommand) -> CommandResult[str]:
         from leggie.config.settings import get_settings
@@ -178,6 +192,7 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                     "Deliberative pipeline is disabled. Set LEGGIE_REASONER__ENABLED=true "
                     "and configure LEGGIE_REASONER__HOME / API key — see .env.example."
                 ),
+                error_type="ConfigurationError",
             )
 
         try:
@@ -227,11 +242,12 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 success=False,
                 error=f"Reasoner unavailable: {e}. Retry with --fallback to use the "
                 "deterministic pipeline instead.",
+                error_type=type(e).__name__,
             )
         except DeliberativeBudgetExceededError as e:
-            return CommandResult(success=False, error=str(e))
+            return CommandResult.failure(e)
         except Exception as e:
-            return CommandResult(success=False, error=str(e))
+            return CommandResult.failure(e)
 
 
 class PreviewBillHandler(CommandHandler[PreviewBillCommand, dict[str, Any]]):
@@ -274,7 +290,7 @@ class PreviewBillHandler(CommandHandler[PreviewBillCommand, dict[str, Any]]):
 
             return CommandResult(success=True, data=output)
         except Exception as e:
-            return CommandResult(success=False, error=str(e))
+            return CommandResult.failure(e)
 
 
 class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
@@ -317,7 +333,7 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
 
             return CommandResult(success=True, data=results)
         except Exception as e:
-            return CommandResult(success=False, error=str(e))
+            return CommandResult.failure(e)
 
 
 def _find_bill_file(bill_id: str, search_dir: Path) -> Path | None:
@@ -328,3 +344,54 @@ def _find_bill_file(bill_id: str, search_dir: Path) -> Path | None:
         for f in search_dir.glob(f"*{bill_id}*{ext}"):
             return f
     return None
+
+
+class ReplayRunHandler(CommandHandler["ReplayRunCommand", dict[str, object]]):
+    """Handle run replay from the SQLite event store (PROD-06d)."""
+
+    def __init__(self, container: Container) -> None:
+        self._container = container
+
+    async def handle(self, command: ReplayRunCommand) -> CommandResult[dict[str, object]]:
+        from leggie.infrastructure.persistence.sqlite_event_store import SqliteEventStore
+        try:
+            # Resolve event store from container
+            store = self._container.get(EventBusPort)
+
+            if not isinstance(store, SqliteEventStore):
+                return CommandResult(
+                    success=False,
+                    error="Replay requires a SQLite event store (set LEGGIE_DB__URL=sqlite:///leggie.db)",
+                    error_type="ConfigurationError",
+                )
+
+            events = store.replay(command.run_id)
+            if not events:
+                return CommandResult(
+                    success=False,
+                    error=f"No events found for run '{command.run_id}'",
+                    error_type="RunNotFoundError",
+                )
+
+            # Build a replay summary from events
+            findings_created = sum(1 for e in events if str(e.event_type) == "finding_created")
+            findings_refuted = sum(1 for e in events if str(e.event_type) == "finding_refuted")
+            completed = any(str(e.event_type) == "workflow_completed" for e in events)
+            failed = any(str(e.event_type) == "workflow_failed" for e in events)
+
+            summary: dict[str, object] = {
+                "run_id": command.run_id,
+                "event_count": len(events),
+                "findings_created": findings_created,
+                "findings_refuted": findings_refuted,
+                "findings_net": findings_created - findings_refuted,
+                "status": "failed" if failed else ("completed" if completed else "incomplete"),
+            }
+
+            if command.verify:
+                # Full verify (diff against stored findings JSON) is manifest-backed future work
+                summary["verify"] = "not_implemented"
+
+            return CommandResult(success=True, data=summary)
+        except Exception as e:
+            return CommandResult.failure(e)

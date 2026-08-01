@@ -18,10 +18,23 @@ TResult = TypeVar("TResult")
 
 @dataclass(frozen=True)
 class CommandResult[TResult]:
-    """Result of executing a command."""
+    """Result of executing a command.
+
+    ``error_type`` carries the originating exception's class name so callers
+    can branch on failure *kind* without re-raising or string-matching the
+    message. The CLI maps it to a documented exit code; without it every
+    handled failure would collapse to a generic "exit 1", which makes the
+    tool unusable for an external agent driving it headlessly.
+    """
     success: bool
     data: TResult | None = None
     error: str | None = None
+    error_type: str | None = None
+
+    @classmethod
+    def failure(cls, exc: BaseException) -> CommandResult[TResult]:
+        """Build a failed result that preserves the exception's type name."""
+        return cls(success=False, error=str(exc), error_type=type(exc).__name__)
 
 
 @dataclass(frozen=True)
