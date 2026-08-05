@@ -58,25 +58,31 @@ class ReasonerServerManager:
         self._process_spawner = process_spawner or self._default_spawn
         self._poll_interval = poll_interval
         self._process: SpawnedProcess | None = None
+        # Serialize the spawn-if-unhealthy critical section so two concurrent
+        # deliberative runs cannot double-spawn the backend.
+        self._spawn_lock = asyncio.Lock()
 
     async def ensure_running(self) -> None:
         """Reuse a healthy Reasoner if present; else autostart or fail."""
         if await self._health_prober():
             return
 
-        if not self._settings.autostart:
-            raise ReasonerUnavailableError(
-                f"Reasoner not reachable at {self._settings.base_url} "
-                "and LEGGIE_REASONER_AUTOSTART is disabled"
-            )
+        async with self._spawn_lock:
+            if not self._settings.autostart:
+                raise ReasonerUnavailableError(
+                    f"Reasoner not reachable at {self._settings.base_url} "
+                    "and LEGGIE_REASONER_AUTOSTART is disabled"
+                )
 
-        if self._process is not None and self._process.poll() is None:
-            # We already spawned it; don't double-start — just wait for health.
+            # Under the lock, the process guard is authoritative: if a concurrent
+            # caller already spawned the backend while we waited to acquire, reuse
+            # it instead of double-spawning.
+            if self._process is not None and self._process.poll() is None:
+                await self._wait_until_healthy()
+                return
+
+            self._process = self._process_spawner()
             await self._wait_until_healthy()
-            return
-
-        self._process = self._process_spawner()
-        await self._wait_until_healthy()
 
     async def shutdown(self) -> None:
         """Terminate the process this manager spawned, if any."""

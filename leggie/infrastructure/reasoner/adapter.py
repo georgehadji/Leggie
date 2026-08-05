@@ -62,70 +62,74 @@ class ReasonerAdapter(ReasonerPort):
             body["client_run_id"] = request.client_run_id
 
         last_error: Exception | None = None
-        for attempt in range(self._max_retries):
-            start = time.monotonic()
-            try:
-                async with httpx.AsyncClient(
-                    timeout=self._request_timeout, transport=self._transport
-                ) as client:
+        # One client per call, reused across retry attempts (and thus connection
+        # pooling) instead of re-establishing a client on every attempt.
+        async with httpx.AsyncClient(
+            timeout=self._request_timeout, transport=self._transport
+        ) as client:
+            for attempt in range(self._max_retries):
+                start = time.monotonic()
+                try:
                     resp = await client.post(
                         f"{self._base_url}/api/agent/run/sync",
                         headers=headers,
                         json=body,
                     )
-            except httpx.TimeoutException as exc:
-                last_error = exc
-                if attempt < self._max_retries - 1:
-                    await asyncio.sleep(self._base_delay * (2**attempt))
-                    continue
-                raise ReasonerUnavailableError(
-                    f"Reasoner request timed out after {self._max_retries} attempts", exc
-                ) from exc
-            except httpx.RequestError as exc:
-                raise ReasonerUnavailableError(
-                    f"Reasoner unreachable at {self._base_url}", exc
-                ) from exc
+                except httpx.TimeoutException as exc:
+                    last_error = exc
+                    if attempt < self._max_retries - 1:
+                        await asyncio.sleep(self._base_delay * (2**attempt))
+                        continue
+                    raise ReasonerUnavailableError(
+                        f"Reasoner request timed out after {self._max_retries} attempts", exc
+                    ) from exc
+                except httpx.RequestError as exc:
+                    raise ReasonerUnavailableError(
+                        f"Reasoner unreachable at {self._base_url}", exc
+                    ) from exc
 
-            elapsed = time.monotonic() - start
+                elapsed = time.monotonic() - start
 
-            if resp.status_code == 401 or resp.status_code == 403:
-                raise ReasonerUnavailableError(
-                    f"Reasoner authentication failed ({resp.status_code})"
+                if resp.status_code == 401 or resp.status_code == 403:
+                    raise ReasonerUnavailableError(
+                        f"Reasoner authentication failed ({resp.status_code})"
+                    )
+
+                if resp.status_code in _RETRYABLE_STATUS_CODES:
+                    last_error = ReasonerUnavailableError(
+                        f"Reasoner returned {resp.status_code}: {resp.text[:200]}"
+                    )
+                    if attempt < self._max_retries - 1:
+                        await asyncio.sleep(self._base_delay * (2**attempt))
+                        continue
+                    raise last_error
+
+                if resp.status_code != 200:
+                    raise ReasonerUnavailableError(
+                        f"Reasoner request failed ({resp.status_code}): {resp.text[:200]}"
+                    )
+
+                try:
+                    data = resp.json()
+                except ValueError as exc:
+                    last_error = ReasonerUnavailableError(
+                        "Reasoner returned malformed JSON", exc
+                    )
+                    if attempt < self._max_retries - 1:
+                        await asyncio.sleep(self._base_delay * (2**attempt))
+                        continue
+                    raise last_error from exc
+
+                result = self._parse_result(data, elapsed)
+                logger.info(
+                    "reasoner.call_completed",
+                    preset=request.preset,
+                    models_used=result.models_used,
+                    total_tokens=result.total_tokens,
+                    duration_seconds=result.duration_seconds,
+                    attempt=attempt + 1,
                 )
-
-            if resp.status_code in _RETRYABLE_STATUS_CODES:
-                last_error = ReasonerUnavailableError(
-                    f"Reasoner returned {resp.status_code}: {resp.text[:200]}"
-                )
-                if attempt < self._max_retries - 1:
-                    await asyncio.sleep(self._base_delay * (2**attempt))
-                    continue
-                raise last_error
-
-            if resp.status_code != 200:
-                raise ReasonerUnavailableError(
-                    f"Reasoner request failed ({resp.status_code}): {resp.text[:200]}"
-                )
-
-            try:
-                data = resp.json()
-            except ValueError as exc:
-                last_error = ReasonerUnavailableError("Reasoner returned malformed JSON", exc)
-                if attempt < self._max_retries - 1:
-                    await asyncio.sleep(self._base_delay * (2**attempt))
-                    continue
-                raise last_error from exc
-
-            result = self._parse_result(data, elapsed)
-            logger.info(
-                "reasoner.call_completed",
-                preset=request.preset,
-                models_used=result.models_used,
-                total_tokens=result.total_tokens,
-                duration_seconds=result.duration_seconds,
-                attempt=attempt + 1,
-            )
-            return result
+                return result
 
         raise ReasonerUnavailableError(
             f"Reasoner call failed after {self._max_retries} attempts", last_error

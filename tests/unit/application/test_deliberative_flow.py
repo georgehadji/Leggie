@@ -1,5 +1,7 @@
 """Tests for DeliberativeFlow — end-to-end against a fake ReasonerPort."""
 
+import json
+
 import pytest
 
 from leggie.application.ports.citation_parser import CitationParserPort
@@ -293,6 +295,153 @@ class TestDeliberativeFlowBudget:
             await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         events = flow.get_event_log()
         assert any(e.event_type == EventType.BUDGET_TRIPPED for e in events)
+
+
+class FakeCheckpointStore:
+    """In-memory checkpoint store with a JSON round-trip to catch non-serializable data."""
+
+    def __init__(self) -> None:
+        self._data: dict | None = None
+        self.saves = 0
+
+    def save(self, data: dict) -> None:
+        self.saves += 1
+        self._data = json.loads(json.dumps(data))  # emulate on-disk JSON persistence
+
+    def load(self) -> dict | None:
+        return self._data
+
+    def delete(self) -> None:
+        self._data = None
+
+
+class Stage2FailingReasoner(ReasonerPort):
+    """Succeeds on Stage 1, raises on Stage 2 — to leave a Stage-1 checkpoint behind."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def reason(self, request: ReasonerRequest) -> ReasonerResult:
+        self.calls += 1
+        if self.calls == 2:
+            raise RuntimeError("stage2 boom")
+        return ReasonerResult(
+            synthesis="STAGE1 SYNTHESIS TEXT",
+            critical_insights=["ci-1"],
+            open_questions=[],
+            citations=[
+                Citation(
+                    scheme=CitationScheme.FEK,
+                    identifier="FEK/2024/1",
+                    original_text="ΦΕΚ Α 1/2024",
+                )
+            ],
+            models_used=["model-1"],
+            total_tokens={"prompt_tokens": 10, "completion_tokens": 5},
+            duration_seconds=1.0,
+            errors=[],
+        )
+
+
+class TestDeliberativeFlowIdempotency:
+    @pytest.mark.asyncio
+    async def test_each_stage_carries_a_stable_client_run_id(self, sample_bill_file, tmp_path):
+        reasoner = RecordingFakeReasoner()
+        flow = DeliberativeFlow(
+            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
+        )
+        await flow.run(sample_bill_file, output_dir=tmp_path / "out")
+
+        rid1 = reasoner.requests[0].client_run_id
+        rid2 = reasoner.requests[1].client_run_id
+        assert rid1 and rid1.endswith("-stage1")
+        assert rid2 and rid2.endswith("-stage2")
+        # Both stages share the same run prefix (so Reasoner sees one job).
+        assert rid1[: -len("-stage1")] == rid2[: -len("-stage2")]
+
+
+class TestDeliberativeFlowNikiPerspective:
+    @pytest.mark.asyncio
+    async def test_niki_perspective_label_renders_into_stage1(self, sample_bill_file, tmp_path):
+        reasoner = RecordingFakeReasoner()
+        flow = DeliberativeFlow(
+            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
+        )
+        await flow.run(sample_bill_file, output_dir=tmp_path / "out", perspective="niki")
+        assert "ΝΙΚΗ" in reasoner.requests[0].problem
+
+
+class TestDeliberativeFlowCheckpoint:
+    @pytest.mark.asyncio
+    async def test_checkpoint_deleted_on_successful_completion(self, sample_bill_file, tmp_path):
+        reasoner = RecordingFakeReasoner()
+        store = FakeCheckpointStore()
+        flow = DeliberativeFlow(
+            reasoner=reasoner,
+            stage1_preset="preset-1",
+            stage2_preset="preset-2",
+            checkpoint_store=store,
+        )
+        await flow.run(sample_bill_file, output_dir=tmp_path / "out")
+        assert store.saves >= 1  # Stage 1 was checkpointed
+        assert store.load() is None  # cleaned up on completion
+
+    @pytest.mark.asyncio
+    async def test_resume_skips_stage1_and_reuses_persisted_result(
+        self, sample_bill_file, tmp_path
+    ):
+        store = FakeCheckpointStore()
+
+        # First run fails in Stage 2, leaving a Stage-1 checkpoint behind.
+        failing = Stage2FailingReasoner()
+        flow1 = DeliberativeFlow(
+            reasoner=failing,
+            stage1_preset="preset-1",
+            stage2_preset="preset-2",
+            checkpoint_store=store,
+        )
+        with pytest.raises(RuntimeError, match="stage2 boom"):
+            await flow1.run(sample_bill_file, output_dir=tmp_path / "out")
+        assert store.load() is not None  # checkpoint survived the failure
+
+        # Second run resumes: Stage 1 is NOT re-billed, only Stage 2 runs.
+        reasoner = RecordingFakeReasoner()
+        flow2 = DeliberativeFlow(
+            reasoner=reasoner,
+            stage1_preset="preset-1",
+            stage2_preset="preset-2",
+            checkpoint_store=store,
+        )
+        report_path = await flow2.run(sample_bill_file, output_dir=tmp_path / "out")
+
+        assert len(reasoner.requests) == 1  # only Stage 2 called
+        assert reasoner.requests[0].preset == "preset-2"
+        assert "STAGE1 SYNTHESIS TEXT" in reasoner.requests[0].problem  # resumed Stage-1 output
+        assert report_path.exists()
+        assert store.load() is None  # cleaned up after successful completion
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_ignored_for_different_file(self, sample_bill_file, tmp_path):
+        store = FakeCheckpointStore()
+        # Seed a checkpoint that belongs to a different file.
+        store.save(
+            {
+                "marker": "stage1_completed",
+                "file_path": str(tmp_path / "other_bill.txt"),
+                "perspective": "neutral",
+                "stage1_result": {"synthesis": "unrelated"},
+            }
+        )
+        reasoner = RecordingFakeReasoner()
+        flow = DeliberativeFlow(
+            reasoner=reasoner,
+            stage1_preset="preset-1",
+            stage2_preset="preset-2",
+            checkpoint_store=store,
+        )
+        await flow.run(sample_bill_file, output_dir=tmp_path / "out")
+        # Mismatched checkpoint ignored → both stages run.
+        assert len(reasoner.requests) == 2
 
 
 class TestDeliberativeFlowCitationAppendix:

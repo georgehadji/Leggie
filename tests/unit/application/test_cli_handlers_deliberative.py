@@ -28,6 +28,7 @@ class FakeDeliberativeFlow:
         server_manager=None,
         citation_parser=None,
         max_tokens_per_run=None,
+        checkpoint_store=None,
     ):
         self.reasoner = reasoner
         self.stage1_preset = stage1_preset
@@ -35,6 +36,7 @@ class FakeDeliberativeFlow:
         self.server_manager = server_manager
         self.citation_parser = citation_parser
         self.max_tokens_per_run = max_tokens_per_run
+        self.checkpoint_store = checkpoint_store
         self.run_calls: list[dict] = []
         FakeDeliberativeFlow.instances.append(self)
 
@@ -91,11 +93,9 @@ def _settings_with_reasoner(**reasoner_overrides) -> Settings:
     return Settings(reasoner=ReasonerSettings(**reasoner_overrides))
 
 
-class TestDeterministicPipelineUnchanged:
-    @pytest.mark.asyncio
-    async def test_routes_to_deterministic_by_default(self, monkeypatch, tmp_path):
-        called = {"deterministic": False, "deliberative": False}
-
+class TestPipelineRouting:
+    @staticmethod
+    def _patch_both(monkeypatch, called):
         async def fake_deterministic(_self, _command):
             called["deterministic"] = True
             from leggie.application.cqrs.base import CommandResult
@@ -113,8 +113,28 @@ class TestDeterministicPipelineUnchanged:
             cli_handlers.AnalyzeBillHandler, "_handle_deliberative", fake_deliberative
         )
 
+    @pytest.mark.asyncio
+    async def test_routes_to_deliberative_by_default(self, monkeypatch, tmp_path):
+        called = {"deterministic": False, "deliberative": False}
+        self._patch_both(monkeypatch, called)
+
         handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        # No pipeline given → deliberative is now the default.
         command = AnalyzeBillCommand(file_path=str(tmp_path / "bill.txt"))
+        await handler.handle(command)
+
+        assert called["deliberative"] is True
+        assert called["deterministic"] is False
+
+    @pytest.mark.asyncio
+    async def test_explicit_deterministic_routes_to_deterministic(self, monkeypatch, tmp_path):
+        called = {"deterministic": False, "deliberative": False}
+        self._patch_both(monkeypatch, called)
+
+        handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        command = AnalyzeBillCommand(
+            file_path=str(tmp_path / "bill.txt"), pipeline="deterministic"
+        )
         await handler.handle(command)
 
         assert called["deterministic"] is True
@@ -168,6 +188,40 @@ class TestDeliberativeRoutingEnabled:
         assert flow.stage2_preset == "custom-stage2"
         assert flow.run_calls[0]["file_path"] == bill_path
         assert flow.run_calls[0]["perspective"] == "neutral"
+
+    @pytest.mark.asyncio
+    async def test_checkpoint_store_injected_when_checkpoint_path_given(
+        self, monkeypatch, tmp_path
+    ):
+        settings = _settings_with_reasoner(enabled=True)
+        import leggie.config.settings as settings_module
+        monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
+
+        handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        command = AnalyzeBillCommand(
+            file_path=str(tmp_path / "bill.txt"),
+            pipeline="deliberative",
+            checkpoint_path=str(tmp_path / "ckpt.json"),
+        )
+        await handler.handle(command)
+
+        flow = FakeDeliberativeFlow.instances[0]
+        assert flow.checkpoint_store is not None
+
+    @pytest.mark.asyncio
+    async def test_no_checkpoint_store_when_path_absent(self, monkeypatch, tmp_path):
+        settings = _settings_with_reasoner(enabled=True)
+        import leggie.config.settings as settings_module
+        monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
+
+        handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        command = AnalyzeBillCommand(
+            file_path=str(tmp_path / "bill.txt"), pipeline="deliberative"
+        )
+        await handler.handle(command)
+
+        flow = FakeDeliberativeFlow.instances[0]
+        assert flow.checkpoint_store is None
 
     @pytest.mark.asyncio
     async def test_falls_back_to_settings_perspective_when_unset(self, monkeypatch, tmp_path):
