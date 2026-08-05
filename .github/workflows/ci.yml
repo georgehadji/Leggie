@@ -34,8 +34,12 @@ jobs:
           mypy leggie/ --ignore-missing-imports
 
       - name: Enforce architecture with import-linter
+        # ARCH-02: normal-mode rendering crashes with "Only one live display
+        # may be active at once" on some platforms; --debug propagates
+        # exceptions instead of swallowing them for pretty-print, which is
+        # strictly safer for CI and does not change pass/fail semantics.
         run: |
-          lint-imports
+          lint-imports --debug
 
       - name: Run security scan with bandit
         run: |

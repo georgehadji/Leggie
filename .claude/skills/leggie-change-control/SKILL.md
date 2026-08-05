@@ -50,7 +50,8 @@ was misclassifying "the pipeline works" as proven by unit tests alone (§3.1).
 python -m pytest tests/ -q            # full suite; baseline 531 passed (measured 2026-07-15)
 mypy leggie/ --ignore-missing-imports # strict mode is set in pyproject; must be clean on touched modules
 ruff check leggie/ tests/             # do NOT widen the ignore list to pass (see §3.5)
-lint-imports                          # import-linter layer contract (install via pip install -e ".[lint]")
+lint-imports --debug                  # import-linter layer contract; --debug avoids a Rich Live-display
+                                       # crash in normal mode (ARCH-02, install via pip install -e ".[lint]")
 ```
 
 Class A additionally requires a **live smoke** (costs money, needs

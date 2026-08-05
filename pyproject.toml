@@ -103,4 +103,52 @@ layers = [
     "leggie.domain",
     "leggie.config",
 ]
-depend_inside = true
+# ARCH-01 (2026-08-05): namespace packages under application/{agents,cqrs,services,
+# workflow} and infrastructure/llm/adapters lacked __init__.py, so grimp's module
+# graph silently omitted them (74 of 118 modules seen) and this contract passed
+# vacuously over every violation below. __init__.py added; contract now sees the
+# real graph. Entries below are the itemized violation set captured at that
+# moment — each is removed by the phase named in its comment, not left standing.
+# unmatched_ignore_imports_alerting defaults to "error", so a stale entry (import
+# already fixed) fails the contract until pruned — the baseline cannot silently rot.
+ignore_imports = [
+    # ARCH-03 — removed by Phase 1 (observability relocated to leggie.observability)
+    "leggie.application.agents.constitutional_lens -> leggie.infrastructure.observability",
+    "leggie.application.agents.economic_lens -> leggie.infrastructure.observability",
+    "leggie.application.agents.eu_gdpr_lens -> leggie.infrastructure.observability",
+    "leggie.application.agents.implementation_lens -> leggie.infrastructure.observability",
+    "leggie.application.agents.legal_coherence_lens -> leggie.infrastructure.observability",
+    "leggie.application.agents.lens -> leggie.infrastructure.observability",
+    "leggie.application.agents.orchestrator -> leggie.infrastructure.observability",
+    "leggie.application.agents.skeptic -> leggie.infrastructure.observability",
+    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.observability",
+    "leggie.application.cqrs.mediator -> leggie.infrastructure.observability",
+    "leggie.application.services.blackboard_aggregator -> leggie.infrastructure.observability",
+    "leggie.application.services.cove_verifier -> leggie.infrastructure.observability",
+    "leggie.application.services.lens_vs -> leggie.infrastructure.observability",
+    "leggie.application.workflow.bill_analysis_flow -> leggie.infrastructure.observability",
+    # ARCH-04 — removed by Phase 2 (composition-root construction moved to container.py)
+    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.citation",
+    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.container",
+    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.ingest",
+    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.llm.base",
+    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.parse",
+    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.persistence.checkpoint_store",
+    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.persistence.eval_harness",
+    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.persistence.sqlite_event_store",
+    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.reasoner.adapter",
+    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.reasoner.server_manager",
+    "leggie.application.workflow.bill_analysis_flow -> leggie.infrastructure.persistence.checkpoint_store",
+    "leggie.application.workflow.ingest_parse -> leggie.infrastructure.ingest_adapter",
+    "leggie.application.workflow.ingest_parse -> leggie.infrastructure.parse_adapter",
+]
+
+[[tool.importlinter.contracts]]
+name = "domain-purity"
+type = "forbidden"
+source_modules = ["leggie.domain"]
+forbidden_modules = [
+    "leggie.interfaces",
+    "leggie.infrastructure",
+    "leggie.application",
+]
