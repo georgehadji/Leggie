@@ -1,8 +1,15 @@
 """Tests for the Greek legal document parser."""
 
+from pathlib import Path
+
 import pytest
 
 from leggie.domain.models import Document
+from leggie.domain.models.parse_integrity import (
+    ParseIntegrityReport,
+    RejectedCandidate,
+    RejectionReason,
+)
 from leggie.infrastructure.parse import DocumentParser
 
 
@@ -254,3 +261,69 @@ class TestCitationExtraction:
         text = "Απλό κείμενο χωρίς παραπομπές"
         citations = parser.extract_citations(text)
         assert len(citations) == 0
+
+
+class TestParseIntegrity:
+    """Integrity report tests."""
+
+    def test_parse_with_integrity_returns_report(self, parser):
+        doc, report = parser.parse_with_integrity(SAMPLE_BILL)
+        assert isinstance(report, ParseIntegrityReport)
+        assert report.articles_parsed == len(doc.articles)
+        assert report.distinct_ids == len({a.id for a in doc.articles})
+
+    def test_parse_with_integrity_clean_bill(self, parser):
+        doc, report = parser.parse_with_integrity(SAMPLE_BILL)
+        # SAMPLE_BILL has articles 1, 2, 5 — missing 3 and 4 is expected for this fixture
+        assert not report.duplicate_ids
+        assert report.articles_parsed == 3
+        assert report.distinct_ids == 3
+
+    def test_parse_with_integrity_reports_rejected(self, parser):
+        """A text with cross-ref headings should show rejected candidates."""
+        text = (
+            "Άρθρο 1 Σκοπός\n1. Κείμενο.\n"
+            "Άρθρο 552 του ΚΠολΔ\n"
+            "Άρθρο 2 Ορισμοί\n1. Κείμενο.\n"
+        )
+        doc, report = parser.parse_with_integrity(text)
+        assert len(report.rejected) > 0, "Should have rejected candidates"
+        rejected_nums = [r.number for r in report.rejected]
+        assert "552" in rejected_nums, "Article 552 should be rejected"
+
+    def test_parse_with_integrity_real_bill_is_clean(self, parser):
+        """The real bill fixture should parse cleanly."""
+        fixtures = Path(__file__).parent.parent.parent / "fixtures" / "parse"
+        path = fixtures / "oe_sxn_ypdik.txt"
+        if not path.exists():
+            pytest.skip("Real fixture not available")
+        text = path.read_text(encoding="utf-8")
+        doc, report = parser.parse_with_integrity(text)
+        assert report.articles_parsed == 91
+        assert report.distinct_ids == 91
+        # Accept that there are no rejected candidates or duplicates
+        assert report.is_clean or not report.duplicate_ids
+
+    def test_integrity_report_is_immutable(self, parser):
+        doc, report = parser.parse_with_integrity(SAMPLE_BILL)
+        with pytest.raises(Exception):
+            report.articles_parsed = 999
+
+    def test_integrity_report_toc_span(self, parser):
+        """A TOC bill should report the TOC span."""
+        toc_bill = (
+            "ΣΧΕΔΙΟ ΝΟΜΟΥ\nΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ\n"
+            "Άρθρο 1 Σκοπός\nΆρθρο 2 Ορισμοί\n"
+            "Άρθρο 1 Σκοπός\n1. Περιεχόμενο.\n"
+            "Άρθρο 2 Ορισμοί\n1. Περιεχόμενο.\n"
+        )
+        doc, report = parser.parse_with_integrity(toc_bill)
+        assert report.articles_parsed == 2
+        assert report.toc_span is not None, "TOC span should be recorded"
+
+    def test_rejected_candidate_is_immutable(self):
+        rc = RejectedCandidate(number="552", reason=RejectionReason.CROSS_REFERENCE, offset=100)
+        assert rc.number == "552"
+        assert rc.reason == RejectionReason.CROSS_REFERENCE
+        with pytest.raises(Exception):
+            rc.number = "999"

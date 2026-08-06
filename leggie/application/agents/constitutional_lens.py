@@ -8,7 +8,6 @@ FX5: Distinguishes "no LLM configured" (legitimate regex mode) from
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
 from re import Pattern
 from typing import Any
@@ -25,8 +24,9 @@ from leggie.domain.models import (
     Severity,
 )
 from leggie.domain.models.structured_output import IRACCandidate, LensFindings
+from leggie.observability import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class ConstitutionalLens(Lens):

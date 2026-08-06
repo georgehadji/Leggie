@@ -9,18 +9,17 @@ EN3: Replaces in-place self._findings mutation with append-only blackboard mutat
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Callable
 from typing import Any
 
+from leggie.application.agents.skeptic import CalibratedSkeptic
 from leggie.application.blackboard import Blackboard, BlackboardEntry
 from leggie.application.services.cove_verifier import CoVeVerifier
 from leggie.application.services.rerank import CompositeReranker, Reranker
-from leggie.application.agents.skeptic import CalibratedSkeptic
 from leggie.domain.clustering import deduplicate
 from leggie.domain.models import Event, EventType, Finding
+from leggie.observability import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def _finding_similarity_article_aware(a: Finding, b: Finding) -> float:

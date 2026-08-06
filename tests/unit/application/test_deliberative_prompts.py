@@ -1,7 +1,5 @@
 """Tests for DeliberativePromptRenderer — Stage 1/Stage 2 rendering, perspective fallback."""
 
-import logging
-
 from leggie.application.services.deliberative_prompts import (
     DEFAULT_PERSPECTIVE,
     PERSPECTIVES,
@@ -53,17 +51,18 @@ class TestPerspectiveFallback:
         prompt = renderer.render_stage1("bill text", perspective="does-not-exist")
         assert PERSPECTIVES[DEFAULT_PERSPECTIVE]["label"] in prompt
 
-    def test_unknown_perspective_logs_warning(self, caplog):
+    def test_unknown_perspective_logs_warning(self, capsys):
         renderer = DeliberativePromptRenderer()
-        with caplog.at_level(logging.WARNING):
-            renderer.render_stage1("bill text", perspective="does-not-exist")
-        assert any("unknown_perspective" in r.message for r in caplog.records)
+        renderer.render_stage1("bill text", perspective="does-not-exist")
+        # structlog (converted in PROD-09/10) renders to stdout via ConsoleRenderer.
+        out = capsys.readouterr().out
+        assert "unknown_perspective" in out or "deliberative.unknown_perspective" in out
 
-    def test_known_perspective_does_not_warn(self, caplog):
+    def test_known_perspective_does_not_warn(self, capsys):
         renderer = DeliberativePromptRenderer()
-        with caplog.at_level(logging.WARNING):
-            renderer.render_stage1("bill text", perspective="neutral")
-        assert not any("unknown_perspective" in r.message for r in caplog.records)
+        renderer.render_stage1("bill text", perspective="neutral")
+        out = capsys.readouterr().out
+        assert "unknown_perspective" not in out
 
 
 class TestPerspectiveIsData:

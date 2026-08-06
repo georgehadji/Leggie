@@ -2,7 +2,7 @@
 
 import pytest
 
-from leggie.infrastructure.observability import (
+from leggie.observability import (
     Timer,
     bind_trace_id,
     get_logger,

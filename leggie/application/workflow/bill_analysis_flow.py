@@ -50,6 +50,10 @@ if TYPE_CHECKING:
     from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
 
 
+class ParseIntegrityError(Exception):
+    """Raised when the parse integrity gate rejects a degraded parse."""
+
+
 class BillAnalysisFlow:
     """End-to-end bill analysis workflow.
 
@@ -78,6 +82,7 @@ class BillAnalysisFlow:
         reranker_port: RerankerPort | None = None,
         checkpoint_store: CheckpointStore | None = None,
         checkpoint_path: str | Path | None = None,
+        allow_degraded_parse: bool = False,
     ) -> None:
         self._fsm = FlowStateMachine()
         self._state = WorkflowState.IDLE
@@ -112,6 +117,7 @@ class BillAnalysisFlow:
         self._checkpoint_store: CheckpointStore | None = checkpoint_store
         self._checkpoint_path: Path | None = Path(checkpoint_path) if checkpoint_path else None
         self._overview: BillOverview | None = None
+        self._allow_degraded_parse: bool = allow_degraded_parse
 
     def _build_reranker(
         self,
@@ -190,8 +196,8 @@ class BillAnalysisFlow:
         import json
         import uuid
 
-        from leggie.infrastructure.observability import bind_trace_id, get_logger, set_trace_id
         from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
+        from leggie.observability import bind_trace_id, get_logger, set_trace_id
 
         file_path = Path(file_path)
         self._input_file_path = str(file_path)
@@ -462,17 +468,63 @@ class BillAnalysisFlow:
         return result
 
     def _do_parse(self, text: str, file_path: Path) -> Document:
-        doc: Document = self._parser.parse(
+        doc, report = self._parser.parse_with_integrity(
             text, title=file_path.stem, source_format=file_path.suffix.lstrip("."))
+        # Parse-integrity gate: abort on degraded parse unless explicitly allowed
+        if not report.is_clean and not self._allow_degraded_parse:
+            self._record_event(EventType.DEGRADED, {
+                "stage": "parse",
+                "articles_parsed": report.articles_parsed,
+                "distinct_ids": report.distinct_ids,
+                "duplicate_ids": list(report.duplicate_ids),
+                "missing_numbers": list(report.missing_numbers),
+                "rejected": [r.model_dump() for r in report.rejected],
+            })
+            raise ParseIntegrityError(
+                f"Parse integrity check failed: "
+                f"{report.articles_parsed} articles, "
+                f"{report.distinct_ids} distinct IDs, "
+                f"{len(report.duplicate_ids)} duplicates, "
+                f"{len(report.missing_numbers)} gaps, "
+                f"{len(report.rejected)} rejected candidates. "
+                f"Use --allow-degraded-parse to proceed anyway."
+            )
         return doc
 
     def _filter_document(self, doc: Document, selection: str) -> Document:
-        """Return a new Document keeping only the selected articles."""
+        """Return a new Document keeping only the selected articles.
+
+        Raises ValueError if selection matches fewer articles than
+        requested for an explicit range.
+        """
         keep_ids = _parse_article_selection(selection, [a.id for a in doc.articles])
         if not keep_ids:
             raise ValueError(
                 f"Article selection '{selection}' matched none of the parsed articles: "
                 f"{[a.id for a in doc.articles]}"
+            )
+        # Selection strictness: for an explicit range, check if we matched less
+        parts = [p.strip() for p in selection.split(",") if p.strip()]
+        requested_count = 0
+        for part in parts:
+            if "-" in part:
+                try:
+                    start_s, end_s = part.split("-", 1)
+                    start = int(start_s.strip())
+                    end = int(end_s.strip())
+                    if start > end:
+                        start, end = end, start
+                    requested_count += (end - start + 1)
+                except ValueError:
+                    pass
+            else:
+                requested_count += 1
+        # Only enforce for explicit ranges (requested_count > 0 and > matched)
+        if requested_count > 0 and requested_count > len(keep_ids):
+            raise ValueError(
+                f"Article selection '{selection}' requested {requested_count} articles, "
+                f"matched {len(keep_ids)} ({keep_ids}). "
+                f"Available IDs: {[a.id for a in doc.articles[:10]]}{'...' if len(doc.articles) > 10 else ''}"
             )
         filtered = [a for a in doc.articles if a.id in keep_ids]
         return doc.model_copy(update={"articles": filtered}, deep=False)

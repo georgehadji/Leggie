@@ -96,7 +96,7 @@ class TestContainer:
 
         container = Container()
         container.configure_defaults()
-        manager = container.get("reasoner_server_manager")
+        manager = container.get(ReasonerServerManager)
         assert isinstance(manager, ReasonerServerManager)
 
 
@@ -107,6 +107,7 @@ class TestMigrationShim:
         with pytest.raises(ImportError) as exc_info:
             # Force reimport of the module that always raises
             import importlib
+
             import leggie.application.di  # noqa: F811
             importlib.reload(leggie.application.di)
         msg = str(exc_info.value)

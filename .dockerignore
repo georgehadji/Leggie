@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+eval_results.json
+.import_linter_cache/
+.mypy_cache/
+tests/
+
+# Environment
+.env
+.env.local
+.env.example
+
+# Data / outputs
+data/
+Outputs/
+*.log
+*.json
+!pyproject.toml
+!leggie/domain/models/structured_output.py
+
+# Source control / CI
+.git/
+.github/
+.gitignore
+
+# Docs
+docs/
+*.md
+!README.md
+
+# Graphify
+graphify-out/
+
+# Reasonix
+.reasonix/

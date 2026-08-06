@@ -15,8 +15,8 @@ from leggie.application.ports.event_bus import EventBusPort
 from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
-from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.reranker import RerankerPort
+from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.ports.state import StatePort
 from leggie.domain.models import WorkflowState
@@ -35,12 +35,10 @@ class TestContainerBindings:
 
     def test_event_bus_port_resolves(self, container: Container):
         bus = container.get(EventBusPort)
-        from leggie.infrastructure.persistence import InMemoryEventBus
-        assert isinstance(bus, InMemoryEventBus)
+        assert isinstance(bus, EventBusPort)
 
     def test_state_port_resolves_and_supports_contract(self, container: Container):
         """StatePort must resolve to an object that satisfies all four methods."""
-        import inspect
         store = container.get(StatePort)
         # Check the async methods exist
         assert hasattr(store, "get_state")
@@ -139,7 +137,6 @@ class TestBlackboardAdapterBehavior:
     @pytest.mark.asyncio
     async def test_get_findings_filters_by_round_min(self, container: Container):
         """get_findings(round_min=N) excludes entries from earlier rounds."""
-        from leggie.application.ports.blackboard import BlackboardEntry
         from leggie.application.blackboard import Blackboard as BlackboardService
         from leggie.domain.models import IRAC, Confidence, Finding, FindingType
 

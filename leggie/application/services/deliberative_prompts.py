@@ -6,11 +6,11 @@ unknown perspective key falls back to "neutral" with a logged warning.
 
 from __future__ import annotations
 
-import logging
+import structlog
 
 from leggie.application.agents.prompts import deliberative_stage1, deliberative_stage2
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 DEFAULT_PERSPECTIVE = "neutral"
 
@@ -52,7 +52,7 @@ class DeliberativePromptRenderer:
         resolved = PERSPECTIVES.get(perspective)
         if resolved is None:
             logger.warning(
-                "deliberative.unknown_perspective", extra={"perspective": perspective}
+                "deliberative.unknown_perspective", perspective=perspective
             )
             return PERSPECTIVES[DEFAULT_PERSPECTIVE]
         return resolved

@@ -1,0 +1,30 @@
+# Leggie Dependabot configuration
+# Keeps dependencies up-to-date automatically.
+# Docs: https://docs.github.com/en/code-security/dependabot
+
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Athens"
+    allow:
+      - dependency-type: "direct"
+    versioning-strategy: "increase-if-necessary"
+    open-pull-requests-limit: 10
+    assignees:
+      - "georgehadji"
+    labels:
+      - "dependencies"
+      - "automated"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Athens"

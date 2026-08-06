@@ -157,7 +157,7 @@ async def main() -> int:
     args = parser.parse_args()
 
     # Configure structured logging once at startup (W6), honouring --log-level
-    from leggie.infrastructure.observability import configure_logging
+    from leggie.observability import configure_logging
     configure_logging(args.log_level)
 
     # Configure the output presenter from CLI flags (PROD-33)
@@ -506,7 +506,7 @@ def entry_point() -> int:
     import asyncio
     import signal
 
-    from leggie.infrastructure.observability import get_logger
+    from leggie.observability import get_logger
 
     _force_utf8_console()
     _log = get_logger(__name__)

@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from leggie.domain.models import Confidence, ConfidenceGrade, Finding, FindingType, Severity
+from leggie.domain.models import Confidence, Finding, FindingType, Severity
+from leggie.domain.models import ConfidenceGrade as ConfidenceGrade
 
 
 def score_severity(finding: Finding) -> Severity:

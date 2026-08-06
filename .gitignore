@@ -23,6 +23,8 @@ env/
 .coverage
 htmlcov/
 eval_results.json
+.import_linter_cache/
+.mypy_cache/
 
 # Environment
 .env
@@ -37,13 +39,22 @@ graphify-out/
 # Outputs (generated reports)
 Outputs/
 
+# SQLite runtime stores (event store / state store created by a real run).
+# leggie.db appeared untracked-and-unignored, so a bulk `git add -A` would
+# have committed a 36KB runtime database full of one developer's run history.
+*.db
+*.db-wal
+*.db-shm
+
 # Ad-hoc run artifacts (smoke logs, scratch CLI output dumps)
 *.log
 analysis_report.docx
+analysis_report.md
 test_events.jsonl
 citation_search.json
 parsed.json
 openrouter_models.json
+e2e_test_results.json
 
 # OS
 .DS_Store

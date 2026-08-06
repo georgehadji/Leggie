@@ -1,7 +1,7 @@
 """Tests for OpenRouter LLM adapter — mock HTTP."""
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -11,6 +11,7 @@ from leggie.infrastructure.llm import (
     LLMConfigurationError,
     OpenRouterProvider,
 )
+from leggie.infrastructure.llm.base import LLMError, LLMRateLimitError
 
 
 class TestOpenRouterProvider:
@@ -150,3 +151,78 @@ class TestOpenRouterAPIMock:
             body["include_reasoning"] = True
 
         assert "include_reasoning" not in body
+
+
+# ── PROD-14 transport tests ──────────────────────────────────────────────
+
+class TestErrorBodyTruncation:
+    """Verify upstream error bodies are truncated before reaching exceptions."""
+
+    @pytest.mark.asyncio
+    async def test_500_body_truncated(self):
+        """A 500 error with a large body is truncated to _MAX_ERROR_BODY_CHARS."""
+        from leggie.infrastructure.llm.adapters.openrouter import (
+            _MAX_ERROR_BODY_CHARS,
+            OpenRouterProvider,
+        )
+        provider = OpenRouterProvider(api_key="sk-test")
+
+        big_body = "x" * (_MAX_ERROR_BODY_CHARS + 500)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_resp.text = big_body
+
+        with patch.object(provider._http_client, "post", new_callable=AsyncMock) as mock_post, \
+             patch.object(provider._rate_limiter, "acquire", new_callable=AsyncMock):
+            mock_post.return_value = mock_resp
+            with pytest.raises(LLMError) as exc:
+                await provider.generate(LLMRequest(prompt="test"))
+            body_in_exc = str(exc.value)
+            assert len(body_in_exc) < len(big_body), \
+                f"Error body was not truncated: {len(body_in_exc)} chars"
+            assert big_body not in body_in_exc
+
+    @pytest.mark.asyncio
+    async def test_429_empty_body_does_not_include_text(self):
+        """A 429 with no sensitive body does not leak."""
+        from leggie.infrastructure.llm.adapters.openrouter import OpenRouterProvider
+        provider = OpenRouterProvider(api_key="sk-test")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 429
+        mock_resp.text = ""
+
+        with patch.object(provider._http_client, "post", new_callable=AsyncMock) as mock_post, \
+             patch.object(provider._rate_limiter, "acquire", new_callable=AsyncMock):
+            mock_post.return_value = mock_resp
+            with pytest.raises(LLMRateLimitError) as exc:
+                await provider.generate(LLMRequest(prompt="test"))
+            assert "OpenRouter rate limited" in str(exc.value)
+
+
+class TestRetryAfter:
+    """Verify Retry-After header is parsed and honoured."""
+
+    def test_parse_retry_after_integer(self):
+        from leggie.infrastructure.llm.adapters.openrouter import _parse_retry_after
+        mock_resp = MagicMock()
+        mock_resp.headers = {"retry-after": "42"}
+        assert _parse_retry_after(mock_resp) == 42.0
+
+    def test_parse_retry_after_float(self):
+        from leggie.infrastructure.llm.adapters.openrouter import _parse_retry_after
+        mock_resp = MagicMock()
+        mock_resp.headers = {"retry-after": "3.14"}
+        assert _parse_retry_after(mock_resp) == 3.14
+
+    def test_parse_retry_after_missing(self):
+        from leggie.infrastructure.llm.adapters.openrouter import _parse_retry_after
+        mock_resp = MagicMock()
+        mock_resp.headers = {}
+        assert _parse_retry_after(mock_resp) is None
+
+    def test_parse_retry_after_http_date_fallback(self):
+        from leggie.infrastructure.llm.adapters.openrouter import _parse_retry_after
+        mock_resp = MagicMock()
+        mock_resp.headers = {"retry-after": "Wed, 21 Oct 2015 07:28:00 GMT"}
+        assert _parse_retry_after(mock_resp) == 5.0  # fallback default

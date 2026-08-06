@@ -4,6 +4,7 @@ Split into sub-modules per BUILD_PLAN §3:
   base.py             — BaseLLMProvider ABC, error hierarchy
   adapters/           — provider-specific adapters (OpenRouter, Anthropic, OpenAI)
   decorators.py       — retry, cache, and resilience decorators
+  ladder.py           — StructuredOutputDecorator (4-attempt structured ladder)
   schema_format.py    — Pydantic → strict JSON Schema conversion
   structured_parser.py — Centralised parse/normalize/repair ladder
 """
@@ -11,10 +12,10 @@ Split into sub-modules per BUILD_PLAN §3:
 from __future__ import annotations
 
 import contextlib
-import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from leggie.application.ports.llm import LLMPort, LLMRequest, LLMResponse
+from leggie.domain.pricing import MODEL_PRICES
 from leggie.infrastructure.llm.adapters.openrouter import OpenRouterProvider
 from leggie.infrastructure.llm.base import (
     BaseLLMProvider,
@@ -24,12 +25,16 @@ from leggie.infrastructure.llm.base import (
     LLMRateLimitError,
     LLMTimeoutError,
 )
-from leggie.infrastructure.llm.decorators import with_cache, with_retry
+from leggie.infrastructure.llm.decorators import with_retry
+from leggie.infrastructure.llm.ladder import StructuredOutputDecorator
+from leggie.observability import get_logger
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from leggie.infrastructure.rate_limiter import RateLimiter
+
+logger = get_logger(__name__)
 
 # ── Constants for structured-output retry ───────────────────────────
-_MAX_TRUNCATION_RETRY_TOKENS = 16_384  # ceiling for doubled max_tokens
 _REPAIR_PROMPT_TEMPLATE = (
     "The following content was not valid JSON matching this schema. "
     "Return ONLY valid JSON that conforms to the schema.\n\n"
@@ -37,33 +42,11 @@ _REPAIR_PROMPT_TEMPLATE = (
     "Malformed content:\n{content}"
 )
 
-# Offline allowlist of known-valid OpenRouter model IDs (fallback when API unreachable)
-_OFFLINE_MODEL_ALLOWLIST: set[str] = {
-    # Google
-    "google/gemini-2.5-flash",
-    "google/gemini-2.5-flash-lite",
-    "google/gemini-2.5-pro",
-    "google/gemini-3-flash-preview",
-    # Anthropic
-    "anthropic/claude-sonnet-4",
-    "anthropic/claude-sonnet-4.6",
-    "anthropic/claude-opus-4",
-    "anthropic/claude-opus-4.8",
-    # DeepSeek
-    "deepseek/deepseek-v3.2",
-    # OpenAI
-    "openai/gpt-4o",
-    "openai/gpt-4o-mini",
-    "openai/gpt-5-mini",
-    # Meta
-    "meta-llama/llama-3.3-70b",
-    # Mistral
-    "mistral/mistral-large-2411",
-    # Qwen
-    "qwen/qwen-2.5-72b",
-    # MoonshotAI
-    "moonshotai/kimi-k3",
-}
+# Offline allowlist of known-valid OpenRouter model IDs (fallback when API
+# unreachable). Derived from MODEL_PRICES so the two can never drift: a model
+# Leggie will run is exactly a model whose cost it can compute. Add new models
+# in leggie/domain/pricing.py.
+_OFFLINE_MODEL_ALLOWLIST: frozenset[str] = frozenset(MODEL_PRICES)
 
 
 async def validate_model_ids(
@@ -116,6 +99,7 @@ class LLMAdapter(LLMPort):
         openrouter_base_url: str = "https://openrouter.ai/api/v1",
         default_model: str = "google/gemini-2.5-flash",
         validate_on_init: bool = True,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
         if not openrouter_key:
             raise LLMConfigurationError("OpenRouter API key not configured")
@@ -126,12 +110,11 @@ class LLMAdapter(LLMPort):
                 f"This model is not in the known allowlist. "
                 f"Check config/settings.py or LEGGIE_LLM__OPENROUTER_DEFAULT_MODEL env var."
             )
-        from leggie.infrastructure.rate_limiter import RateLimiter
         self._provider: BaseLLMProvider = OpenRouterProvider(
             api_key=openrouter_key,
             base_url=openrouter_base_url,
             default_model=default_model,
-            rate_limiter=RateLimiter(max_rate=5.0),
+            rate_limiter=rate_limiter,
         )
         self._default_model = default_model
         self._openrouter_key = openrouter_key
@@ -159,121 +142,12 @@ class LLMAdapter(LLMPort):
         return response
 
     async def generate_structured(self, request: LLMRequest, schema: type) -> tuple[Any, LLMResponse]:
-        """Generate a structured response using json_schema strict mode.
+        """Generate a structured response — delegates to StructuredOutputDecorator.
 
-        Retry ladder:
-        1. Try ``json_schema`` strict mode.
-        2. On provider 400 (model doesn't support json_schema), fall back to
-           ``json_object`` mode.
-        3. If parse fails AND ``finish_reason == "length"``, retry with
-           ``max_tokens`` doubled (capped at ``_MAX_TRUNCATION_RETRY_TOKENS``).
-        4. If parse still fails, attempt a repair round (feed raw content back
-           with terse instruction).
+        The decorator handles the 4-attempt ladder. Each attempt traverses
+        the decorator stack, so budget and cache see every billed call.
         """
-        from dataclasses import replace
-        from leggie.infrastructure.llm.schema_format import pydantic_to_json_schema
-        from leggie.infrastructure.llm.structured_parser import (
-            StructuredResponseParser,
-        )
-
-        parser = StructuredResponseParser()
-
-        # Initialise response so the truncation-retry path (line 208)
-        # never references an unbound name when both json_schema and
-        # json_object modes fail before assigning it.
-        response: LLMResponse | None = None
-
-        # Retained so the truncation retry can re-use the strict schema. A
-        # bare json_object retry asks for *some* JSON without saying which
-        # fields, so the model invents its own key names and the result can
-        # never validate — no token budget rescues that.
-        schema_format: dict[str, Any] | None = None
-
-        # ── Attempt 1: json_schema strict mode ────────────────────
-        try:
-            schema_format = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": schema.__name__,
-                    "strict": True,
-                    "schema": pydantic_to_json_schema(schema),
-                },
-            }
-            req = replace(request, response_format=schema_format)
-            response = await self.generate(req)
-            return parser.parse(response.content, schema), response
-        except (LLMError, ValueError) as exc:
-            if isinstance(exc, LLMError) and ("400" in str(exc) or "Bad Request" in str(exc)):
-                logger.warning(
-                    "json_schema rejected, falling back to json_object: %s", exc
-                )
-                schema_format = None
-
-        # ── Attempt 2: json_object mode (fallback) ────────────────
-        try:
-            req = replace(request, response_format={"type": "json_object"})
-            response = await self.generate(req)
-            return parser.parse(response.content, schema), response
-        except (LLMError, ValueError):
-            pass
-
-        # ── Attempt 3: truncation retry if finish_reason=length ───
-        if response and response.finish_reason == "length":
-            logger.info(
-                "Response truncated (finish_reason=length, %d tokens). "
-                "Retrying with doubled max_tokens.",
-                request.max_tokens,
-            )
-            doubled = min(request.max_tokens * 2, _MAX_TRUNCATION_RETRY_TOKENS)
-            retry_req = replace(
-                request,
-                max_tokens=doubled,
-                response_format=schema_format or {"type": "json_object"},
-            )
-            try:
-                response = await self.generate(retry_req)
-                return parser.parse(response.content, schema), response
-            except (LLMError, ValueError):
-                pass
-
-        # ── Attempt 4: repair round as last resort ────────────────
-        content_to_repair = response.content if response else ""
-        # H-2: don't burn a paid repair call on prose-only garbage.
-        if content_to_repair and not any(c in content_to_repair for c in "{["):
-            raise LLMError(
-                f"Structured response for schema {schema.__name__} "
-                f"contains no JSON skeleton; skipping repair round."
-            )
-
-        try:
-            if content_to_repair:
-                repair_prompt = _REPAIR_PROMPT_TEMPLATE.format(
-                    schema_name=schema.__name__,
-                    content=content_to_repair[:4000],
-                )
-                repair_req = LLMRequest(
-                    prompt=repair_prompt,
-                    system_prompt=(
-                        "You are a JSON repair assistant. "
-                        "Return ONLY valid JSON."
-                    ),
-                    max_tokens=min(
-                        request.max_tokens * 2,
-                        _MAX_TRUNCATION_RETRY_TOKENS,
-                    ),
-                    response_format={"type": "json_object"},
-                )
-                response = await self.generate(repair_req)
-                obj = parser.parse(response.content, schema)
-                return obj, response
-        except (LLMError, ValueError):
-            pass
-
-        # ── All attempts exhausted -> degrade ─────────────────────
-        raise LLMError(
-            f"Failed to parse structured response after all retries "
-            f"for schema {schema.__name__}"
-        )
+        return await StructuredOutputDecorator(self).generate_structured(request, schema)
 
     async def count_tokens(self, text: str, model: str | None = None) -> int:
         count: int = await self._provider.count_tokens(text, model)
@@ -282,10 +156,11 @@ class LLMAdapter(LLMPort):
 __all__ = [
     "BaseLLMProvider",
     "LLMAdapter",
+    "StructuredOutputDecorator",
     "LLMError", "LLMConfigurationError", "LLMTimeoutError", "LLMRateLimitError",
     "LLMRateLimitError", "BudgetExceededError",
     "OpenRouterProvider",
     "StructuredResponseParser",
     "pydantic_to_json_schema",
-    "with_retry", "with_cache",
+    "with_retry",
 ]

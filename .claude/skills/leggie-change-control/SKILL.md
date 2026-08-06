@@ -65,9 +65,11 @@ bullet). Procedure: see sibling skill
 Never judge smoke output "by eye" — numbers only.
 
 Pre-commit hooks exist (`.pre-commit-config.yaml`: ruff --fix, ruff-format,
-mypy --strict, bandit). CI (`.github/workflows/ci.yml`) runs ruff + mypy +
-pytest on ubuntu only — CI does NOT run import-linter, coverage gate, or live
-smoke; those are your job locally.
+mypy --strict, bandit). CI (`.github/workflows/ci.yml`) runs a `lint` job
+(ruff, mypy, `lint-imports`, bandit, pip-audit) and a `test` job on the
+`ubuntu-latest` **and** `windows-latest` matrix with `--cov-fail-under=85`.
+A tag-triggered `release.yml` runs the full gate set + builds/SBOM/signs.
+Live smoke remains a local responsibility.
 
 ## 3. Non-negotiables (each with its incident)
 

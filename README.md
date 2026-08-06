@@ -1,12 +1,12 @@
 # Leggie — Greek Legal Bill Analyzer
 
-> **Deterministic, event-sourced, LLM-powered legal analysis for Greek legislation.**
+> **Deterministic, LLM-powered legal analysis for Greek legislation.**
 >
-> Analyzes Greek bills through 5 independent legal perspectives, verifies every citation, and generates executive summaries and article-by-article reports — all on a Clean Architecture foundation with full auditability.
+> Analyzes Greek bills through 5 independent legal perspectives, resolves citations via CoVe, and generates executive summaries and article-by-article reports — all on a Clean Architecture foundation with auditability.
 
-[![Tests](https://img.shields.io/badge/tests-199%20passed-brightgreen)](https://github.com/)
+[![Tests](https://img.shields.io/badge/tests-579%20passed-brightgreen)](https://github.com/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](https://python.org)
-[![Lines](https://img.shields.io/badge/code-5,195%20lines-lightgrey)](https://github.com/)
+[![Lines](https://img.shields.io/badge/code-10,400%20lines-lightgrey)](https://github.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 ---
@@ -37,7 +37,7 @@ flowchart LR
 
 **Credibility pipeline** — every finding survives a gauntlet:
 1. **Calibrated Skeptic** — 4 typed gates (Numeric, Temporal, Factual, Obligation) run adversarial review
-2. **CoVe evidence loop** — Chain-of-Verification resolves every citation against the deterministic parser (ΦΕΚ/CELEX/ECLI)
+2. **CoVe evidence loop** — Chain-of-Verification resolves every finding's citations (ΦΕΚ/CELEX/ECLI) against a deterministic parser
 3. **Reranker** — composite score (severity × confidence × novelty) orders output
 
 ---
@@ -147,14 +147,14 @@ leggie/
 │   ├── clustering/   # Dedup, cross-article merging
 │   └── specs/        # Composable business rules (Specification pattern)
 ├── application/      # Use-cases, workflow, orchestration
-│   ├── ports/        # 8 abstract interfaces (LLM, Router, Retrieval, State, EventBus, Blackboard, CitationParser, Reasoner)
+│   ├── ports/        # 11 abstract interfaces (LLM, Router, Retrieval, State, EventBus, Blackboard, CitationParser, Reranker, Reasoner, Parse, Ingest)
 │   ├── workflow/     # FlowStateMachine + BillAnalysisFlow + Stage lifecycle
 │   ├── agents/       # 5 lens workers, CalibratedSkeptic, ImprovementEngine, Orchestrator
 │   ├── blackboard/   # Schema-grounded aggregation with Observer pattern
 │   ├── cqrs/         # Command/query mediator with pipeline behaviors
 │   └── services/     # VS sampler, CoVe verifier, rerank, reports
 ├── infrastructure/   # Adaptors, repositories, resilience
-│   ├── llm/          # Anthropic/OpenAI/Google providers + retry/cache decorators
+│   ├── llm/          # OpenRouter provider + retry/cache/budget decorators + structured output ladder
 │   ├── router/       # Static YAML rules table + cascade (CoR) + telemetry tracker
 │   ├── budget_guard/ # Token/$ ceiling with graceful degradation
 │   ├── citation/     # Deterministic ΦΕΚ/CELEX/ECLI parser
@@ -182,7 +182,7 @@ Read more: [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [BUILD_PLAN.md](docs/BUILD
 | Template Method | Stage lifecycle, CoVe, VS, reports | Fixed skeleton, varying steps |
 | Command + Mediator (CQRS) | CLI dispatch | Decoupled sender/handler, auditable |
 | State | Workflow flow machine | Explicit, checkpointable transitions |
-| Event Sourcing | Durable spine | Replay, audit, explainability |
+| Event Sourcing | Durable spine (in-memory only; SQLite planned — see PROD-06) | Replay, audit, explainability |
 | Blackboard + Observer | Aggregation | Schema-grounded, append-only |
 | Specification | Finding admissibility, citation validity | Composable boolean rules |
 | Composite | Parsed doc tree | Άρθρο→παρ.→εδάφιο |
@@ -249,9 +249,10 @@ pytest tests/unit/application/test_constitutional_lens.py -v
 ```
 
 ### Testing
-- **199 unit tests**, 100% passing
-- 21 test files covering domain, application, and infrastructure layers
-- CI-compatible: `pytest`, `ruff`, `mypy`, `import-linter` configured in `pyproject.toml`
+- **579 unit and integration tests**, 100% passing
+- 57 test files covering domain, application, and infrastructure layers
+- Suite is **hermetic**: zero outbound connections (socket guard asserted in CI)
+- CI-compatible: `pytest`, `ruff`, `mypy`, `import-linter`, `bandit` configured in `pyproject.toml`
 
 ---
 
@@ -262,10 +263,10 @@ pytest tests/unit/application/test_constitutional_lens.py -v
 | **0 — Foundation + Eval** | ✅ Complete | Clean Architecture spine, domain models, parser, ingest, eval harness |
 | **1 — Single-lens slice** | ✅ Complete | Constitutional lens, flow state machine, IRAC findings |
 | **2 — Ensemble** | ✅ Complete | 5 lenses, parallel fan-out (TaskGroup + semaphore), reranker |
-| **3 — Adversarial + Evidence** | ✅ Complete | Calibrated Skeptic, CoVe, citation verification, blackboard |
+| **3 — Adversarial + Evidence** | 🟡 Partial | Calibrated Skeptic, CoVe, citation verification (citation index holds 2 identifiers — see PROD-05), blackboard |
 | **4 — Improvement + Reports** | ✅ Complete | Improvement engine, Exec Summary + Article-by-Article |
-| **5 — Deliberative pipeline** | ✅ Complete | Opt-in Reasoner-backed two-stage pipeline (`--pipeline deliberative`), prose report, budget pre-flight, citation appendix |
-| **6+ — Post-MVP** | ⬜ Planned | Knowledge graph, debate rounds, learned router, interactive chat, more lenses |
+| **5 — Deliberative pipeline** | 🟡 Untested | Opt-in Reasoner-backed two-stage pipeline (`--pipeline deliberative`), prose report, budget pre-flight; **zero recorded live runs** — see PROD-03 |
+| **6+ — Post-MVP** | ⬜ Planned | Production readiness (see `docs/PRODUCTION_READINESS_PLAN.md`), knowledge graph, debate rounds, learned router |
 
 ---
 

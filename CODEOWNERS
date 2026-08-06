@@ -1,0 +1,16 @@
+# CODEOWNERS — default code owners for Leggie.
+# Each pattern lists the owners (users or teams) responsible for that path.
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @georgehadji
+
+# Core layers — all changes go through the primary owner by default
+/leggie/domain/ @georgehadji
+/leggie/application/ @georgehadji
+/leggie/infrastructure/ @georgehadji
+/leggie/interfaces/ @georgehadji
+
+# CI / build / release
+/.github/ @georgehadji
+/Dockerfile @georgehadji
+/pyproject.toml @georgehadji

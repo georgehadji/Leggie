@@ -9,15 +9,16 @@ than the lens tier — its job is to CATCH legal errors the lens missed).
 
 from __future__ import annotations
 
-import logging
+import asyncio
 from dataclasses import dataclass
 
 from leggie.application.ports.llm import LLMPort, LLMRequest
 from leggie.application.ports.router import RouterPort
 from leggie.domain.models import Confidence, Finding, FindingType
 from leggie.domain.models.structured_output import SkepticVerdictResponse
+from leggie.observability import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _CRITIC_TASK = "adversarial_critic"
 
@@ -91,7 +92,7 @@ class LLMAdversarialGate(SkepticGate):
         self._model = model
 
     async def examine(self, finding: Finding) -> SkepticVerdict:
-        model = await self._select_model()
+        model, critic_max_tokens = await self._select_model()
         system = (
             "Είσαι επικριτικός ελεγκτής νομικών ευρημάτων για ελληνικό νομοσχέδιο. "
             "Ο στόχος σου είναι να ΑΝΑΤΡΕΨΕΙΣ το εύρημα αν είναι λανθασμένο νομικά ή "
@@ -112,7 +113,7 @@ class LLMAdversarialGate(SkepticGate):
         try:
             request = LLMRequest(
                 prompt=prompt, system_prompt=system, model=model,
-                max_tokens=2048, temperature=0.0,
+                max_tokens=critic_max_tokens, temperature=0.0,
                 response_format={"type": "json_object"},
             )
             obj, _ = await self._llm.generate_structured(request, SkepticVerdictResponse)
@@ -137,14 +138,18 @@ class LLMAdversarialGate(SkepticGate):
             obj.confidence_adjustment,
         )
 
-    async def _select_model(self) -> str | None:
+    async def _select_model(self) -> tuple[str | None, int]:
+        """Return (model, max_tokens) from the router.
+
+        TOK-4: RouteResult carries max_tokens (8192 for adversarial_critic).
+        """
         if self._router is not None:
             try:
                 route = await self._router.route(_CRITIC_TASK)
-                return route.model
+                return route.model, route.max_tokens
             except Exception:  # noqa: BLE001
-                log.warning("skeptic_route_failed: using default model")
-        return self._model or None
+                log.warning("skeptic_route_failed: using default route")
+        return self._model or None, 8192
 
 
 class CalibratedSkeptic:
@@ -171,21 +176,54 @@ class CalibratedSkeptic:
     async def examine(self, finding: Finding) -> list[SkepticVerdict]:
         return [await gate.examine(finding) for gate in self._gates]
 
-    async def review(self, findings: list[Finding]) -> tuple[list[Finding], list[SkepticVerdict]]:
-        survivors: list[Finding] = []
+    async def review(
+        self, findings: list[Finding], max_concurrency: int = 10
+    ) -> tuple[list[Finding], list[SkepticVerdict]]:
+        """Review a batch of findings with bounded fan-out (PROD-36).
+
+        Each finding is examined independently under a semaphore. Results
+        are folded in **input order** so model_copy confidence adjustments
+        and the survivor list are order-stable.
+        """
+        if not findings:
+            return [], []
+
+        semaphore = asyncio.Semaphore(max_concurrency)
+
+        async def _review_one(finding: Finding) -> tuple[list[SkepticVerdict], Finding | None]:
+            async with semaphore:
+                try:
+                    verdicts = await self.examine(finding)
+                    refuted = any(v.verdict == "refutes" for v in verdicts)
+                    if refuted:
+                        return verdicts, None
+                    adjustment = sum(v.confidence_adjustment for v in verdicts)
+                    if adjustment != 0:
+                        new_score = min(1.0, max(0.0, finding.confidence.score + adjustment))
+                        finding = finding.model_copy(update={
+                            "confidence": Confidence.from_score(new_score, provenance="skeptic-calibrated"),
+                            "version": finding.version + 1,
+                        })
+                    return verdicts, finding
+                except Exception:
+                    log.exception("skeptic_review_failed: finding=%s", finding.id)
+                    return [SkepticVerdict(str(finding.id), "adversarial", "neutral",
+                                            "Review error")], finding
+
+        results = await asyncio.gather(
+            *(_review_one(f) for f in findings), return_exceptions=True,
+        )
+
         all_verdicts: list[SkepticVerdict] = []
-        for finding in findings:
-            verdicts = await self.examine(finding)
-            all_verdicts.extend(verdicts)
-            refuted = any(v.verdict == "refutes" for v in verdicts)
-            if refuted:
+        survivors: list[Finding] = []
+        for f, r in zip(findings, results, strict=True):
+            if isinstance(r, BaseException):
+                log.error("skeptic_critical: finding=%s error=%s", f.id, r)
+                survivors.append(f)
                 continue
-            adjustment = sum(v.confidence_adjustment for v in verdicts)
-            if adjustment != 0:
-                new_score = min(1.0, max(0.0, finding.confidence.score + adjustment))
-                finding = finding.model_copy(update={
-                    "confidence": Confidence.from_score(new_score, provenance="skeptic-calibrated"),
-                    "version": finding.version + 1,
-                })
-            survivors.append(finding)
+            verdicts, survivor = r
+            all_verdicts.extend(verdicts)
+            if survivor is not None:
+                survivors.append(survivor)
+
         return survivors, all_verdicts

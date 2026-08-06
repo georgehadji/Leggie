@@ -6,7 +6,6 @@ W5: Uses LLM for real analysis with regex-based fallback when LLM is unavailable
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
 
 from leggie.application.agents.lens import Lens
@@ -20,8 +19,9 @@ from leggie.domain.models import (
     Severity,
 )
 from leggie.domain.models.structured_output import IRACCandidate, LensFindings
+from leggie.observability import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class LegalCoherenceLens(Lens):

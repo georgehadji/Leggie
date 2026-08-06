@@ -6,7 +6,6 @@ Decouples command/query senders from handlers with pipeline behaviors (middlewar
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from typing import Any, TypeVar
 
@@ -19,8 +18,9 @@ from leggie.application.cqrs.base import (
     QueryHandler,
     QueryResult,
 )
+from leggie.observability import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 TResult = TypeVar("TResult")
 

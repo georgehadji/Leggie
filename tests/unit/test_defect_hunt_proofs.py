@@ -11,10 +11,9 @@ from uuid import uuid4
 
 import pytest
 
-from leggie.domain.models import Confidence, Finding, FindingType, IRAC, Severity
 from leggie.application.agents.skeptic import CalibratedSkeptic
+from leggie.domain.models import IRAC, Confidence, Finding, FindingType, Severity
 from leggie.infrastructure.budget_guard import BudgetAction, BudgetGuard
-
 
 # ── D2: CalibratedSkeptic.review must preserve Finding identity ──────────
 

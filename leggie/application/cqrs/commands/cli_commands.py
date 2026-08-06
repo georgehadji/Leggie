@@ -27,6 +27,7 @@ class AnalyzeBillCommand(Command):
     pipeline: str = "deterministic"
     perspective: str | None = None
     fallback: bool = False
+    allow_degraded_parse: bool = False
 
 
 class PreviewBillCommand(Command):
@@ -45,3 +46,10 @@ class EvalGoldSetCommand(Command):
 
     gold_set_path: str
     results_path: str | None = None
+
+
+class ReplayRunCommand(Command):
+    """Replay a completed run from the event log (PROD-06d)."""
+
+    run_id: str
+    verify: bool = False  # whether to diff against stored findings JSON

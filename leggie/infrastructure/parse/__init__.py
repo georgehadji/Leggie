@@ -3,74 +3,61 @@
 Parses a Greek bill from its legal structure:
   Document → Articles (Άρθρο) → Paragraphs (παράγραφοι) → SubParagraphs (εδάφια)
 
-FIX_PLAN F0 fixes:
-- Line-anchor headings: ΄Αρθρο N only at start of line (not in-body cross-refs)
-- Number shape: constrained to digits + optional Greek suffix (58Α)
-- Cross-ref stop-list: reject if followed by του ν., του Κώδικα, etc.
-- Monotonic-sequence guard: large backward/forward jumps are cross-refs
-- PDF newline repair: join mid-token line breaks
-- Table-of-contents excision: skip the ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ listing
+Public API (unchanged):
+    DocumentParser      — main parser class
+    ARTICLE_HEADING      — compiled heading regex
+    ParseError           — exception class
+
+All re-exported from the sub-modules for backward compatibility.
 """
 
 from __future__ import annotations
 
-import re
-from re import Pattern
 from typing import Any
 
-from leggie.domain.models import Article, Document, Paragraph, SubParagraph
-
-# ── Cross-reference stop-list (FIX_PLAN D1.4) ───────────────────────────────
-_STOP_PATTERN: Pattern[str] = re.compile(
-    r"(?:"
-    r"του\s+ν\b|του\s+Κώδικα|ΚΠολΔ|ΚΠΔ|\bΠΚ\b|\bΑΚ\b|"
-    r"του\s+Συντάγματος|"
-    r"της\s+Οδηγίας|του\s+Κανονισμού|της\s+Συνθήκης|"
-    r"του\s+π\.δ\.|του\s+ν\.\s*\d+"
-    r")",
-    re.UNICODE | re.IGNORECASE,
+from leggie.domain.models import Article
+from leggie.domain.models import Document as Document
+from leggie.domain.models import Paragraph as Paragraph
+from leggie.domain.models import SubParagraph as SubParagraph
+from leggie.domain.models.parse_integrity import (
+    ParseIntegrityReport as ParseIntegrityReport,
+)
+from leggie.domain.models.parse_integrity import (
+    RejectedCandidate as RejectedCandidate,
 )
 
-# A heading is a cross-reference only when the stop phrase is essentially the
-# whole title ("Άρθρο 552 του ΚΠολΔ"). Greek amending titles legitimately cite
-# other instruments *after* a substantive title ("Άρθρο 61 Προσθήκη άρθρου 58Α
-# και τροποποίηση άρθρου 72 του ν. 4999/2022"), so the stop-list must not be
-# applied to the whole heading line — that rejected 22 real headings on the
-# reference bill.
-_CROSS_REF_TITLE_PREFIX_MIN = 12
-
-
-# ── Table of contents (ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ) ───────────────────────────────
-# Greek bills open with a TOC that lists every article heading verbatim. Those
-# lines are indistinguishable from real headings, so they must be excised
-# before extraction or they become phantom (content-free) articles.
-_TOC_MARKER: Pattern[str] = re.compile(
-    r"^[ \t]*(?:ΠΙΝΑΚΑΣ\s+ΠΕΡΙΕΧΟΜΕΝΩΝ|ΠΕΡΙΕΧΟΜΕΝΑ)[ \t]*$",
-    re.UNICODE | re.MULTILINE,
+# Re-export patterns for backward compat
+from leggie.infrastructure.parse.articles import extract_articles
+from leggie.infrastructure.parse.articles import is_cross_reference as is_cross_reference
+from leggie.infrastructure.parse.citations import extract_citations
+from leggie.infrastructure.parse.patterns import (
+    _STOP_PATTERN as _STOP_PATTERN,
 )
-
-
-# ── Article heading pattern (FIX_PLAN D1.1, D1.2) ──────────────────────────
-# Line-anchored: ^\s*Άρθρο\s+ at start of line (re.MULTILINE)
-# Number shape: \d+[Α-Ωα-ω]?  — integer with optional single Greek suffix
-# Title: remainder of the heading line
-ARTICLE_HEADING: Pattern[str] = re.compile(
-    r"^\s*Άρθρο\s+(\d+[Α-Ωα-ω]?)\s*[—–\-]?\s*(.*?)$",
-    re.UNICODE | re.MULTILINE,
+from leggie.infrastructure.parse.patterns import (
+    _TOC_MARKER as _TOC_MARKER,
 )
-
-# Paragraph patterns
-PARAGRAPH_PATTERN: Pattern[str] = re.compile(r"(\d+)\.\s*(.*?)(?=\n\d+\.|\Z)", re.DOTALL)
-SUB_PARAGRAPH_PATTERN: Pattern[str] = re.compile(
-    r"([α-ωΑ-Ω])\)\s*(.*?)(?=\n\s*[α-ωΑ-Ω]\)|\Z)", re.DOTALL
+from leggie.infrastructure.parse.patterns import (
+    ARTICLE_HEADING as ARTICLE_HEADING,
 )
-
-# Citation patterns
-FEK_CITATION: Pattern[str] = re.compile(
-    r"ΦΕΚ\s+(?:[ΑαΒβΓγΔδΕεΣΤστ]’?)\s*(\d+)/(\d{4})", re.UNICODE
+from leggie.infrastructure.parse.patterns import (
+    CELEX_CITATION as CELEX_CITATION,
 )
-CELEX_CITATION: Pattern[str] = re.compile(r"CELEX[:/\s]*([A-Za-z0-9]+)", re.UNICODE)
-ECLI_CITATION: Pattern[str] = re.compile(r"ECLI[:/\s]*([A-Za-z0-9:]+)", re.UNICODE)
+from leggie.infrastructure.parse.patterns import (
+    ECLI_CITATION as ECLI_CITATION,
+)
+from leggie.infrastructure.parse.patterns import (
+    FEK_CITATION as FEK_CITATION,
+)
+from leggie.infrastructure.parse.patterns import (
+    PARAGRAPH_PATTERN as PARAGRAPH_PATTERN,
+)
+from leggie.infrastructure.parse.patterns import (
+    SUB_PARAGRAPH_PATTERN as SUB_PARAGRAPH_PATTERN,
+)
+from leggie.infrastructure.parse.preprocess import preprocess
+from leggie.infrastructure.parse.structure import extract_paragraphs as extract_paragraphs
+from leggie.infrastructure.parse.structure import extract_subparagraphs as extract_subparagraphs
+from leggie.infrastructure.parse.toc import find_body_start
 
 
 class ParseError(Exception):
@@ -85,8 +72,8 @@ class DocumentParser:
 
     def parse(self, text: str, title: str = "", source_format: str = "txt") -> Document:
         """Parse full document text into a structured Document object."""
-        cleaned = self._preprocess(text)
-        articles = self._extract_articles(cleaned)
+        cleaned = preprocess(text)
+        articles, _rejected = extract_articles(cleaned)
         preamble = self._extract_preamble(cleaned, articles)
         return Document(
             title=title or self._infer_title(text),
@@ -96,141 +83,59 @@ class DocumentParser:
             raw_text=text,
         )
 
-    def _preprocess(self, text: str) -> str:
-        """Clean and normalize text before parsing.
+    def parse_with_integrity(
+        self, text: str, title: str = "", source_format: str = "txt"
+    ) -> tuple[Document, ParseIntegrityReport]:
+        """Parse and return an integrity report alongside the document.
 
-        F0.5: PDF newline repair — join mid-token line breaks.
-        E.g. "Άρθρο 64\\nθρου" → "Άρθρο 64\\nθρου" becomes "Άρθρο 64θρου"
-        after lower-lower join.
+        The report records every candidate that was rejected and why,
+        making invisible drops impossible.
         """
-        text = text.replace("\r\n", "\n").replace("\r", "\n")
-        # Remove excessive blank lines
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        # F0.5: Join letters split across lines: lowercase-\n-lowercase without punctuation
-        text = re.sub(r"([α-ωa-z])\n([α-ωa-z])", r"\1\2", text)
-        return text.strip()
+        cleaned = preprocess(text)
+        articles, rejected_raw = extract_articles(cleaned)
+        preamble = self._extract_preamble(cleaned, articles)
+        doc = Document(
+            title=title or self._infer_title(text),
+            source_format=source_format,
+            articles=articles,
+            preamble=preamble,
+            raw_text=text,
+        )
 
-    def _extract_articles(self, text: str) -> list[Article]:
-        r"""Extract articles using line-anchored heading detection.
+        # Build integrity report using shared validation functions
+        from leggie.infrastructure.parse.integrity import (
+            compute_article_numbers,
+            compute_title_only_ids,
+        )
 
-        F0.1: Line-anchor headings via ^ with re.MULTILINE.
-        F0.2: Number constrained to \d+[Α-Ωα-ω]? (no multi-token garbage).
-        F0.3: Cross-ref stop-list rejects in-body references.
-        F0.4: Monotonic-sequence guard.
-        F0.6: Table-of-contents excision (must precede F0.4 — a TOC running to
-              Άρθρο 91 otherwise poisons the guard's last_num and cascades into
-              dropping every body article below 41).
-        """
-        text = text[self._find_body_start(text):]
+        ids = [a.id for a in articles]
+        _, missing_list, dup_list = compute_article_numbers(ids)
+        duplicates = tuple(dup_list)
+        missing = tuple(missing_list)
+        empty_ids = tuple(compute_title_only_ids(articles))
 
-        candidates: list[dict[str, Any]] = []
-        for match in ARTICLE_HEADING.finditer(text):
-            article_num = match.group(1)
-            article_title = match.group(2).strip() if match.group(2) else ""
-            line_start = match.start()
+        toc_span = find_body_start(cleaned)
+        toc = (0, toc_span) if toc_span > 0 else None
 
-            # F0.3: Reject headings that are nothing but a cross-reference.
-            if self._is_cross_reference(article_title):
-                continue
-
-            # F0.4: Extract the content from this heading to the next heading
-            candidates.append({
-                "num": article_num,
-                "title": article_title,
-                "start": line_start,
-            })
-
-        # Convert candidates to articles
-        articles: list[Article] = []
-        last_num = 0
-
-        for i, cand in enumerate(candidates):
-            num_str = cand["num"]
-            # Extract leading digits for monotonic check
-            leading_digits = re.match(r"\d+", num_str)
-            num_int = int(leading_digits.group()) if leading_digits else 0
-
-            # F0.4: Monotonic-sequence guard
-            # Allow small gaps (1..3, 3..5) but reject extreme jumps
-            # Cross-references like 552, 622Γ produce huge jumps then back to 59
-            if last_num > 0:
-                delta = num_int - last_num
-                if delta > 50 or (delta < 0 and abs(delta) > 50):
-                    continue  # Phantom cross-reference
-
-            last_num = num_int
-
-            # Content: from this heading start to next heading start (or end)
-            content_end = candidates[i + 1]["start"] if i + 1 < len(candidates) else len(text)
-            raw = text[cand["start"]:content_end].strip()
-
-            paragraphs = self._extract_paragraphs(raw)
-
-            articles.append(Article(
-                id=num_str,
-                title=cand["title"],
-                paragraphs=paragraphs,
-                raw_text=raw,
-            ))
-
-        return articles
-
-    def _find_body_start(self, text: str) -> int:
-        """Return the offset where the enacting body begins (F0.6).
-
-        A Greek bill's ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ repeats every article heading, so
-        the TOC and the body are two ascending runs of the same numbers. The
-        body therefore begins at the first heading that breaks the TOC's
-        ascent. Returns 0 when there is no TOC marker, or when no restart
-        follows it — never excise on a guess.
-        """
-        marker = _TOC_MARKER.search(text)
-        if not marker:
-            return 0
-
-        max_seen = 0
-        for match in ARTICLE_HEADING.finditer(text, marker.end()):
-            leading_digits = re.match(r"\d+", match.group(1))
-            num_int = int(leading_digits.group()) if leading_digits else 0
-            if max_seen > 0 and num_int < max_seen:
-                return match.start()
-            max_seen = max(max_seen, num_int)
-        return 0
-
-    def _is_cross_reference(self, title: str) -> bool:
-        """True when *title* is only a reference to another instrument (F0.3).
-
-        "Άρθρο 552 του ΚΠολΔ" is a cross-reference: the stop phrase *is* the
-        title. "Άρθρο 61 Προσθήκη άρθρου 58Α ... του ν. 4999/2022" is a real
-        amending heading: the stop phrase trails a substantive title.
-        """
-        stop = _STOP_PATTERN.search(title)
-        if not stop:
-            return False
-        return len(title[:stop.start()].strip()) < _CROSS_REF_TITLE_PREFIX_MIN
-
-    def _extract_paragraphs(self, article_text: str) -> list[Paragraph]:
-        """Extract paragraphs within an article."""
-        paragraphs: list[Paragraph] = []
-        matches = list(PARAGRAPH_PATTERN.finditer(article_text))
-        for match in matches:
-            num = match.group(1).strip()
-            para_text = match.group(2).strip()
-            sub_paras = self._extract_subparagraphs(para_text)
-            paragraphs.append(
-                Paragraph(number=num, text=para_text, subparagraphs=sub_paras)
+        rejected = tuple(
+            RejectedCandidate(
+                number=r["num"],
+                reason=r.get("reason", "unknown"),
+                offset=r.get("offset", 0),
             )
-        return paragraphs
+            for r in rejected_raw
+        )
 
-    def _extract_subparagraphs(self, paragraph_text: str) -> list[SubParagraph]:
-        """Extract sub-paragraphs (εδάφια) within a paragraph."""
-        sub_paras: list[SubParagraph] = []
-        matches = list(SUB_PARAGRAPH_PATTERN.finditer(paragraph_text))
-        for match in matches:
-            letter = match.group(1).strip()
-            p_text = match.group(2).strip()
-            sub_paras.append(SubParagraph(letter=letter, text=p_text))
-        return sub_paras
+        report = ParseIntegrityReport(
+            articles_parsed=len(articles),
+            distinct_ids=len({a.id for a in articles}),
+            duplicate_ids=duplicates,
+            missing_numbers=missing,
+            empty_or_heading_only=empty_ids,
+            toc_span=toc,
+            rejected=rejected,
+        )
+        return doc, report
 
     def _extract_preamble(self, text: str, articles: list[Article]) -> str:
         """Extract the preamble (text before the first article)."""
@@ -251,23 +156,4 @@ class DocumentParser:
 
     def extract_citations(self, text: str) -> list[dict[str, Any]]:
         """Extract all citation references from text."""
-        citations: list[dict[str, Any]] = []
-        for match in FEK_CITATION.finditer(text):
-            citations.append({
-                "type": "fek",
-                "identifier": f"ΦΕΚ {match.group(1)}/{match.group(2)}",
-                "original_text": match.group(0),
-            })
-        for match in CELEX_CITATION.finditer(text):
-            citations.append({
-                "type": "celex",
-                "identifier": match.group(1),
-                "original_text": match.group(0),
-            })
-        for match in ECLI_CITATION.finditer(text):
-            citations.append({
-                "type": "ecli",
-                "identifier": match.group(1),
-                "original_text": match.group(0),
-            })
-        return citations
+        return extract_citations(text)

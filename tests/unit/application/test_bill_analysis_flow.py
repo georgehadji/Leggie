@@ -49,7 +49,7 @@ class TestBillAnalysisFlow:
 
     def test_opt_in_flags_thread_to_construction(self):
         """Verbalized sampling and model reranker flags reach the object graph."""
-        from leggie.application.ports.reranker import RerankerPort, RerankResult
+        from leggie.application.ports.reranker import RerankerPort
 
         class FakeReranker(RerankerPort):
             async def rerank(self, query, documents, model="", top_k=None):
@@ -423,3 +423,55 @@ class TestDegradationEvent:
         log = flow.get_event_log()
         assert len(log) == 1
         assert log[0].event_type == EventType.DEGRADED
+
+
+class TestParseIntegrityGate:
+    """Tests for the parse-integrity gate in _do_parse."""
+
+    def test_parse_integrity_gate_passes_on_clean_parse(self):
+        """A clean parse should not raise ParseIntegrityError."""
+        from pathlib import Path
+
+        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
+        flow = BillAnalysisFlow()
+        text = "Άρθρο 1 Σκοπός\n1. Κείμενο.\nΆρθρο 2 Ορισμοί\n1. Κείμενο.\n"
+        doc = flow._do_parse(text, Path("test.txt"))
+        assert len(doc.articles) == 2
+
+    def test_parse_integrity_gate_raises_on_degraded_parse_without_flag(self):
+        """A degraded parse should raise ParseIntegrityError."""
+        from pathlib import Path
+
+        from leggie.application.workflow.bill_analysis_flow import (
+            BillAnalysisFlow,
+            ParseIntegrityError,
+        )
+        flow = BillAnalysisFlow()
+        # Two duplicate runs of the same article headings without a TOC marker
+        text = (
+            "Άρθρο 1 A\n1. Πρώτο κείμενο.\n"
+            "Άρθρο 2 B\n1. Δεύτερο κείμενο.\n"
+            "Άρθρο 1 A\n1. Πρώτο κείμενο ξανά.\n"
+            "Άρθρο 2 B\n1. Δεύτερο κείμενο ξανά.\n"
+        )
+        with pytest.raises(ParseIntegrityError):
+            flow._do_parse(text, Path("test.txt"))
+
+
+class TestSelectionStrictness:
+    """Tests for strict article selection."""
+
+    def test_selection_mismatch_raises(self):
+        """Selecting 1-10 when only 2 articles exist should raise."""
+        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
+        from leggie.domain.models import Article, Document, Paragraph
+        doc = Document(
+            title="Test", source_format="txt", raw_text="x",
+            articles=[
+                Article(id="1", title="A", paragraphs=[Paragraph(number="1", text="x")], raw_text="x"),
+                Article(id="6", title="B", paragraphs=[Paragraph(number="1", text="x")], raw_text="x"),
+            ],
+        )
+        flow = BillAnalysisFlow()
+        with pytest.raises(ValueError, match="requested 10 articles, matched 2"):
+            flow._filter_document(doc, "1-10")

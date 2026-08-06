@@ -20,7 +20,7 @@ Two modes:
 
 from __future__ import annotations
 
-import logging
+import asyncio
 import re
 from dataclasses import dataclass, field
 from typing import TypeVar
@@ -30,14 +30,15 @@ from pydantic import BaseModel
 from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.llm import LLMPort, LLMRequest
 from leggie.application.ports.router import RouterPort
-from leggie.domain.models import Citation, Confidence, Finding, IRAC
+from leggie.domain.models import IRAC, Citation, Confidence, Finding
 from leggie.domain.models.structured_output import (
     CoVeAnswerResponse,
     CoVeCrossCheckResponse,
     CoVeQuestionsResponse,
 )
+from leggie.observability import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _T = TypeVar("_T", bound=BaseModel)
 
@@ -132,19 +133,51 @@ class CoVeVerifier:
         return result
 
     async def verify_batch(
-        self, findings: list[Finding], article_index: dict[str, str] | None = None
+        self, findings: list[Finding], article_index: dict[str, str] | None = None,
+        max_concurrency: int = 10,
     ) -> list[CoVeResult]:
-        """Verify a batch of findings. Each finding is verified independently.
+        """Verify a batch of findings using bounded fan-out (PROD-35).
+
+        Each finding is verified independently. Results preserve input order.
+        A single failed finding isolates: the batch returns the rest plus a
+        ``DEGRADED`` event descriptor in the log.
 
         ``article_index`` maps article-number → source text so factored answers
         can be grounded in the real article the finding is about.
         """
+        if not findings:
+            return []
+
         index = article_index or {}
-        results: list[CoVeResult] = []
-        for f in findings:
+        semaphore = asyncio.Semaphore(max_concurrency)
+
+        async def _verify_one(f: Finding) -> CoVeResult:
             source = index.get(article_number(f.irac.issue), "")
-            results.append(await self.verify(f, source))
-        return results
+            async with semaphore:
+                try:
+                    return await self.verify(f, source)
+                except Exception:
+                    log.exception("cove_verify_failed: finding=%s", f.id)
+                    # Return a dropped result so the batch can continue
+                    return CoVeResult(
+                        finding=f, dropped=True,
+                        reason=f"cove_verify_exception: {f.id}",
+                    )
+
+        results: list[CoVeResult] = await asyncio.gather(
+            *(_verify_one(f) for f in findings), return_exceptions=True,
+        )
+
+        # Flatten any exceptions that slipped through
+        final: list[CoVeResult] = []
+        for f, r in zip(findings, results, strict=True):
+            if isinstance(r, BaseException):
+                log.error("cove_verify_critical: finding=%s error=%s", f.id, r)
+                final.append(CoVeResult(finding=f, dropped=True, reason=f"cove_critical: {r}"))
+            else:
+                final.append(r)
+
+        return final
 
     # ── Deterministic path (no LLM) ─────────────────────────────────────
     async def _verify_deterministic(self, finding: Finding) -> CoVeResult:

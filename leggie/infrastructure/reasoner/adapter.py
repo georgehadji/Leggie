@@ -20,7 +20,7 @@ from leggie.application.ports.reasoner import (
     ReasonerUnavailableError,
 )
 from leggie.domain.models import Citation, CitationScheme
-from leggie.infrastructure.observability import bind_trace_id, get_logger
+from leggie.observability import bind_trace_id, get_logger
 
 _RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
 

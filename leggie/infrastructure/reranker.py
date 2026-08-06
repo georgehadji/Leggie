@@ -35,19 +35,7 @@ class OpenRouterReranker(RerankerPort):
         top_k: int | None = None,
     ) -> list[RerankResult]:
         """Rerank documents via OpenRouter's rerank endpoint."""
-        try:
-            import httpx
-        except ImportError:
-            from leggie.infrastructure.llm.base import LLMError
-            raise LLMError("httpx not installed")
-
         model_id = model or self._default_model
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "HTTP-Referer": "https://github.com/georgehadji/Leggie",
-            "X-Title": "Leggie",
-            "content-type": "application/json",
-        }
         body: dict[str, Any] = {
             "model": model_id,
             "query": query,
@@ -56,13 +44,32 @@ class OpenRouterReranker(RerankerPort):
         if top_k is not None:
             body["top_k"] = top_k
 
+        resp = await self._post(body)
+        return self._parse(resp, documents)
+
+    async def _post(self, body: dict[str, Any]):
+        """Issue the HTTP POST (separated for testability)."""
+        try:
+            import httpx
+        except ImportError:
+            from leggie.infrastructure.llm.base import LLMError
+            raise LLMError("httpx not installed")
+
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "HTTP-Referer": "https://github.com/georgehadji/Leggie",
+            "X-Title": "Leggie",
+            "content-type": "application/json",
+        }
         async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
+            return await client.post(
                 f"{self._base_url}/rerank",
                 headers=headers,
                 json=body,
             )
 
+    def _parse(self, resp, documents: list[str]) -> list[RerankResult]:
+        """Parse a response into RerankResults (separated for testability)."""
         if resp.status_code == 429:
             from leggie.infrastructure.llm.base import LLMRateLimitError
             raise LLMRateLimitError(f"OpenRouter rerank rate limited: {resp.text}")
@@ -72,7 +79,6 @@ class OpenRouterReranker(RerankerPort):
 
         data = resp.json()
         results = data.get("results", [])
-
         return [
             RerankResult(
                 index=r.get("index", i),

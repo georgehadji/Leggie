@@ -6,9 +6,11 @@ applies degrade strategy (fewer paths, fewer lenses, cheaper tier) before hard s
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import Enum, StrEnum, auto
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, Literal
+
+from leggie.domain.pricing import estimate_cost
 
 
 class BudgetAction(StrEnum):
@@ -34,23 +36,11 @@ class BudgetState:
 
 
 class BudgetGuard:
-    """Budget guard — monitors and enforces token/$ ceilings per run."""
+    """Budget guard — monitors and enforces token/$ ceilings per run.
 
-    # Approximate cost per 1M tokens (USD) via OpenRouter pricing
-    COST_PER_1M_TOKENS: dict[str, float] = {
-        "google/gemini-2.5-flash-lite": 0.10,
-        "google/gemini-2.5-flash": 0.30,
-        "google/gemini-2.5-pro": 1.25,
-        "google/gemini-3-flash-preview": 0.43,
-        "google/gemini-3.1-pro-preview": 2.00,
-        "anthropic/claude-haiku-4.5": 1.00,
-        "anthropic/claude-sonnet-4.6": 3.00,
-        "anthropic/claude-opus-4.8": 15.00,
-        "openai/gpt-4o-mini": 0.15,
-        "openai/gpt-5-mini": 0.27,
-        "openai/gpt-5.4": 2.50,
-        "deepseek/deepseek-v3.2": 0.28,
-    }
+    Prices are defined exclusively in ``domain.pricing.MODEL_PRICES``.
+    This class uses ``estimate_cost()`` from that module — see PROD-30.
+    """
 
     def __init__(self, max_tokens: int = 500_000, max_cost: float = 5.0) -> None:
         self._state = BudgetState(max_tokens=max_tokens, max_cost=max_cost)
@@ -58,7 +48,7 @@ class BudgetGuard:
     def check(self, prompt_tokens: int = 0, completion_tokens: int = 0, model: str = "") -> BudgetAction:
         """Check if a proposed call is within budget."""
         total_tokens = self._state.tokens_used + prompt_tokens + completion_tokens
-        estimated_cost = self._estimate_cost(model, prompt_tokens, completion_tokens)
+        estimated_cost = estimate_cost(model, prompt_tokens, completion_tokens)
         total_cost = self._state.cost_used + estimated_cost
 
         if total_tokens > self._state.max_tokens or total_cost > self._state.max_cost:
@@ -72,10 +62,17 @@ class BudgetGuard:
 
         return BudgetAction.ALLOW
 
-    def record_usage(self, prompt_tokens: int, completion_tokens: int, model: str = "") -> None:
-        """Record actual usage after a call completes."""
+    def record_usage(self, prompt_tokens: int, completion_tokens: int, model: str = "", cached_tokens: int = 0) -> None:
+        """Record actual usage after a call completes.
+
+        Args:
+            prompt_tokens: Number of prompt tokens used.
+            completion_tokens: Number of completion tokens used.
+            model: Model ID string.
+            cached_tokens: Number of cached input tokens.
+        """
         self._state.tokens_used += prompt_tokens + completion_tokens
-        self._state.cost_used += self._estimate_cost(model, prompt_tokens, completion_tokens)
+        self._state.cost_used += estimate_cost(model, prompt_tokens, completion_tokens, cached_tokens)
 
     def apply_degrade(self) -> None:
         """Apply the degrade strategy."""
@@ -102,11 +99,6 @@ class BudgetGuard:
         token_ratio = self._state.tokens_used / self._state.max_tokens if self._state.max_tokens > 0 else 0
         cost_ratio = self._state.cost_used / self._state.max_cost if self._state.max_cost > 0 else 0
         return max(token_ratio, cost_ratio)
-
-    def _estimate_cost(self, model: str, prompt_tokens: int, completion_tokens: int) -> float:
-        """Estimate cost for a model call."""
-        rate = self.COST_PER_1M_TOKENS.get(model, 3.0)
-        return rate * (prompt_tokens + completion_tokens) / 1_000_000
 
     def save_state(self) -> dict[str, Any]:
         """Serialize budget state for checkpointing."""

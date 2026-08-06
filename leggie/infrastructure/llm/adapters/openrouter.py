@@ -6,29 +6,40 @@ Models are prefixed: anthropic/claude-sonnet-4, google/gemini-2.5-pro, etc.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
+import httpx
+
 from leggie.application.ports.llm import LLMRequest, LLMResponse
-from leggie.domain.models import ModelTier
 from leggie.infrastructure.llm.base import BaseLLMProvider
 from leggie.infrastructure.llm.decorators import with_retry
 from leggie.infrastructure.rate_limiter import RateLimiter
+from leggie.observability import get_logger
+
+logger = get_logger(__name__)
+
+# Maximum response body size included in error messages (PROD-14).
+_MAX_ERROR_BODY_CHARS = 500
 
 
 class OpenRouterProvider(BaseLLMProvider):
     """OpenRouter provider adapter — single API for all models.
 
     Features:
-      - Prompt caching via transforms: ["cache"] (O6 cost optimization)
       - Reasoning tokens for :thinking variants
       - Rate limiting via injected RateLimiter
       - Provider fallback handled server-side
+      - Per-call structured logging with token/cost breakdown
+      - Pooled httpx client (PROD-14)
+      - Retry-After honouring on 429 (PROD-14)
     """
 
     def __init__(self, api_key: str, base_url: str = "https://openrouter.ai/api/v1",
                  default_model: str = "google/gemini-2.5-flash",
-                 rate_limiter: RateLimiter | None = None) -> None:
+                 rate_limiter: RateLimiter | None = None,
+                 http_client: httpx.AsyncClient | None = None) -> None:
         if not api_key:
             from leggie.infrastructure.llm.base import LLMConfigurationError
             raise LLMConfigurationError("OpenRouter API key not configured")
@@ -36,15 +47,15 @@ class OpenRouterProvider(BaseLLMProvider):
         self._base_url = base_url
         self._default_model = default_model
         self._rate_limiter = rate_limiter or RateLimiter(max_rate=5.0)
+        # Container-scoped client avoids a fresh TLS handshake per call (PROD-14).
+        # When None, defaults to the pooled client below.
+        self._http_client = http_client or httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=10.0),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        )
 
     @with_retry()
     async def generate(self, request: LLMRequest) -> LLMResponse:
-        try:
-            import httpx
-        except ImportError:
-            from leggie.infrastructure.llm.base import LLMError
-            raise LLMError("httpx not installed")
-
         await self._rate_limiter.acquire()
         model = request.model or self._default_model
         start = time.monotonic()
@@ -65,7 +76,6 @@ class OpenRouterProvider(BaseLLMProvider):
             "max_tokens": request.max_tokens,
             "messages": messages,
             "temperature": request.temperature if request.temperature is not None else 0.7,
-            "transforms": ["cache"],
         }
         if request.seed is not None:
             body["seed"] = request.seed
@@ -74,32 +84,81 @@ class OpenRouterProvider(BaseLLMProvider):
         if request.response_format:
             body["response_format"] = request.response_format
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(
-                f"{self._base_url}/chat/completions",
-                headers=headers,
-                json=body,
-            )
-            elapsed = (time.monotonic() - start) * 1000
+        resp = await self._http_client.post(
+            f"{self._base_url}/chat/completions",
+            headers=headers,
+            json=body,
+        )
+        elapsed = (time.monotonic() - start) * 1000
 
         if resp.status_code == 429:
+            retry_after = _parse_retry_after(resp)
+            if retry_after is not None:
+                await asyncio.sleep(retry_after)
             from leggie.infrastructure.llm.base import LLMRateLimitError
-            raise LLMRateLimitError(f"OpenRouter rate limited: {resp.text}")
+            raise LLMRateLimitError(
+                "OpenRouter rate limited"
+                + (f" (retry after {retry_after}s)" if retry_after else "")
+            )
         if resp.status_code != 200:
             from leggie.infrastructure.llm.base import LLMError
-            raise LLMError(f"OpenRouter API error {resp.status_code}: {resp.text}")
+            body_text = resp.text[:_MAX_ERROR_BODY_CHARS]
+            raise LLMError(
+                f"OpenRouter API error {resp.status_code}: {body_text}"
+            )
 
         data = resp.json()
         choice = data.get("choices", [{}])[0]
         content = choice.get("message", {}).get("content") or ""
         finish_reason = choice.get("finish_reason", "stop")
         usage = data.get("usage", {})
+
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+
+        # Parse cached token details (OpenRouter returns usage.prompt_tokens_details.cached_tokens)
+        usage_details = usage.get("prompt_tokens_details", {}) or {}
+        cached_tokens = usage_details.get("cached_tokens", 0)
+
+        # Estimate cost
+        from leggie.domain.pricing import estimate_cost
+        estimated_cost = estimate_cost(model, prompt_tokens, completion_tokens, cached_tokens)
+
+        # Structured log line — structlog keyword form so fields render
+        logger.info(
+            "llm.call",
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cached_tokens=cached_tokens,
+            estimated_cost=round(estimated_cost, 6),
+            finish_reason=finish_reason,
+            latency_ms=round(elapsed, 1),
+        )
+
         return LLMResponse(
-            content=content, model=model, tier_used=ModelTier.BUDGET,
-            usage={"prompt_tokens": usage.get("prompt_tokens", 0), "completion_tokens": usage.get("completion_tokens", 0)},
+            content=content, model=model, tier_used=request.tier,
+            usage={
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "cached_tokens": cached_tokens,
+            },
             finish_reason=finish_reason,
             latency_ms=elapsed,
         )
 
     async def count_tokens(self, text: str, model: str | None = None) -> int:
         return len(text) // 4 + 1
+
+
+def _parse_retry_after(resp: httpx.Response) -> float | None:
+    """Extract Retry-After header value (seconds). Handles both integer and
+    HTTP-date formats, returning a float of seconds or None."""
+    raw = resp.headers.get("retry-after")
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        # Could be an HTTP-date — fall back to a reasonable default
+        return 5.0

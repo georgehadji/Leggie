@@ -6,15 +6,14 @@ Tail-samples the lowest-probability (most surprising) findings.
 
 from __future__ import annotations
 
-import logging
-
 from leggie.application.agents.lens import Lens
 from leggie.application.ports.llm import LLMPort, LLMRequest
-from leggie.application.services.verbalized_sampling import VerbalizedSampling, VSSample
+from leggie.application.services.verbalized_sampling import VSSample
 from leggie.domain.models import Article, Finding
 from leggie.domain.models.structured_output import LensFindings
+from leggie.observability import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class LensVerbalizedSampling:
@@ -33,6 +32,7 @@ class LensVerbalizedSampling:
         user_template: str,
         k: int = 5,
         seed: int = 0,
+        max_tokens: int = 4096,
     ) -> None:
         self._llm = llm
         self._lens_name = lens_name
@@ -41,6 +41,7 @@ class LensVerbalizedSampling:
         self._user_template = user_template
         self._k = k
         self._seed = seed
+        self._max_tokens = max_tokens
 
     async def generate(self, lens: Lens, article: Article) -> list[Finding]:
         """Generate k candidates, parse, tail-sample, return findings."""
@@ -70,6 +71,7 @@ class LensVerbalizedSampling:
             prompt=prompt,
             system_prompt=self._system_prompt,
             model=self._model,
+            max_tokens=self._max_tokens,
             response_format={"type": "json_object"},
             seed=self._seed,
         )

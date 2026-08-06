@@ -46,7 +46,7 @@ Dependencies point inward only. Enforced by import-linter
 | `LLMPort` | `ports/llm.py` | `LLMAdapter` (`infrastructure/llm/__init__.py`) + decorators |
 | `ParsePort` | `ports/parse.py` | `ParseAdapter` (`infrastructure/parse_adapter.py`) |
 | `ReasonerPort` | `ports/reasoner.py` | `ReasonerAdapter` (`infrastructure/reasoner/adapter.py`) — HTTP client to the external Reasoner backend for the deliberative pipeline; lifecycle via `ReasonerServerManager` (`infrastructure/reasoner/server_manager.py`) |
-| `RerankerPort` | `ports/reranker.py` | selector wired: `LEGGIE_ANALYSIS__RERANKER=model` uses it IF a container binding exists — but `configure_defaults()` binds NO RerankerPort adapter as of 2026-07-14, so `model` silently behaves as composite (D5 partially closed) |
+| `RerankerPort` | `ports/reranker.py` | `OpenRouterReranker` (`infrastructure/reranker.py`) bound in `configure_defaults()` (container.py:176-183) — the `LEGGIE_ANALYSIS__RERANKER=model` selector now resolves a real adapter. D5 closed. |
 | `RetrievalPort` | `ports/retrieval.py` | retrieval (largely future work) |
 | `RouterPort` | `ports/router.py` | `StaticRouter` (`infrastructure/router/`) |
 | `StatePort` | `ports/state.py` | persistence |
@@ -147,7 +147,7 @@ CLI path: `interfaces/cli/__init__.py` → `Mediator` → handlers in
 | D10 | Resume-from-stage: only budget spend is checkpointed by the flow; `infrastructure/persistence/checkpoint_store.py` exists — check whether flow uses it | PARTIAL, verify |
 | — | README claims 7 ports / 199 tests; source has 11 ports / 531 tests (2026-07-15) | DOC DRIFT |
 | — | Deliberative report skips Skeptic/CoVe by design — its claims are UNVERIFIED prose; do not treat `<stem>_deliberative.md` content as findings-grade evidence | BY DESIGN |
-| — | `LEGGIE_ANALYSIS__RERANKER=model` has no default RerankerPort binding in `configure_defaults()` — setting it silently falls back to composite | OPEN |
+| — | `LEGGIE_ANALYSIS__RERANKER=model` resolves `OpenRouterReranker` via container binding (2026-07) | CLOSED |
 
 ## 7. How to add things
 
@@ -178,4 +178,4 @@ emit `STAGE_COMPLETED` events, keep aggregation logic in a service class.
 - Event types: `grep -n "class EventType" -A16 leggie/domain/models/__init__.py`
 - Layer contract: `lint-imports` or `grep -A10 importlinter pyproject.toml`
 - Reasoner wiring: `grep -n "ReasonerPort\|ServerLifecycle" leggie/application/ports/reasoner.py leggie/application/workflow/deliberative_flow.py`
-- Reranker binding gap: `grep -n "Reranker" leggie/infrastructure/container.py` (empty = still unbound)
+- Reranker binding is CLOSED: `grep -n "Reranker" leggie/infrastructure/container.py` shows `OpenRouterReranker` bound (2026-07).

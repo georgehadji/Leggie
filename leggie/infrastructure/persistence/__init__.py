@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from leggie.application.ports.event_bus import EventBusPort, EventHandler
 from leggie.domain.models import Event, EventType

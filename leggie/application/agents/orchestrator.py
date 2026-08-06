@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
 from collections.abc import Callable
 
 from leggie.application.agents.constitutional_lens import ConstitutionalLens
@@ -25,8 +24,9 @@ from leggie.application.agents.lens import Lens
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.router import RouterPort
 from leggie.domain.models import Article, Document, Event, EventType, Finding, LensTask, ModelTier
+from leggie.observability import get_logger
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # All 5 lenses for Phase 2 Ensemble
 _DEFAULT_LENSES: dict[str, type[Lens]] = {
@@ -137,6 +137,7 @@ class Orchestrator:
         model = self._model
         tier = ModelTier.BUDGET
         max_retries = 1
+        result_tokens = 4096  # Default; overridden if router resolves (TOK-4)
 
         if self._router:
             try:
@@ -145,6 +146,7 @@ class Orchestrator:
                 result = await self._router.route("lens_analysis")
                 model = result.model
                 tier = result.tier
+                result_tokens = result.max_tokens
                 max_retries = 2 if result.cascade_enabled else 1
             except Exception:
                 log.warning("route_failed: lens=%s using default model", name)
@@ -156,6 +158,7 @@ class Orchestrator:
                     model=model,
                     on_degradation=self._on_degradation,
                     use_verbalized_sampling=self._use_verbalized_sampling,
+                    max_tokens=result_tokens,
                 )
                 findings = await lens.analyze(article)
                 if findings:
@@ -167,6 +170,7 @@ class Orchestrator:
                     if next_result:
                         model = next_result.model
                         tier = next_result.tier
+                        result_tokens = next_result.max_tokens  # TOK-4: update on cascade
                         log.info("cascade: %s %s → %s (empty)", name, tier.value, model)
                         continue
                 return findings
@@ -188,6 +192,7 @@ class Orchestrator:
                     if next_result:
                         model = next_result.model
                         tier = next_result.tier
+                        result_tokens = next_result.max_tokens  # TOK-4: update on cascade
                         log.info("cascade: %s %s → %s (failure)", name, tier.value, model)
                         continue
                 return []

@@ -27,7 +27,7 @@ from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.reranker import RerankerPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.services.cove_verifier import CoVeVerifier
-from leggie.infrastructure.observability import get_logger
+from leggie.observability import get_logger
 
 if TYPE_CHECKING:
     from leggie.infrastructure.container import Container

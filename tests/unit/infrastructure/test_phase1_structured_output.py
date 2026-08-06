@@ -10,7 +10,6 @@ Covers:
 from __future__ import annotations
 
 import json
-from dataclasses import replace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -30,7 +29,6 @@ from leggie.infrastructure.llm import (
 )
 from leggie.infrastructure.llm.schema_format import pydantic_to_json_schema
 from leggie.infrastructure.llm.structured_parser import StructuredResponseParser
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # 1. pydantic_to_json_schema tests
@@ -622,11 +620,11 @@ class TestOpenRouterFinishReason:
             "usage": {"prompt_tokens": 10, "completion_tokens": 5},
             "model": "test-model",
         }
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch.object(prov._http_client, "post", new_callable=AsyncMock) as mock_post:
             mock_resp = MagicMock()
             mock_resp.status_code = 200
             mock_resp.json.return_value = body
-            mock_client.return_value.__aenter__.return_value.post.return_value = mock_resp
+            mock_post.return_value = mock_resp
 
             with patch.object(prov._rate_limiter, "acquire", new_callable=AsyncMock):
                 response = await prov.generate(LLMRequest(prompt="test"))
@@ -644,11 +642,11 @@ class TestOpenRouterFinishReason:
             "usage": {"prompt_tokens": 10, "completion_tokens": 100},
             "model": "test-model",
         }
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch.object(prov._http_client, "post", new_callable=AsyncMock) as mock_post:
             mock_resp = MagicMock()
             mock_resp.status_code = 200
             mock_resp.json.return_value = body
-            mock_client.return_value.__aenter__.return_value.post.return_value = mock_resp
+            mock_post.return_value = mock_resp
 
             with patch.object(prov._rate_limiter, "acquire", new_callable=AsyncMock):
                 response = await prov.generate(LLMRequest(prompt="test"))
@@ -666,11 +664,11 @@ class TestOpenRouterFinishReason:
             "usage": {},
             "model": "test-model",
         }
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch.object(prov._http_client, "post", new_callable=AsyncMock) as mock_post:
             mock_resp = MagicMock()
             mock_resp.status_code = 200
             mock_resp.json.return_value = body
-            mock_client.return_value.__aenter__.return_value.post.return_value = mock_resp
+            mock_post.return_value = mock_resp
 
             with patch.object(prov._rate_limiter, "acquire", new_callable=AsyncMock):
                 response = await prov.generate(LLMRequest(prompt="test"))

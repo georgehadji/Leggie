@@ -1,0 +1,83 @@
+name: Release
+
+# Tag-triggered publish workflow (PROD-17c).
+# On a v* tag: run the full gate set, build wheel + sdist, generate an SBOM,
+# sign artifacts, and publish to PyPI.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build deps
+        run: |
+          pip install --upgrade pip build twine cyclonedx-bom
+
+      # ── Full gate set (reuse the CI checks) ─────────────────────
+      - name: Install package + lint deps
+        run: pip install -e ".[dev,lint]"
+
+      - name: Lint, type-check, architecture, security
+        run: |
+          ruff check leggie/ tests/
+          mypy leggie/ --ignore-missing-imports
+          lint-imports --debug  # ARCH-02: --debug avoids a Rich Live-display crash in normal mode
+          bandit -c pyproject.toml -r leggie/
+
+      - name: Run tests with coverage gate
+        run: pytest tests/ -q --tb=short --cov=leggie --cov-fail-under=85
+
+      # ── Build wheel + sdist ─────────────────────────────────────
+      - name: Build distribution
+        run: python -m build
+
+      # ── SBOM (CycloneDX) ────────────────────────────────────────
+      - name: Generate SBOM
+        run: |
+          cyclonedx-py environment --output dist/sbom.cdx.json
+
+      # ── Sign artifacts (GPG skipped if no key available) ────────
+      - name: Sign artifacts
+        run: |
+          if [ -n "${{ secrets.GPG_PRIVATE_KEY }}" ]; then
+            echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+            for f in dist/*.whl dist/*.tar.gz; do gpg --batch --armor --detach-sign "$f"; done
+          else
+            echo "GPG_PRIVATE_KEY not set — skipping signature (set for signed release)."
+          fi
+
+      # ── Upload to PyPI ──────────────────────────────────────────
+      - name: Publish to PyPI
+        if: ${{ secrets.PYPI_API_TOKEN != '' }}
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          twine check dist/*
+          twine upload dist/*.whl dist/*.tar.gz
+
+      # ── Attach SBOM + artifacts to the GitHub release ───────────
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/sbom.cdx.json

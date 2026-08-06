@@ -233,3 +233,99 @@ class TestOtherHandlers:
         parser = build_parser()
         args = parser.parse_args(["parse", "test.txt"])
         assert isinstance(args.file, Path)
+
+
+class TestExitCodes:
+    """Every documented exit code is produced by a test (PROD-19)."""
+
+    def test_budget_exceeded_exit_code(self):
+        from leggie.infrastructure.llm.base import BudgetExceededError
+        from leggie.interfaces.cli import EXIT_BUDGET_EXCEEDED, _exit_code_for
+        assert _exit_code_for(BudgetExceededError("over")) == EXIT_BUDGET_EXCEEDED
+
+    def test_config_error_exit_code(self):
+        from leggie.infrastructure.ingest import UnsupportedFormatError
+        from leggie.infrastructure.llm.base import LLMConfigurationError
+        from leggie.interfaces.cli import EXIT_CONFIG_ERROR, _exit_code_for
+        assert _exit_code_for(LLMConfigurationError("bad key")) == EXIT_CONFIG_ERROR
+        assert _exit_code_for(UnsupportedFormatError("unknown")) == EXIT_CONFIG_ERROR
+
+    def test_degraded_parse_exit_code(self):
+        from leggie.application.workflow.bill_analysis_flow import ParseIntegrityError
+        from leggie.interfaces.cli import EXIT_DEGRADED_PARSE, _exit_code_for
+        assert _exit_code_for(ParseIntegrityError("bad")) == EXIT_DEGRADED_PARSE
+
+    def test_provider_unavailable_exit_code(self):
+        from leggie.infrastructure.ingest import IngestError
+        from leggie.infrastructure.llm.base import LLMError, LLMTimeoutError
+        from leggie.interfaces.cli import EXIT_PROVIDER_UNAVAILABLE, _exit_code_for
+        assert _exit_code_for(LLMError("down")) == EXIT_PROVIDER_UNAVAILABLE
+        assert _exit_code_for(LLMTimeoutError("down")) == EXIT_PROVIDER_UNAVAILABLE
+        assert _exit_code_for(IngestError("down")) == EXIT_PROVIDER_UNAVAILABLE
+
+    def test_interrupted_exit_code(self):
+        from leggie.interfaces.cli import EXIT_INTERRUPTED, _exit_code_for
+        assert _exit_code_for(KeyboardInterrupt()) == EXIT_INTERRUPTED
+
+    def test_unknown_exit_code_default(self):
+        from leggie.interfaces.cli import EXIT_UNKNOWN, _exit_code_for
+        assert _exit_code_for(ValueError("blah")) == EXIT_UNKNOWN
+
+    def test_exit_message_has_actionable_text(self):
+        from leggie.interfaces.cli import EXIT_BUDGET_EXCEEDED, EXIT_CONFIG_ERROR, _exit_message
+        assert "budget" in _exit_message(EXIT_BUDGET_EXCEEDED).lower()
+        assert "configuration" in _exit_message(EXIT_CONFIG_ERROR).lower()
+
+
+class TestNewFlags:
+    """PROD-33: --json, --log-level, --quiet flags."""
+
+    def test_log_level_flag(self):
+        from leggie.interfaces.cli import build_parser
+        parser = build_parser()
+        args = parser.parse_args(["--log-level", "DEBUG", "preview", "bill.txt"])
+        assert args.log_level == "DEBUG"
+
+    def test_quiet_flag(self):
+        from leggie.interfaces.cli import build_parser
+        parser = build_parser()
+        args = parser.parse_args(["--quiet", "preview", "bill.txt"])
+        assert args.quiet is True
+
+    def test_json_flag(self):
+        from leggie.interfaces.cli import build_parser
+        parser = build_parser()
+        args = parser.parse_args(["--json", "preview", "bill.txt"])
+        assert args.json is True
+
+
+class TestPresenter:
+    """PROD-33: Presenter routes output and respects quiet/json modes."""
+
+    def _reset_presenter(self):
+        import leggie.interfaces.cli as cli
+        cli.presenter = cli.Presenter()
+        return cli
+
+    def test_info_hidden_when_quiet(self, capsys):
+        cli = self._reset_presenter()
+        cli.presenter = cli.Presenter(quiet=True)
+        cli.presenter.info("important")
+        assert capsys.readouterr().out == ""
+
+    def test_info_hidden_when_json(self, capsys):
+        cli = self._reset_presenter()
+        cli.presenter = cli.Presenter(json_mode=True)
+        cli.presenter.info("noise")
+        assert capsys.readouterr().out == ""
+
+    def test_result_always_shown_in_quiet(self, capsys):
+        cli = self._reset_presenter()
+        cli.presenter = cli.Presenter(quiet=True)
+        cli.presenter.result("PAYLOAD")
+        assert capsys.readouterr().out == "PAYLOAD\n"
+
+    def test_error_to_stderr(self, capsys):
+        cli = self._reset_presenter()
+        cli.presenter.error("boom")
+        assert "boom" in capsys.readouterr().err

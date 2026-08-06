@@ -11,6 +11,8 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from leggie import __version__ as _leggie_version
+
 
 class LLMSettings(BaseSettings):
     """LLM provider configuration via OpenRouter."""
@@ -25,6 +27,18 @@ class LLMSettings(BaseSettings):
         default=5, ge=1, le=100,
         description="Max concurrent article analyses per document",
     )
+    max_verification_concurrency: int = Field(
+        default=10, ge=1, le=100,
+        description="Max concurrent CoVe citation verification calls per batch",
+    )
+    max_skeptic_concurrency: int = Field(
+        default=10, ge=1, le=100,
+        description="Max concurrent skeptic gate evaluations per batch",
+    )
+    max_rate_per_second: float = Field(
+        default=5.0, ge=0.5, le=100.0,
+        description="Max LLM API requests per second (rate limiter ceiling)",
+    )
 
 
 class CascadeSettings(BaseSettings):
@@ -35,7 +49,7 @@ class CascadeSettings(BaseSettings):
     rules_path: str = Field(default="config/routes.yaml", description="Path to routing rules YAML")
     free_model: str = "google/gemini-2.5-flash-lite"
     budget_model: str = "google/gemini-2.5-flash"
-    premium_model: str = "moonshotai/kimi-k3"
+    premium_model: str = "x-ai/grok-4.5"
     confidence_floor: float = Field(default=0.6, ge=0.0, le=1.0)
     premium_fallback_enabled: bool = True
 
@@ -112,7 +126,7 @@ class ReasonerSettings(BaseSettings):
     base_url: str = Field(default="http://localhost:8003", description="Reasoner backend URL")
     api_key: str = Field(default="", description="Reasoner ADMIN_API_KEY (secret)")
     autostart: bool = Field(
-        default=True, description="Auto-start Reasoner backend if not running"
+        default=False, description="Auto-start Reasoner backend if not running"
     )
     startup_timeout: int = Field(
         default=60, ge=1, description="Seconds to wait for Reasoner to become healthy"
@@ -143,7 +157,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "Leggie"
-    app_version: str = "0.1.0"
+    app_version: str = _leggie_version
     debug: bool = False
     log_level: str = Field(default="INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
     seed: int = Field(default=42, description="Global random seed for reproducibility")

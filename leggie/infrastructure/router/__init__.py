@@ -76,5 +76,5 @@ class StaticRouter(RouterPort):
         return {
             ModelTier.FREE: "google/gemini-2.5-flash-lite",
             ModelTier.BUDGET: "google/gemini-2.5-flash",
-            ModelTier.PREMIUM: "google/gemini-2.5-pro",
+            ModelTier.PREMIUM: "x-ai/grok-4.5",
         }.get(tier, "google/gemini-2.5-flash")

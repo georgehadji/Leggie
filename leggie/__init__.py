@@ -1,3 +1,5 @@
 """Leggie — Deterministic legal-analysis workflow for Greek legislation."""
 
-__version__ = "0.1.0"
+from importlib.metadata import version as _metadata_version
+
+__version__ = _metadata_version("leggie")

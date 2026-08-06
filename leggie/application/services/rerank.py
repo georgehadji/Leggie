@@ -12,9 +12,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
-from leggie.domain.models import Finding
-
 from leggie.application.ports.reranker import RerankerPort
+from leggie.domain.models import Finding
 
 _SEVERITY_WEIGHTS = {
     "critical": 1.0,
