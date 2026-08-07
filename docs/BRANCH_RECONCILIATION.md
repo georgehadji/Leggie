@@ -171,10 +171,37 @@ count look like 5–7 and hid an entire seventh file (`infrastructure/resources.
 Redirect the full output to a file and read that — do not size this problem from a
 tailed pipe.
 
-**Pass 3 — decide the branch's fate.**
+**Pass 3 — decide the branch's fate. PARTIAL 2026-08-08.**
 Once 1 and 2 are done, everything of value is on master. Either delete the branch or
 tag it `archive/bold-nightingale` and remove the worktree. Do not leave it live and
 unmerged; that is how it got overlooked for three weeks.
+
+Done: `archive/bold-nightingale` → `7b492aa` (branch tip) and
+`archive/stash-83fd14b` → the stash commit. Both are annotated tags, so every
+commit stays permanently reachable no matter what happens to the branch ref, the
+worktree, or the stash.
+
+Still to do, and deliberately left for an explicit decision because each is
+irreversible in shape: remove the worktree, delete the branch ref, drop the
+stash, and delete `safety-snapshot-20260806`.
+
+**`stash@{0}` was examined, and it was not empty.** It carried a parser fix that
+existed nowhere else — not on master, not on the branch:
+
+- `PARAGRAPH_PATTERN` was unanchored, so `(\d+)\.` matched inside dates and
+  decimals. "(L της 16.4.2024)" split Άρθρο 1 at "4.", inventing a paragraph and
+  discarding the article's real opening text.
+- `extract_paragraphs` returned `[]` for prose-bodied articles — 24% of the
+  reference bill — so they reached the lenses with nothing in them.
+- `ParseDocumentHandler` capped paragraph text at 200 chars, making the
+  `parse -o` sanity artifact unable to show content recovery.
+
+Ported to master in `35418d7` with 9 regression tests. Its other half (a
+`_DEFAULT_CRITIC_MAX_TOKENS` / router-driven skeptic budget) was already solved
+independently as TOK-4 and was dropped.
+
+The lesson generalises: "contents not yet examined" in a recovery document is an
+open finding, not a footnote. Two passes of reconciliation ran past this one.
 
 ---
 
