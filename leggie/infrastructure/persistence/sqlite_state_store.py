@@ -82,7 +82,10 @@ class SqliteStateStore(StatePort):
         ).fetchone()
         if row is None:
             return None
-        return json.loads(row["data_json"])
+        # json.loads is typed -> Any; save_checkpoint only ever writes a dict,
+        # so bind it to the declared shape rather than returning Any.
+        checkpoint: dict[str, Any] = json.loads(row["data_json"])
+        return checkpoint
 
     async def save_checkpoint(self, run_id: str, stage: str, data: dict[str, Any]) -> None:
         self._conn_or_raise().execute(

@@ -48,15 +48,21 @@ class ResourceLocator:
         # and packages that haven't been installed yet, like leggie.data).
         try:
             pkg = __import__(package, fromlist=["__name__"])
-            pkg_path = Path(pkg.__file__).resolve().parent
-            candidate = pkg_path / resource
-            if candidate.exists():
-                return candidate
+            # Namespace packages have __file__ = None, so this is a real case,
+            # not defensive padding — TypeError used to catch it at runtime.
+            pkg_file = getattr(pkg, "__file__", None)
+            if pkg_file is not None:
+                candidate = Path(pkg_file).resolve().parent / resource
+                if candidate.exists():
+                    return candidate
         except (ImportError, AttributeError, TypeError):
             pass
-        # Fallback to importlib.resources (works for installed packages)
+        # Fallback to importlib.resources (works for installed packages).
+        # files() yields a Traversable, which is only a Path for filesystem-backed
+        # loaders; str() round-trips the one case this function supports and keeps
+        # the declared -> Path contract honest.
         try:
-            return _resources.files(package) / resource  # type: ignore[attr-defined]
+            return Path(str(_resources.files(package) / resource))
         except (AttributeError, ModuleNotFoundError, TypeError):
             return Path(package.replace(".", "/")) / resource
 
@@ -90,7 +96,7 @@ class ResourceLocator:
 
     # ── Hints for pyproject.toml package-data ───────────────────────
     @staticmethod
-    def required_package_data() -> list[dict[str, str]]:
+    def required_package_data() -> list[dict[str, list[str]]]:
         """Return the ``[tool.setuptools.package-data]`` entries needed.
 
         These should be added to ``pyproject.toml`` so that ``pip install -e .``

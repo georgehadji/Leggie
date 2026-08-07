@@ -164,7 +164,10 @@ class CoVeVerifier:
                         reason=f"cove_verify_exception: {f.id}",
                     )
 
-        results: list[CoVeResult] = await asyncio.gather(
+        # return_exceptions=True means a raised BaseException lands in the list
+        # instead of propagating, so the element type genuinely is the union.
+        # The loop below narrows it; annotating it as list[CoVeResult] was a lie.
+        results: list[CoVeResult | BaseException] = await asyncio.gather(
             *(_verify_one(f) for f in findings), return_exceptions=True,
         )
 

@@ -10,7 +10,7 @@ import argparse
 import contextlib
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TextIO
 
 if TYPE_CHECKING:
     from leggie.application.cqrs.mediator import Mediator
@@ -456,7 +456,7 @@ DISCLAIMER = (
 )
 
 
-def _print_disclaimer(file=None) -> None:
+def _print_disclaimer(file: TextIO | None = None) -> None:
     print(DISCLAIMER, file=file)
 
 
@@ -480,12 +480,12 @@ class Presenter:
     def quiet(self) -> bool:
         return self._quiet
 
-    def info(self, message: str, file=None) -> None:
+    def info(self, message: str, file: TextIO | None = None) -> None:
         if self._quiet or self._json:
             return
         print(message, file=file)
 
-    def result(self, message: str, file=None) -> None:
+    def result(self, message: str, file: TextIO | None = None) -> None:
         print(message, file=file)
 
     def error(self, message: str) -> None:

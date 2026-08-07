@@ -6,9 +6,15 @@ endpoint from chat completions.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from leggie.application.ports.reranker import RerankerPort, RerankResult
+
+if TYPE_CHECKING:
+    # Imported for annotations only — the runtime import stays lazy inside
+    # _post() so a missing httpx degrades to a clear LLMError rather than an
+    # ImportError at module load.
+    import httpx
 
 
 class OpenRouterReranker(RerankerPort):
@@ -47,7 +53,7 @@ class OpenRouterReranker(RerankerPort):
         resp = await self._post(body)
         return self._parse(resp, documents)
 
-    async def _post(self, body: dict[str, Any]):
+    async def _post(self, body: dict[str, Any]) -> httpx.Response:
         """Issue the HTTP POST (separated for testability)."""
         try:
             import httpx
@@ -68,7 +74,7 @@ class OpenRouterReranker(RerankerPort):
                 json=body,
             )
 
-    def _parse(self, resp, documents: list[str]) -> list[RerankResult]:
+    def _parse(self, resp: httpx.Response, documents: list[str]) -> list[RerankResult]:
         """Parse a response into RerankResults (separated for testability)."""
         if resp.status_code == 429:
             from leggie.infrastructure.llm.base import LLMRateLimitError

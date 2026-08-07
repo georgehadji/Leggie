@@ -111,6 +111,16 @@ class RunManifestBuilder:
 
     # ── Final assembly ─────────────────────────────────────────────
 
+    def _seed_or_default(self) -> int:
+        """Read back the seed set by set_seed().
+
+        ``_own`` is a heterogeneous dict[str, object], so the stored value must
+        be narrowed rather than passed straight to int() — bool is excluded
+        because it is an int subclass and would silently become 0/1.
+        """
+        seed = self._own.get("seed")
+        return seed if isinstance(seed, int) and not isinstance(seed, bool) else 0
+
     def freeze(self) -> RunManifest:
         """Produce the immutable manifest."""
         return RunManifest(
@@ -120,7 +130,7 @@ class RunManifestBuilder:
             route_table_hash=str(self._own.get("route_table_hash", "")),
             prompt_template_hashes=dict(self._prompt_hashes),
             citation_index_version=str(self._own.get("citation_index_version", "")),
-            seed=int(self._own.get("seed", 0)),
+            seed=self._seed_or_default(),
             costs=self._costs,
             stage_wallclock=dict(self._wallclock),
             resolved_models=dict(self._resolved_models),

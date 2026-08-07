@@ -158,14 +158,18 @@ Gates at the time of the commit: ruff clean; `lint-imports --debug` 2 kept / 0 b
 `pytest tests/unit` 710 passed; the 11 ported tests pass individually; `mypy
 --follow-imports=silent` clean on all four changed files.
 
-**Caveat — `mypy leggie/` is NOT clean on master, and was not made clean here.**
-Pre-existing errors sit in `interfaces/cli/__init__.py`, `infrastructure/reranker.py`,
-`infrastructure/ingest/__init__.py`, `application/services/run_manifest.py`,
-`application/services/cove_verifier.py`, and
-`infrastructure/persistence/sqlite_state_store.py`. Several campaign commit messages
-claim "mypy clean"; that claim does not hold against `mypy leggie/ --ignore-missing-imports`
-today. Pass 2 adds none of them — verified by type-checking its four files in
-isolation — but the debt is real and unaddressed.
+**Caveat, since resolved — `mypy leggie/` was NOT clean when Pass 2 landed.**
+At `e122bb4` the CI invocation reported **17 errors across 7 files**, despite several
+campaign commit messages claiming "mypy clean". Pass 2 added none of them (verified by
+type-checking its four files in isolation), but the debt was real. It was cleared in
+the immediately following commit — `mypy leggie/ --ignore-missing-imports` now reports
+no issues.
+
+Worth recording how the list was obtained, because the first two attempts were wrong:
+piping mypy through `| tail -20` silently truncated the report, which made the error
+count look like 5–7 and hid an entire seventh file (`infrastructure/resources.py`).
+Redirect the full output to a file and read that — do not size this problem from a
+tailed pipe.
 
 **Pass 3 — decide the branch's fate.**
 Once 1 and 2 are done, everything of value is on master. Either delete the branch or

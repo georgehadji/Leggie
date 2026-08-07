@@ -18,6 +18,25 @@ from leggie.infrastructure.ingest.base import (
 )
 from leggie.infrastructure.ingest.bounded import BoundedIngestor
 
+# Explicit re-export list. Under [tool.mypy] strict (which implies
+# no_implicit_reexport) a plain `from .base import IngestError` is NOT a
+# re-export, so `from leggie.infrastructure.ingest import IngestError` — which
+# interfaces/cli/__init__.py does when mapping exceptions to exit codes — failed
+# type checking even though it works at runtime.
+__all__ = [
+    "BoundedIngestor",
+    "DOCXIngestor",
+    "Document",
+    "HTMLIngestor",
+    "IngestError",
+    "Ingestor",
+    "IngestorFactory",
+    "InputNotFoundError",
+    "PDFIngestor",
+    "TextIngestor",
+    "UnsupportedFormatError",
+]
+
 
 class PDFIngestor(Ingestor):
     """Ingest PDF files using pdfplumber."""
@@ -157,12 +176,14 @@ class IngestorFactory:
         if ext not in cls._ingestors:
             raise UnsupportedFormatError(f"Unsupported format: {ext}")
         base = cls._ingestors[ext]()
+        # `bounds` is deliberately a mutable dict[str, float | int] so callers can
+        # tune caps at runtime; page/element caps are counts and must arrive as int.
         return BoundedIngestor(
             base,
-            max_file_size_mb=cls.bounds["max_file_size_mb"],
-            max_pages=cls.bounds["max_pages"],
-            max_elements=cls.bounds["max_elements"],
-            timeout_s=cls.bounds["timeout_s"],
+            max_file_size_mb=float(cls.bounds["max_file_size_mb"]),
+            max_pages=int(cls.bounds["max_pages"]),
+            max_elements=int(cls.bounds["max_elements"]),
+            timeout_s=float(cls.bounds["timeout_s"]),
         )
 
     @classmethod
