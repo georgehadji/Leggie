@@ -136,13 +136,30 @@ class OpenRouterProvider(BaseLLMProvider):
             latency_ms=round(elapsed, 1),
         )
 
+        # D11/Phase B: reasoning models bill reasoning tokens under
+        # completion_tokens_details, and those do NOT show up in
+        # completion_tokens — so a `finish_reason=length` truncation could be
+        # driven by reasoning spend that nothing downstream ever sees. Surface
+        # reasoning_tokens additively (only when the provider reports a
+        # non-zero value: no phantom key, no zero-fill) so a truncation can be
+        # attributed to reasoning burn rather than to prompt size.
+        # NOTE: budget accounting (budget_guard) and estimate_cost above
+        # intentionally still count prompt+completion only; this key is for
+        # attribution/visibility, not billing. The $5 cap behaviour is
+        # untouched.
+        usage_out = {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "cached_tokens": cached_tokens,
+        }
+        completion_details = usage.get("completion_tokens_details") or {}
+        reasoning_tokens = completion_details.get("reasoning_tokens")
+        if reasoning_tokens:
+            usage_out["reasoning_tokens"] = reasoning_tokens
+
         return LLMResponse(
             content=content, model=model, tier_used=request.tier,
-            usage={
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "cached_tokens": cached_tokens,
-            },
+            usage=usage_out,
             finish_reason=finish_reason,
             latency_ms=elapsed,
         )

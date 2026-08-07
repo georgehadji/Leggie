@@ -21,6 +21,13 @@ from leggie.observability import get_logger
 
 log = get_logger(__name__)
 
+# Fallback token ceiling for a lens call, used ONLY when no router resolves a
+# configured one. It is deliberately shared with Orchestrator._run_lens_with_cascade:
+# when these two drifted apart, the orchestrator resolved lens_analysis
+# (6144 in config/routes.yaml) and then silently sent 4096 anyway — the D21/TOK-4
+# truncation observed live in full5_v4 (docs/SMOKE_AUDIT_V3.md §4a).
+DEFAULT_LENS_MAX_TOKENS = 4096
+
 
 class Lens(ABC):
     """A legal analysis lens — Strategy pattern.
@@ -32,7 +39,7 @@ class Lens(ABC):
     def __init__(self, llm: LLMPort | None = None, model: str = "",
                  on_degradation: Callable[..., None] | None = None,
                  use_verbalized_sampling: bool = False,
-                 max_tokens: int = 4096,
+                 max_tokens: int = DEFAULT_LENS_MAX_TOKENS,
                  seed: int | None = None) -> None:
         self._llm = llm
         self._model = model

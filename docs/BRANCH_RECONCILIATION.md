@@ -110,7 +110,7 @@ stay the trunk.
 
 Take it in three passes, cheapest first:
 
-**Pass 1 — evidence and docs (zero risk, do this first).**
+**Pass 1 — evidence and docs (zero risk, do this first). DONE — commit `467e981`.**
 Checkout the 24 branch-only doc/evidence files directly. No conflict is possible;
 they are pure additions.
 
@@ -122,13 +122,50 @@ git checkout claude/bold-nightingale-be6980 -- docs/evidence/ docs/SMOKE_AUDIT_V
 Then correct the `leggie-remediation-campaign` skill's "never completed" claim
 against `SMOKE_AUDIT_V3.md`.
 
-**Pass 2 — the two missing fixes (small, surgical).**
+**Pass 2 — the two missing fixes (small, surgical). DONE 2026-08-07.**
 Port D18 clamping (`f2552a3`) and `reasoning_tokens` surfacing (`ea47f16`) by hand
 onto current master. Both touch `openrouter.py` / `structured_output.py`, which have
 moved considerably; cherry-pick will likely conflict, so read the diff and re-apply
 the intent rather than forcing the patch. Bring
 `tests/unit/application/test_lens_route_max_tokens.py` across as-is — master has no
 equivalent coverage.
+
+What actually happened, so the next reader does not re-derive it:
+
+- **D18 applied cleanly, not by luck.** `structured_output.py` on master was
+  byte-identical to the branch's pre-D18 state — the campaign never touched it. The
+  commit went on verbatim.
+- **`reasoning_tokens` needed re-application, not the patch.** Master's
+  `openrouter.py` had moved on: it now returns `cached_tokens` and calls
+  `estimate_cost`, and uses `tier_used=request.tier` rather than a hard-coded
+  `ModelTier.BUDGET`. The intent (surface
+  `usage.completion_tokens_details.reasoning_tokens` additively, only when non-zero)
+  was re-applied onto that shape.
+- **Half of `ea47f16` was dropped as obsolete.** Its other hunk edited a comment on
+  the `structured_response_exhausted` diagnostic in `llm/__init__.py`. That
+  diagnostic no longer exists on master (`grep -rn "exhausted" leggie/` → no
+  matches); the campaign removed it. There was nothing to update.
+- **`DEFAULT_LENS_MAX_TOKENS` was introduced** in `agents/lens.py` and imported by
+  `orchestrator.py`. Master had solved D21 as TOK-4 but left the ceiling as a bare
+  `4096` literal duplicated across both files — the exact drift that caused the
+  original defect. The ported test asserts the two agree, which needs a shared name.
+- **`VSCandidate`/`VSResponse` are dead code.** D18 also relaxes
+  `VSCandidate.probability` from required to `default=0.5`. That widening has zero
+  blast radius: neither class is imported anywhere in `leggie/` or `tests/` (the VS
+  path uses `VSSample` and `LensFindings`). Kept for fidelity to the ported commit.
+
+Gates at the time of the commit: ruff clean; `lint-imports --debug` 2 kept / 0 broken;
+`pytest tests/unit` 710 passed; the 11 ported tests pass individually; `mypy
+--follow-imports=silent` clean on all four changed files.
+
+**Caveat — `mypy leggie/` is NOT clean on master, and was not made clean here.**
+Pre-existing errors sit in `interfaces/cli/__init__.py`, `infrastructure/reranker.py`,
+`infrastructure/ingest/__init__.py`, `application/services/run_manifest.py`,
+`application/services/cove_verifier.py`, and
+`infrastructure/persistence/sqlite_state_store.py`. Several campaign commit messages
+claim "mypy clean"; that claim does not hold against `mypy leggie/ --ignore-missing-imports`
+today. Pass 2 adds none of them — verified by type-checking its four files in
+isolation — but the debt is real and unaddressed.
 
 **Pass 3 — decide the branch's fate.**
 Once 1 and 2 are done, everything of value is on master. Either delete the branch or

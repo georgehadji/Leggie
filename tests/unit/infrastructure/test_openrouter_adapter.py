@@ -226,3 +226,65 @@ class TestRetryAfter:
         mock_resp = MagicMock()
         mock_resp.headers = {"retry-after": "Wed, 21 Oct 2015 07:28:00 GMT"}
         assert _parse_retry_after(mock_resp) == 5.0  # fallback default
+
+
+class TestReasoningTokenVisibility:
+    """generate() surfaces completion_tokens_details.reasoning_tokens additively.
+
+    REMEDIATION_PLAN_V3 Phase B / OPEN item: reasoning models bill reasoning
+    tokens under completion_tokens_details, which OpenRouter's usage previously
+    discarded — making a reasoning-driven truncation invisible downstream.
+    """
+
+    async def _generate_with(self, body: dict) -> dict[str, int]:
+        """Run generate() against a canned OpenRouter body, return its usage."""
+        provider = OpenRouterProvider(api_key="sk-test")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = body
+        mock_resp.text = json.dumps(body)
+
+        with patch.object(provider._http_client, "post", new_callable=AsyncMock) as mock_post, \
+             patch.object(provider._rate_limiter, "acquire", new_callable=AsyncMock):
+            mock_post.return_value = mock_resp
+            response = await provider.generate(LLMRequest(prompt="x", max_tokens=100))
+        return response.usage
+
+    @staticmethod
+    def _body(finish_reason: str, usage: dict) -> dict:
+        return {
+            "choices": [{
+                "message": {"content": "{}", "role": "assistant"},
+                "finish_reason": finish_reason,
+            }],
+            "usage": usage,
+            "model": "google/gemini-2.5-pro",
+        }
+
+    @pytest.mark.asyncio
+    async def test_reasoning_tokens_surfaced_when_present(self):
+        usage = await self._generate_with(self._body("length", {
+            "prompt_tokens": 200,
+            "completion_tokens": 100,
+            "completion_tokens_details": {"reasoning_tokens": 4096},
+        }))
+        assert usage["prompt_tokens"] == 200
+        assert usage["completion_tokens"] == 100
+        assert usage["reasoning_tokens"] == 4096
+
+    @pytest.mark.asyncio
+    async def test_reasoning_tokens_absent_when_not_reported(self):
+        usage = await self._generate_with(self._body("stop", {
+            "prompt_tokens": 200, "completion_tokens": 100,
+        }))
+        # Additive only — no phantom key, no zero-fill.
+        assert "reasoning_tokens" not in usage
+
+    @pytest.mark.asyncio
+    async def test_zero_reasoning_tokens_not_surfaced(self):
+        usage = await self._generate_with(self._body("stop", {
+            "prompt_tokens": 200,
+            "completion_tokens": 100,
+            "completion_tokens_details": {"reasoning_tokens": 0},
+        }))
+        assert "reasoning_tokens" not in usage

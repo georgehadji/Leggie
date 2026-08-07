@@ -20,7 +20,7 @@ from leggie.application.agents.economic_lens import EconomicLens
 from leggie.application.agents.eu_gdpr_lens import EUGDPRLens
 from leggie.application.agents.implementation_lens import ImplementationLens
 from leggie.application.agents.legal_coherence_lens import LegalCoherenceLens
-from leggie.application.agents.lens import Lens
+from leggie.application.agents.lens import DEFAULT_LENS_MAX_TOKENS, Lens
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.router import RouterPort
 from leggie.domain.models import Article, Document, Event, EventType, Finding, LensTask, ModelTier
@@ -137,7 +137,9 @@ class Orchestrator:
         model = self._model
         tier = ModelTier.BUDGET
         max_retries = 1
-        result_tokens = 4096  # Default; overridden if router resolves (TOK-4)
+        # Default; overridden if the router resolves a configured ceiling (TOK-4).
+        # Shared with Lens.__init__ so the two cannot drift apart again (D21).
+        result_tokens = DEFAULT_LENS_MAX_TOKENS
 
         if self._router:
             try:

@@ -5,7 +5,45 @@ Each DTO is validated at the infrastructure/application boundary (FIX_PLAN rule 
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
+
+# Bound for confidence_adjustment. Kept as a *clamp*, not a hard pydantic
+# bound: a model that emits e.g. -0.8 ("strongly wrong") must not cause the
+# whole structured response to be REJECTED and the verdict thrown away
+# (a real parse-failure cause, docs/REMEDIATION_PLAN_V3.md D18). Both
+# consumers (skeptic.review, cove._apply_revision) already clamp the *final*
+# Confidence.score into [0,1], so the raw delta's range is advisory only.
+_ADJ_MIN, _ADJ_MAX = -0.5, 0.5
+
+
+def _clamp_adjustment(v: Any) -> float:
+    """Coerce and clamp a model-emitted confidence adjustment into range.
+
+    Non-numeric or missing -> 0.0. Out-of-range -> nearest bound. Never raises,
+    so an over-eager adjustment can't nuke an otherwise-valid verdict.
+    """
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(_ADJ_MIN, min(_ADJ_MAX, f))
+
+
+def _clamp_probability(v: Any) -> float:
+    """Coerce and clamp a model-emitted probability into [0, 1].
+
+    Same rationale as _clamp_adjustment (D18): a lens emitting probability
+    1.5 must not REJECT the whole LensFindings response and discard every
+    finding in it. Non-numeric/missing -> 0.5 (the field's neutral default).
+    The clamped value feeds Confidence.from_score, which requires [0, 1].
+    """
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 0.5
+    return max(0.0, min(1.0, f))
 
 
 class IRACCandidate(BaseModel):
@@ -16,7 +54,11 @@ class IRACCandidate(BaseModel):
     conclusion: str = Field(description="Reasoned conclusion on the issue")
     verbatim_quote: str = Field(default="", description="Exact text span from the article")
     severity: str = Field(default="medium", description="critical, high, medium, low, info")
-    probability: float = Field(default=0.5, ge=0.0, le=1.0, description="Self-reported probability/confidence")
+    probability: float = Field(default=0.5, description="Self-reported probability/confidence (clamped to [0, 1])")
+
+    _clamp_prob = field_validator("probability", mode="before")(
+        lambda v: _clamp_probability(v)
+    )
 
 
 class LensFindings(BaseModel):
@@ -32,7 +74,11 @@ class VSCandidate(BaseModel):
     conclusion: str = Field(description="Reasoned conclusion")
     verbatim_quote: str = Field(default="", description="Exact text span")
     severity: str = Field(default="medium", description="critical, high, medium, low, info")
-    probability: float = Field(description="Estimated probability this finding is real", ge=0.0, le=1.0)
+    probability: float = Field(default=0.5, description="Estimated probability this finding is real (clamped to [0, 1])")
+
+    _clamp_prob = field_validator("probability", mode="before")(
+        lambda v: _clamp_probability(v)
+    )
 
 
 class VSResponse(BaseModel):
@@ -44,7 +90,11 @@ class SkepticVerdictResponse(BaseModel):
     """Response schema for Skeptic review of a single finding."""
     verdict: str = Field(description="supports, refutes, neutral")
     reason: str = Field(description="Brief explanation")
-    confidence_adjustment: float = Field(default=0.0, description="Adjust finding confidence by this amount", ge=-0.5, le=0.5)
+    confidence_adjustment: float = Field(default=0.0, description="Adjust finding confidence by this amount (clamped to [-0.5, 0.5])")
+
+    _clamp_adj = field_validator("confidence_adjustment", mode="before")(
+        lambda v: _clamp_adjustment(v)
+    )
 
 
 # ── Chain-of-Verification (CoVe) LLM schemas ─────────────────────────────
@@ -91,8 +141,12 @@ class CoVeCrossCheckResponse(BaseModel):
         description="Corrected conclusion when partially_consistent; empty otherwise.",
     )
     confidence_adjustment: float = Field(
-        default=0.0, ge=-0.5, le=0.5,
-        description="Adjust finding confidence by this amount.",
+        default=0.0,
+        description="Adjust finding confidence by this amount (clamped to [-0.5, 0.5]).",
+    )
+
+    _clamp_adj = field_validator("confidence_adjustment", mode="before")(
+        lambda v: _clamp_adjustment(v)
     )
 
 
