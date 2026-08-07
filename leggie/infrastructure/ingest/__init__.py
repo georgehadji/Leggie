@@ -44,8 +44,8 @@ class PDFIngestor(Ingestor):
     async def ingest(self, source: Path | str) -> str:
         try:
             import pdfplumber
-        except ImportError:
-            raise IngestError("pdfplumber not installed; run `pip install pdfplumber`")
+        except ImportError as exc:
+            raise IngestError("pdfplumber not installed; run `pip install pdfplumber`") from exc
 
         path = Path(source)
         if not path.exists():
@@ -69,8 +69,8 @@ class DOCXIngestor(Ingestor):
     async def ingest(self, source: Path | str) -> str:
         try:
             from docx import Document as DocxDocument
-        except ImportError:
-            raise IngestError("python-docx not installed; run `pip install python-docx`")
+        except ImportError as exc:
+            raise IngestError("python-docx not installed; run `pip install python-docx`") from exc
 
         path = Path(source)
         if not path.exists():
@@ -105,8 +105,10 @@ class HTMLIngestor(Ingestor):
     async def ingest(self, source: Path | str) -> str:
         try:
             from bs4 import BeautifulSoup
-        except ImportError:
-            raise IngestError("beautifulsoup4 not installed; run `pip install beautifulsoup4`")
+        except ImportError as exc:
+            raise IngestError(
+                "beautifulsoup4 not installed; run `pip install beautifulsoup4`"
+            ) from exc
 
         path = Path(source)
         if not path.exists():

@@ -3,21 +3,54 @@
 from __future__ import annotations
 
 from leggie.domain.models import Paragraph, SubParagraph
-from leggie.infrastructure.parse.patterns import PARAGRAPH_PATTERN, SUB_PARAGRAPH_PATTERN
+from leggie.infrastructure.parse.patterns import (
+    ARTICLE_HEADING_SINGLE_LINE,
+    PARAGRAPH_PATTERN,
+    SUB_PARAGRAPH_PATTERN,
+)
+
+
+def _strip_heading(article_text: str) -> str:
+    """Return *article_text* without its leading "Άρθρο N <title>" heading.
+
+    `extract_articles` slices each article from its heading offset, so the
+    heading line is part of the text handed here. Left in, it becomes the
+    opening of the first paragraph.
+    """
+    heading = ARTICLE_HEADING_SINGLE_LINE.match(article_text)
+    body = article_text[heading.end():] if heading else article_text
+    return body.strip()
 
 
 def extract_paragraphs(article_text: str) -> list[Paragraph]:
-    """Extract paragraphs within an article."""
+    """Extract paragraphs within an article.
+
+    Greek bills write an article body either as a numbered list ("1. ...") or
+    as plain prose, optionally lettered ("α) ... β) ..."). Prose bodies carry
+    no paragraph number, so they are returned as a single paragraph "1" rather
+    than dropped — 24% of the reference bill's articles are prose and
+    previously parsed to an empty body, leaving the lenses nothing to analyse.
+    """
+    body = _strip_heading(article_text)
+    if not body:
+        return []
+
     paragraphs: list[Paragraph] = []
-    matches = list(PARAGRAPH_PATTERN.finditer(article_text))
-    for match in matches:
-        num = match.group(1).strip()
+    for match in PARAGRAPH_PATTERN.finditer(body):
         para_text = match.group(2).strip()
-        sub_paras = extract_subparagraphs(para_text)
-        paragraphs.append(
-            Paragraph(number=num, text=para_text, subparagraphs=sub_paras)
-        )
-    return paragraphs
+        paragraphs.append(Paragraph(
+            number=match.group(1).strip(),
+            text=para_text,
+            subparagraphs=extract_subparagraphs(para_text),
+        ))
+    if paragraphs:
+        return paragraphs
+
+    return [Paragraph(
+        number="1",
+        text=body,
+        subparagraphs=extract_subparagraphs(body),
+    )]
 
 
 def extract_subparagraphs(paragraph_text: str) -> list[SubParagraph]:

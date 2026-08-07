@@ -12,7 +12,7 @@ from leggie.infrastructure.persistence.eval_harness import (
 
 
 @pytest.fixture
-def gold_set(tmp_path):
+def gold_set():
     gs = GoldSet()
     gs.add_label("bill-001", GoldLabel(
         article_id="1",

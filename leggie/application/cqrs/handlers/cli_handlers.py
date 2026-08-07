@@ -98,7 +98,7 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]])
                         "id": a.id,
                         "title": a.title,
                         "paragraphs": [
-                            {"number": p.number, "text": p.text[:200]}
+                            {"number": p.number, "text": p.text}
                             for p in a.paragraphs
                         ],
                     }

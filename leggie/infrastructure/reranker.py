@@ -57,9 +57,9 @@ class OpenRouterReranker(RerankerPort):
         """Issue the HTTP POST (separated for testability)."""
         try:
             import httpx
-        except ImportError:
+        except ImportError as exc:
             from leggie.infrastructure.llm.base import LLMError
-            raise LLMError("httpx not installed")
+            raise LLMError("httpx not installed") from exc
 
         headers = {
             "Authorization": f"Bearer {self._api_key}",

@@ -61,7 +61,16 @@ indent-width = 4
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "ARG", "C4", "PIE", "RET"]
-ignore = ["E501", "ARG001", "ARG002", "B904", "B017", "B027", "E741", "SIM102"]  # Pre-existing codebase issues, out of scope for this PR
+# Frozen debt — never widened to silence a new failure (change-control rule 5).
+# Drained 2026-08-08: B904 (4), B017 (6), B027 (3), E741 (2), SIM102 (2) were
+# real defects and are fixed, not ignored. F821/F401/I001 went earlier.
+# The two survivors are style, not bug classes, and are kept deliberately:
+#   E501  (163) line length — the codebase wraps at ~100 by hand; enforcing 88
+#         would reflow Greek-language docstrings and comments for no defect win.
+#   ARG002 (85) unused method argument — overwhelmingly port/ABC implementations
+#         that must accept the interface's parameters they do not need.
+# Both are candidates for a later, separate pass; neither hides a bug today.
+ignore = ["E501", "ARG002"]  # Pre-existing codebase issues, out of scope for this PR
 
 [tool.ruff.format]
 quote-style = "double"
@@ -70,6 +79,17 @@ indent-style = "space"
 [tool.mypy]
 strict = true
 python_version = "3.12"
+
+# tests/ is type-checked (v1.0 exit criterion), but two strictness knobs are
+# relaxed for it. `strict` demands a return annotation on every function; for
+# ~700 pytest cases that means adding `-> None` 700 times, which buys no type
+# safety and hides the errors that matter. Everything else stays on: bad
+# argument types, wrong attribute access, and unreachable code in tests are
+# still errors. Do not add further relaxations here.
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
 
 [tool.bandit]
 exclude_dirs = ["tests", ".reasonix", "graphify-out"]
@@ -86,7 +106,13 @@ source = ["leggie"]
 branch = true
 
 [tool.coverage.report]
-fail_under = 85
+# Single source of truth for the coverage gate. CI must NOT pass
+# --cov-fail-under, which silently overrides this file: it carried 80 while
+# this line said 85, so the advertised gate was never the enforced one.
+# 82 is the measured floor as of 2026-08-08 — a ratchet, not a target. The
+# v1.0 exit criterion is 85 overall (plus 90 for infrastructure/llm/ and
+# application/agents/); raise this line as coverage earns it.
+fail_under = 82
 show_missing = true
 
 [tool.importlinter]

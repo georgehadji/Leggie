@@ -129,6 +129,30 @@ class TestOtherHandlers:
         assert result.data["articles"][0]["id"] == "1"
 
     @pytest.mark.asyncio
+    async def test_parse_handler_does_not_truncate_paragraph_text(self, tmp_path):
+        """`parse -o` is the parse-sanity artifact — it must be verbatim.
+
+        Regression: paragraph text was capped at 200 chars, so the JSON could
+        not be used to verify content recovery and silently understated it.
+        """
+        from leggie.application.cqrs.commands.cli_commands import ParseDocumentCommand
+        from leggie.application.cqrs.handlers.cli_handlers import ParseDocumentHandler
+        from leggie.infrastructure.container import Container
+
+        long_text = "Το κείμενο της διάταξης επαναλαμβάνεται. " * 20
+        bill = tmp_path / "bill.txt"
+        bill.write_text(f"Άρθρο 1 Σκοπός\n1. {long_text}\n", encoding="utf-8")
+
+        container = Container()
+        container.configure_defaults()
+        handler = ParseDocumentHandler(container=container)
+        result = await handler.handle(ParseDocumentCommand(file_path=str(bill)))
+
+        parsed = result.data["articles"][0]["paragraphs"][0]["text"]
+        assert len(parsed) > 200
+        assert parsed == long_text.strip()
+
+    @pytest.mark.asyncio
     async def test_analyze_handler_completes(self, tmp_path):
         from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
         from leggie.application.cqrs.handlers.cli_handlers import AnalyzeBillHandler

@@ -79,4 +79,4 @@ jobs:
 
       - name: Run tests with coverage gate
         run: |
-          pytest tests/ -v --tb=short --cov=leggie --cov-fail-under=80
+          pytest tests/ -v --tb=short --cov=leggie

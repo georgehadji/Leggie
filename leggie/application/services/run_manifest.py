@@ -96,18 +96,18 @@ class RunManifestBuilder:
             self._finding_count += 1
 
         # Cost/token telemetry from llm.call events carried as event data
-        if event.event_type == EventType.STAGE_COMPLETED or event.event_type == EventType.LENS_COMPLETED:
-            if isinstance(event.data, dict):
-                tier = str(event.data.get("tier", "unknown"))
-                cost = event.data.get("cost", event.data.get("estimated_cost", 0.0))
-                tokens = event.data.get("tokens", event.data.get("prompt_tokens", 0))
-                if isinstance(cost, (int, float)) and isinstance(tokens, (int, float)):
-                    self._costs = self._costs.add_tokens(tier, int(tokens), float(cost))
+        stage_or_lens = (EventType.STAGE_COMPLETED, EventType.LENS_COMPLETED)
+        if event.event_type in stage_or_lens and isinstance(event.data, dict):
+            tier = str(event.data.get("tier", "unknown"))
+            cost = event.data.get("cost", event.data.get("estimated_cost", 0.0))
+            tokens = event.data.get("tokens", event.data.get("prompt_tokens", 0))
+            if isinstance(cost, (int, float)) and isinstance(tokens, (int, float)):
+                self._costs = self._costs.add_tokens(tier, int(tokens), float(cost))
 
-                model = event.data.get("model")
-                route = event.data.get("route", "unknown")
-                if model:
-                    self._resolved_models[route] = str(model)
+            model = event.data.get("model")
+            route = event.data.get("route", "unknown")
+            if model:
+                self._resolved_models[route] = str(model)
 
     # ── Final assembly ─────────────────────────────────────────────
 

@@ -54,7 +54,7 @@ class TestBlackboard:
     def test_observer_notified(self):
         bb = Blackboard()
         observed = []
-        def observer(entry, board):
+        def observer(entry, _board):
             observed.append(entry.finding.irac.issue)
         bb.subscribe(observer)
         bb.post(make_finding("observed"), agent_id="test")
@@ -63,7 +63,7 @@ class TestBlackboard:
     def test_unsubscribe(self):
         bb = Blackboard()
         observed = []
-        def observer(entry, board):
+        def observer(_entry, _board):
             observed.append("x")
         bb.subscribe(observer)
         bb.unsubscribe(observer)

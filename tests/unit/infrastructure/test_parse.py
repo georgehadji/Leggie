@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from leggie.domain.models import Document
 from leggie.domain.models.parse_integrity import (
@@ -232,6 +233,93 @@ class TestAmendingTitles:
         assert "552" not in [a.id for a in doc.articles]
 
 
+class TestUnnumberedProse:
+    """Articles whose body is prose, not a numbered list, still have content.
+
+    Regression: ``PARAGRAPH_PATTERN`` only matched ``N.``-numbered paragraphs,
+    so the 24% of reference-bill articles written as plain prose (Άρθρο 1
+    "Σκοπός", Άρθρο 2 "Αντικείμενο", ...) parsed to zero paragraphs. The
+    article survived with an empty body and the lenses had nothing to analyse.
+    """
+
+    def test_prose_article_keeps_its_text(self, parser):
+        text = (
+            "Άρθρο 1\nΣκοπός\n"
+            "Σκοπός του παρόντος Μέρους είναι η προστασία των προσώπων.\n"
+        )
+        doc = parser.parse(text)
+        assert doc.articles[0].paragraphs
+        assert "προστασία των προσώπων" in doc.articles[0].paragraphs[0].text
+
+    def test_prose_article_keeps_lettered_subparagraphs(self, parser):
+        text = (
+            "Άρθρο 1\nΣκοπός\n"
+            "Σκοπός του παρόντος Μέρους είναι:\n"
+            "α) η ενσωμάτωση της Οδηγίας στο εθνικό δίκαιο,\n"
+            "β) η επέκταση των εγγυήσεων στις εσωτερικές υποθέσεις.\n"
+        )
+        doc = parser.parse(text)
+        letters = [s.letter for s in doc.articles[0].paragraphs[0].subparagraphs]
+        assert letters == ["α", "β"]
+
+    def test_heading_and_title_are_not_paragraph_text(self, parser):
+        text = "Άρθρο 2\nΑντικείμενο\nΑντικείμενο του παρόντος είναι η θέσπιση εγγυήσεων.\n"
+        doc = parser.parse(text)
+        assert not doc.articles[0].paragraphs[0].text.startswith("Άρθρο")
+
+    def test_heading_only_article_has_no_paragraphs(self, parser):
+        """No body means no paragraph — never invent one.
+
+        Headings are single-line by construction (`ARTICLE_HEADING_SINGLE_LINE`,
+        PARSER_REMEDIATION_PLAN P-2), so "Άρθρο 1 Σκοπός" with nothing under it
+        must strip to an empty body.
+        """
+        text = "Άρθρο 1 Σκοπός\n\nΆρθρο 2 Αντικείμενο\n1. Κείμενο της διάταξης.\n"
+        doc = parser.parse(text)
+        assert doc.articles[0].paragraphs == []
+        assert [p.number for p in doc.articles[1].paragraphs] == ["1"]
+
+
+class TestParagraphNumberAnchoring:
+    r"""A paragraph marker is a number at the START of a line — nothing else.
+
+    Regression: the unanchored ``(\d+)\.`` pattern matched inside dates and
+    decimals. On the reference bill "L της 16.4.2024)" split Άρθρο 1 at "4.",
+    which both invented a paragraph "4" and silently discarded every character
+    before it — the article's real opening text.
+    """
+
+    def test_date_in_text_does_not_create_a_paragraph(self, parser):
+        text = (
+            "Άρθρο 1\nΣκοπός\n"
+            "1. Η Οδηγία (ΕΕ) 2024/1069 της 11ης Απριλίου 2024 (L της 16.4.2024), "
+            "εφαρμόζεται στις εσωτερικές υποθέσεις.\n"
+        )
+        doc = parser.parse(text)
+        assert [p.number for p in doc.articles[0].paragraphs] == ["1"]
+
+    def test_text_before_an_inline_number_is_not_discarded(self, parser):
+        text = (
+            "Άρθρο 1\nΣκοπός\n"
+            "Σκοπός του παρόντος είναι η ενσωμάτωση της Οδηγίας (L της 16.4.2024).\n"
+        )
+        doc = parser.parse(text)
+        assert "Σκοπός του παρόντος" in doc.articles[0].paragraphs[0].text
+
+    def test_decimal_amount_does_not_create_a_paragraph(self, parser):
+        text = (
+            "Άρθρο 1\nΠρόστιμα\n"
+            "1. Το πρόστιμο ανέρχεται σε 2.500 ευρώ κατ' ανώτατο όριο.\n"
+            "2. Η καταβολή γίνεται εντός τριάντα ημερών.\n"
+        )
+        doc = parser.parse(text)
+        assert [p.number for p in doc.articles[0].paragraphs] == ["1", "2"]
+
+    def test_numbered_paragraphs_still_parse(self, parser):
+        doc = parser.parse(SAMPLE_BILL)
+        assert [p.number for p in doc.articles[0].paragraphs] == ["1", "2"]
+
+
 class TestCitationExtraction:
     def test_extract_fek_citation(self, parser):
         text = "Όπως ορίζεται στο ΦΕΚ Α 137/2023"
@@ -306,7 +394,7 @@ class TestParseIntegrity:
 
     def test_integrity_report_is_immutable(self, parser):
         doc, report = parser.parse_with_integrity(SAMPLE_BILL)
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             report.articles_parsed = 999
 
     def test_integrity_report_toc_span(self, parser):
@@ -325,5 +413,5 @@ class TestParseIntegrity:
         rc = RejectedCandidate(number="552", reason=RejectionReason.CROSS_REFERENCE, offset=100)
         assert rc.number == "552"
         assert rc.reason == RejectionReason.CROSS_REFERENCE
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             rc.number = "999"

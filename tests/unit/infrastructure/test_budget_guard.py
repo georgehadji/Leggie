@@ -143,7 +143,7 @@ class TestBudgetReservation:
             _FakeLLM(call_delay_s=0.05), guard,
         )
 
-        async def call_n(n: int) -> str:
+        async def call_n(_n: int) -> str:
             try:
                 await decorated.generate(
                     _fake_request(prompt="x" * 2000, model="anthropic/claude-sonnet-4"),

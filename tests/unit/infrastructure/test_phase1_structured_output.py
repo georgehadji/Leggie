@@ -417,7 +417,7 @@ class TestGenerateStructuredRetry:
         """On 400 error, falls back to json_object mode."""
         call_count = 0
 
-        async def mock_generate(req):
+        async def mock_generate(_req):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -441,7 +441,7 @@ class TestGenerateStructuredRetry:
         """When finish_reason=length, retry with doubled max_tokens."""
         call_count = 0
 
-        async def mock_generate(req):
+        async def mock_generate(_req):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -482,7 +482,7 @@ class TestGenerateStructuredRetry:
         """When truncation retry also fails, repair round is attempted."""
         call_count = 0
 
-        async def mock_generate(req):
+        async def mock_generate(_req):
             nonlocal call_count
             call_count += 1
             if call_count <= 2:
@@ -521,7 +521,7 @@ class TestGenerateStructuredRetry:
     @pytest.mark.asyncio
     async def test_all_attempts_exhausted_raises(self, adapter):
         """When all retries fail, raises LLMError."""
-        async def mock_generate(req):
+        async def mock_generate(_req):
             return LLMResponse(
                 content="completely invalid {content}",
                 model="test",

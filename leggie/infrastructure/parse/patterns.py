@@ -56,7 +56,17 @@ ARTICLE_HEADING_SINGLE_LINE: Pattern[str] = re.compile(
 )
 
 # Paragraph patterns
-PARAGRAPH_PATTERN: Pattern[str] = re.compile(r"(\d+)\.\s*(.*?)(?=\n\d+\.|\Z)", re.DOTALL)
+# A paragraph marker is "N." at the START of a line, followed by whitespace or
+# the line end. Both halves matter. Unanchored, the pattern matched inside dates
+# and decimals — on the reference bill "(L της 16.4.2024)" split Άρθρο 1 at "4.",
+# inventing a paragraph and silently discarding every character before it. And
+# without the trailing-whitespace requirement, a line that merely *opens* with a
+# date ("16.4.2024 ...") reintroduces the same false match.
+_PARAGRAPH_MARKER = r"^[ \t]*\d+\.(?=[ \t]|$)"
+PARAGRAPH_PATTERN: Pattern[str] = re.compile(
+    r"^[ \t]*(\d+)\.(?=[ \t]|$)[ \t]*(.*?)(?=" + _PARAGRAPH_MARKER + r"|\Z)",
+    re.DOTALL | re.MULTILINE,
+)
 SUB_PARAGRAPH_PATTERN: Pattern[str] = re.compile(
     r"([α-ωΑ-Ω])\)\s*(.*?)(?=\n\s*[α-ωΑ-Ω]\)|\Z)", re.DOTALL
 )

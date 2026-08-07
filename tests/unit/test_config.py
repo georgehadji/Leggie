@@ -154,9 +154,12 @@ class TestSettingsReflection:
                 all_fields[key] = cls.__name__
                 # Recurse into nested BaseSettings subfields
                 annotation = field.annotation
-                if annotation is not None and isinstance(annotation, type):
-                    if issubclass(annotation, BaseSettings):
-                        _collect(annotation)
+                if (
+                    annotation is not None
+                    and isinstance(annotation, type)
+                    and issubclass(annotation, BaseSettings)
+                ):
+                    _collect(annotation)
 
         _collect(Settings)
 

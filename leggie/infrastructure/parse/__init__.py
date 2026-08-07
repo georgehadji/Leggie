@@ -148,7 +148,7 @@ class DocumentParser:
 
     def _infer_title(self, text: str) -> str:
         """Infer document title from first meaningful line."""
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
         for line in lines[:5]:
             if len(line) > 10 and not line.startswith("Άρθρο"):
                 return line[:200]

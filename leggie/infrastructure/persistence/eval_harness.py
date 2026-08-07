@@ -140,13 +140,13 @@ class GoldSet:
         for bill_id, labels in self._labels.items():
             data[bill_id] = [
                 {
-                    "article_id": l.article_id,
-                    "finding_type": l.finding_type.value,
-                    "description": l.description,
-                    "severity": l.severity.value,
-                    "citation_text": l.citation_text,
+                    "article_id": label.article_id,
+                    "finding_type": label.finding_type.value,
+                    "description": label.description,
+                    "severity": label.severity.value,
+                    "citation_text": label.citation_text,
                 }
-                for l in labels
+                for label in labels
             ]
         filepath = Path(path)
         filepath.parent.mkdir(parents=True, exist_ok=True)
