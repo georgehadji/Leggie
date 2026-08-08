@@ -70,7 +70,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "ARG", "C4", "PIE", "RET"]
 #   ARG002 (85) unused method argument — overwhelmingly port/ABC implementations
 #         that must accept the interface's parameters they do not need.
 # Both are candidates for a later, separate pass; neither hides a bug today.
-ignore = ["E501", "ARG002"]  # Pre-existing codebase issues, out of scope for this PR
+ignore = ["E501", "ARG002"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -93,7 +93,9 @@ disallow_incomplete_defs = false
 
 [tool.bandit]
 exclude_dirs = ["tests", ".reasonix", "graphify-out"]
-disable_error_code = ["import-untyped"]
+# `disable_error_code` was here — a mypy option in bandit's table, so bandit
+# ignored it and mypy never saw it. Removed rather than relocated: mypy leggie/
+# is clean without it.
 
 [tool.pytest.ini_options]
 minversion = "8.0"

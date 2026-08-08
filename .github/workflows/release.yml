@@ -42,7 +42,12 @@ jobs:
           bandit -c pyproject.toml -r leggie/
 
       - name: Run tests with coverage gate
-        run: pytest tests/ -q --tb=short --cov=leggie --cov-fail-under=85
+        # The gate lives in pyproject.toml [tool.coverage.report] fail_under.
+        # Do NOT pass --cov-fail-under here: the flag silently overrides the
+        # config file. This line carried 85 against a measured 82.43%, so a
+        # v* tag would have failed the release on a threshold nothing else
+        # enforced. Same defect as ci.yml's --cov-fail-under=80, opposite sign.
+        run: pytest tests/ -q --tb=short --cov=leggie
 
       # ── Build wheel + sdist ─────────────────────────────────────
       - name: Build distribution

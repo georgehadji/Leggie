@@ -209,6 +209,7 @@ open finding, not a footnote. Two passes of reconciliation ran past this one.
 
 - Branch tip: `7b492aa` on `claude/bold-nightingale-be6980`
 - Worktree: `.claude/worktrees/bold-nightingale-be6980` (remove only after Pass 3)
-- `stash@{0}` — from `83fd14b`, contents not yet examined
+- `stash@{0}` — from `83fd14b`. Examined 2026-08-08; its parser fix is on master
+  (`35418d7`) and the stash commit is pinned by `archive/stash-83fd14b`.
 - `safety-snapshot-20260806` — tag holding every file that was uncommitted before
   `e09321a` / `4f41602` landed. Safe to delete once those commits are confirmed good.
