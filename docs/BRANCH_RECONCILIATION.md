@@ -207,9 +207,24 @@ open finding, not a footnote. Two passes of reconciliation ran past this one.
 
 ## Do not lose
 
-- Branch tip: `7b492aa` on `claude/bold-nightingale-be6980`
-- Worktree: `.claude/worktrees/bold-nightingale-be6980` (remove only after Pass 3)
+- Branch tip: `7b492aa` on `claude/bold-nightingale-be6980`, pinned by the
+  annotated tag `archive/bold-nightingale` (verified same SHA, 2026-08-08).
+- Worktree: `.claude/worktrees/bold-nightingale-be6980` (remove only after Pass 3).
+  **A tag on the branch tip does not cover a worktree's untracked files.** Two
+  existed here, neither reachable from any ref:
+  - `docs/implementation_audit_report.md` — a full PARSER_REMEDIATION_PLAN
+    Phases 0–5 compliance audit, never committed on any branch. Rescued to
+    master as `docs/implementation_audit_report_parser_remediation.md`
+    (`ffe8548`).
+  - `scratch_parsed.json` (285K) — regenerable scratch, deliberately not kept.
+
+  Re-run `git -C .claude/worktrees/bold-nightingale-be6980 status --short`
+  immediately before removal; anything still listed is unreferenced and will
+  be destroyed.
 - `stash@{0}` — from `83fd14b`. Examined 2026-08-08; its parser fix is on master
   (`35418d7`) and the stash commit is pinned by `archive/stash-83fd14b`.
 - `safety-snapshot-20260806` — tag holding every file that was uncommitted before
   `e09321a` / `4f41602` landed. Safe to delete once those commits are confirmed good.
+- `fix/model-ids-vfm-and-plan` and `fix/parser-toc-excision` — re-verified against
+  master at `bc54242` (2026-08-08): 0 unique commits, 0 files differing in the
+  three-dot diff. Fully merged; deleting either ref loses nothing.
