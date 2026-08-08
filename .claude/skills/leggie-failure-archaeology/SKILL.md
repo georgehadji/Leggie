@@ -148,7 +148,12 @@ From `tasks/todo.md` §0 ("What changed vs the initial spec"):
   neutral skeptic verdicts, findings_per_article 0.14.
 - Full 5-lens run: three attempts ALL stopped (stale route; OpenRouter 402
   credit wall — account, not budget guard; parse-failure degradation).
-  **Full-pipeline yield remains unproven.** Evidence: `docs/SMOKE_AUDIT.md`.
+  Evidence: `docs/SMOKE_AUDIT.md`.
+- **Superseded 2026-07-28** by `docs/SMOKE_AUDIT_V3.md`: a 5-lens run now
+  passes every §10 gate on a *10-article subset*, replicated (`full5_v3`,
+  `full5_v4`, then `full5_v5` under the D21 fix), with parse failures down
+  from 12–14.5% to 2.1%. Yield at the full 91 articles remains unproven —
+  that, not the 5-lens configuration itself, is the open gap.
 
 ## Open defect ledger (2026-07-14 snapshot)
 
@@ -162,7 +167,7 @@ From `tasks/todo.md` §0 ("What changed vs the initial spec"):
 | D8 | cli_handlers container/ad-hoc duplication | CLOSED — no `_try_get_*` fallbacks remain in `cli_handlers.py` |
 | D9 | rate limiter | LIKELY FIXED (constructed in LLMAdapter → OpenRouterProvider) — verify consumption |
 | D10 | resume-from-stage | PARTIAL (store exists, flow checkpoints only budget spend) |
-| — | verification layer (LLM CoVe + skeptic gate): single-lens smoke PASSED (v5, 2026-07-11); **full 5-lens smoke never completed** | THE current campaign — **leggie-remediation-campaign** |
+| — | verification layer (LLM CoVe + skeptic gate): single-lens smoke PASSED (v5, 2026-07-11); 5-lens smoke PASSED on a 10-article subset, replicated (2026-07-28); **the 91-article run has never completed** | THE current campaign — **leggie-remediation-campaign** |
 | — | deliberative pipeline: landed + leak-fixed, no live run recorded | OPEN validation |
 
 ## When NOT to use this skill

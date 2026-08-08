@@ -2,14 +2,14 @@
 name: leggie-remediation-campaign
 description: >
   EXECUTABLE, decision-gated campaign for Leggie's hardest live problem as of
-  2026-07-14: the single-lens live smoke PASSED (v5, 2026-07-11, docs/
-  SMOKE_AUDIT.md) but the FULL 5-lens smoke has never completed — three
-  attempts died to a stale route, an OpenRouter 402 credit wall, and
-  parse-failure degradation. Full-pipeline yield is still unproven, and the
-  new deliberative pipeline has no recorded live run. Load when asked to
-  continue, validate, or prove the remediation work, to fix pipeline yield,
-  or when asking "what should I work on next" in this repo. Every phase has
-  exact commands, expected numbers, and if-X-then-Y branches.
+  2026-07-28: a 5-lens live smoke DOES now pass every REMEDIATION_PLAN §10
+  gate, but only on a 10-article subset (replicated across full5_v3/v4 plus
+  full5_v5 under the D21 fix, docs/SMOKE_AUDIT_V3.md). The 91-article run the
+  gates were written against has never completed, so full-bill yield is still
+  unproven, and the deliberative pipeline has no recorded live run. Load when
+  asked to continue, validate, or prove the remediation work, to fix pipeline
+  yield, or when asking "what should I work on next" in this repo. Every phase
+  has exact commands, expected numbers, and if-X-then-Y branches.
 ---
 
 # Leggie Remediation Campaign
@@ -19,23 +19,25 @@ description: >
 the result is recorded in a landing audit doc. Until both are true, the
 campaign is not done.
 
-**Campaign state as of 2026-07-14** (evidence: `docs/SMOKE_AUDIT.md`, commit
-02c3ac6, master):
+**Campaign state as of 2026-07-28** (evidence: `docs/SMOKE_AUDIT_V3.md` and
+the committed logs under `docs/evidence/v3/`; the 2026-07-14 rows below are
+from `docs/SMOKE_AUDIT.md`, commit 02c3ac6, master):
 
 | Milestone | Status |
 |---|---|
 | Verification layer landed (cb7fde8/406f969) | DONE |
 | Phase 0 fixes: parallel fan-out (D3/D6), lens_analysis route wired (was DEAD — orchestrator queried `lens_<name>`), Skeptic/CoVe token ceilings raised, critic → gemini-2.5-pro, citation index loaded (D7) | DONE (02c3ac6, 05aaa8f) |
 | Single-lens smoke | **PASSED** — v5: 299 LLM calls, 4.0% parse failures (<5% gate), 9 refutes/9 supports/1 neutral skeptic verdicts, findings_per_article 0.14 |
-| Full 5-lens smoke | **NOT DONE** — 3 attempts stopped: stale route (fixed), OpenRouter 402 (account credits, not budget guard), parse-failure/truncation degradation (189 parse failures, 111 skeptic_llm_error in full5_final) |
-| Landing audit doc through change control | NOT DONE (SMOKE_AUDIT.md is the interim record) |
+| 5-lens smoke, 10-article subset | **PASSED** — every §10 gate met, replicated across `full5_v3` and `full5_v4` (2026-07-28), then `full5_v5` under the D21 fix. Parse failures 12–14.5% on main → 2.1%; truncation eliminated. First runs with *proven worktree execution* (D20: everything before `full5_v3` silently executed main-checkout code) |
+| Full 5-lens smoke, all 91 articles | **NOT DONE** — the §10 gates were written against the full bill, so the subset pass above does not discharge them. Earlier attempts stopped on a stale route (fixed), an OpenRouter 402 credit wall (account credits, not the budget guard), and parse-failure/truncation degradation (189 parse failures, 111 skeptic_llm_error in `full5_final`, whose log was lost to `.gitignore:41`). Now blocked on credit, not on code — forecast ~$5.01 against the fenced $5.00 cap, which is never raised to make a run pass |
+| Landing audit doc through change control | NOT DONE (`SMOKE_AUDIT_V3.md` is the interim record; it self-declares Phase E **PARTIAL**) |
 | Deliberative pipeline live run | NOT DONE (landed + leak-fixed PR #7; offline-proven only) |
 
-**Next concrete step** (per SMOKE_AUDIT "Next"): validate the None-content
-fix and tighter JSON prompts on a small article subset —
-`leggie analyze Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf --articles "1-10" 2>&1 | Tee-Object subset.log`
-— then re-attempt the full 5-lens run (Phase 4c). Check OpenRouter credit
-balance BEFORE starting: the 402 wall wasted a full run.
+**Next concrete step:** the subset validation this line used to ask for is
+done and replicated — go straight to the 91-article run (Phase 4c). Check the
+OpenRouter credit balance BEFORE starting: the 402 wall wasted a full run, and
+the forecast now sits just over the $5.00 cap, so top up the account rather
+than raising the cap.
 
 **Re-verify Phase 0 before trusting anything here — this skill goes stale
 fastest.** Baseline numbers below measured 2026-07-10/11.
