@@ -5,6 +5,7 @@ from leggie.domain.models import (
     Citation,
     CitationScheme,
     Confidence,
+    Evidence,
     Finding,
     FindingType,
     Severity,
@@ -16,7 +17,12 @@ from leggie.domain.specs import (
 )
 
 
-def make_finding(finding_type=FindingType.OTHER, confidence_score=0.5, severity="medium", evidence=None):
+def make_finding(
+    finding_type: FindingType = FindingType.OTHER,
+    confidence_score: float = 0.5,
+    severity: str = "medium",
+    evidence: list[Evidence] | None = None,
+) -> Finding:
     return Finding(
         finding_type=finding_type,
         irac=IRAC(issue="x", rule="y", application="z", conclusion="w"),

@@ -18,8 +18,8 @@ class TestCommand(Command):
     message: str
 
 
-class TestCommandHandler(CommandHandler):
-    async def handle(self, command: TestCommand) -> CommandResult:
+class TestCommandHandler(CommandHandler[TestCommand, str]):
+    async def handle(self, command: TestCommand) -> CommandResult[str]:
         return CommandResult(success=True, data=f"Handled: {command.message}")
 
 
@@ -27,8 +27,8 @@ class TestQuery(Query):
     lookup: str
 
 
-class TestQueryHandler(QueryHandler):
-    async def handle(self, query: TestQuery) -> QueryResult:
+class TestQueryHandler(QueryHandler[TestQuery, str]):
+    async def handle(self, query: TestQuery) -> QueryResult[str]:
         return QueryResult(success=True, data=f"Found: {query.lookup}")
 
 

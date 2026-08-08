@@ -48,4 +48,5 @@ class TestStage:
         context = StageContext(article_text="test", article_id="1")
         result = await stage.run(context)
         assert result.success is False
+        assert result.error is not None
         assert "test error" in result.error

@@ -9,12 +9,12 @@ from leggie.application.agents.skeptic import (
     NumericGate,
     SkepticVerdict,
 )
-from leggie.application.ports.llm import LLMResponse
+from leggie.application.ports.llm import LLMPort, LLMResponse
 from leggie.domain.models import IRAC, Confidence, Finding, FindingType, ModelTier, Severity
 from leggie.domain.models.structured_output import SkepticVerdictResponse
 
 
-class FakeLLM:
+class FakeLLM(LLMPort):
     """Scripted LLM: returns one canned SkepticVerdictResponse."""
 
     def __init__(self, response: SkepticVerdictResponse) -> None:
@@ -159,9 +159,15 @@ class TestLLMAdversarialGate:
 
     @pytest.mark.asyncio
     async def test_llm_error_fails_neutral_not_crash(self):
-        class CrashingLLM:
+        class CrashingLLM(LLMPort):
+            async def generate(self, request):  # pragma: no cover - unused
+                raise NotImplementedError
+
             async def generate_structured(self, request, schema):
                 raise RuntimeError("boom")
+
+            async def count_tokens(self, text, model=None):  # pragma: no cover
+                return len(text) // 4
 
         gate = LLMAdversarialGate(llm=CrashingLLM())
         f = make_finding()

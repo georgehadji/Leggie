@@ -2,7 +2,7 @@
 
 import pytest
 
-from leggie.application.ports.llm import LLMResponse
+from leggie.application.ports.llm import LLMPort, LLMResponse
 from leggie.application.services.bill_overview import BillOverviewGenerator
 from leggie.domain.models import Article, Document, ModelTier
 from leggie.domain.models.structured_output import (
@@ -23,7 +23,7 @@ def _doc() -> Document:
     )
 
 
-class _FakeLLM:
+class _FakeLLM(LLMPort):
     """Returns well-formed structured responses for both preview schemas."""
 
     def __init__(self) -> None:
@@ -34,6 +34,7 @@ class _FakeLLM:
 
     async def generate_structured(self, request, schema):
         self.calls += 1
+        obj: BillIntroSummary | ArticleOverviewCandidate
         if schema is BillIntroSummary:
             obj = BillIntroSummary(intro="ΕΙΣΑΓΩΓΗ", summary="ΠΕΡΙΛΗΨΗ")
         else:

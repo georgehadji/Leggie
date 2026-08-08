@@ -86,18 +86,22 @@ class TestExitCodeMapping:
         ],
     )
     def test_error_type_maps_to_exit_code(self, error_type: str | None, expected: int) -> None:
-        result = CommandResult(success=False, error="boom", error_type=error_type)
+        result: CommandResult[str] = CommandResult(
+            success=False, error="boom", error_type=error_type
+        )
         assert _exit_code_for_result(result) == expected
 
     def test_failure_helper_captures_exception_type(self) -> None:
-        result = CommandResult.failure(ValueError("bad input"))
+        result: CommandResult[str] = CommandResult.failure(ValueError("bad input"))
         assert result.success is False
         assert result.error == "bad input"
         assert result.error_type == "ValueError"
 
     def test_a_bad_path_is_not_reported_as_a_transient_provider_failure(self) -> None:
         """Exit 5 invites a retry loop; a nonexistent file must never yield it."""
-        result = CommandResult(success=False, error="nope", error_type="InputNotFoundError")
+        result: CommandResult[str] = CommandResult(
+            success=False, error="nope", error_type="InputNotFoundError"
+        )
         assert _exit_code_for_result(result) != EXIT_PROVIDER_UNAVAILABLE
 
 

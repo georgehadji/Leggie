@@ -14,15 +14,21 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
+
+# parse()/try_repair() return an instance of the schema they were handed, not a
+# bare BaseModel. Binding the return to the argument lets call-sites keep the
+# concrete type: `parser.parse(c, LensFindings).findings` type-checks, where
+# before every attribute access on the result was an error against BaseModel.
+SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 
 class StructuredResponseParser:
     """Parse and repair LLM structured responses.
 
-    Pure function of ``(content, schema) -> BaseModel`` — no HTTP, no side
+    Pure function of ``(content, schema) -> schema`` — no HTTP, no side
     effects, fully unit-testable.
     """
 
@@ -52,7 +58,7 @@ class StructuredResponseParser:
 
     # ── public API ─────────────────────────────────────────────────
 
-    def parse(self, content: str, schema: type[BaseModel]) -> BaseModel:
+    def parse(self, content: str, schema: type[SchemaT]) -> SchemaT:
         """Parse *content* (raw LLM output) into *schema*, applying repairs.
 
         The ladder:
@@ -98,8 +104,8 @@ class StructuredResponseParser:
             raise ValueError(f"Schema validation failed: {exc}") from exc
 
     def try_repair(
-        self, content: str, schema: type[BaseModel],
-    ) -> BaseModel | None:
+        self, content: str, schema: type[SchemaT],
+    ) -> SchemaT | None:
         """Last-resort: feed malformed content back for re-generation.
 
         Wraps *content* in a terse instruction asking for valid JSON, then

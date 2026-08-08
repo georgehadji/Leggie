@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from leggie.application.ports.llm import LLMPort
 from leggie.application.services.rerank import CompositeReranker
 from leggie.application.workflow.bill_analysis_flow import (
     BillAnalysisFlow,
@@ -75,7 +76,11 @@ class TestBillAnalysisFlow:
         flow = BillAnalysisFlow()
         assert flow.state == WorkflowState.IDLE
         await flow.run(sample_bill_file, output_dir=tmp_path)
-        assert flow.state == WorkflowState.DONE
+        # Re-read through an annotated local: the IDLE assert above narrows
+        # flow.state to a literal, and mypy does not widen it back across the
+        # run() call, so the DONE comparison would look statically impossible.
+        final_state: WorkflowState = flow.state
+        assert final_state == WorkflowState.DONE
 
     @pytest.mark.asyncio
     async def test_run_records_events(self, sample_bill_file, tmp_path):
@@ -177,8 +182,8 @@ class TestBillAnalysisFlow:
             assert "Άρθρο 1" in f.irac.issue, f.irac.issue
 
 
-class _LLMWithGuard:
-    """Duck-typed LLM stub exposing a real BudgetGuard, like BudgetGuardDecorator."""
+class _LLMWithGuard(LLMPort):
+    """LLM stub exposing a real BudgetGuard, like BudgetGuardDecorator."""
 
     def __init__(self, guard) -> None:
         self.budget_guard = guard
@@ -317,7 +322,10 @@ class TestResumeAfterCrash:
     """Integration-style crash-resume test (D10)."""
 
     @pytest.mark.asyncio
-    async def test_resume_after_crash(self, sample_bill_file, tmp_path):
+    async def test_resume_after_crash(self, sample_bill_file, tmp_path, monkeypatch):
+        # Instance methods are spied on via monkeypatch rather than plain
+        # attribute assignment: `obj.method = fn` is a type error (method-assign)
+        # and leaves the patch in place if the test aborts mid-way.
         checkpoint = tmp_path / "resume.checkpoint.json"
 
         # 1. First run: crash after execution completes (checkpoint saved at AGGREGATING).
@@ -332,7 +340,7 @@ class TestResumeAfterCrash:
                 crashed_state = flow1.state
                 raise RuntimeError("simulated crash")
 
-        flow1._transition = crashing_transition
+        monkeypatch.setattr(flow1, "_transition", crashing_transition)
         with pytest.raises(RuntimeError):
             await flow1.run(sample_bill_file, output_dir=tmp_path, checkpoint_path=checkpoint)
 
@@ -371,10 +379,10 @@ class TestResumeAfterCrash:
             calls["analyze"] += 1
             return await orig_analyze_document(doc, lenses)
 
-        flow2._do_ingest = counted_do_ingest
-        flow2._do_parse = counted_do_parse
-        flow2._orchestrator.decompose = counted_decompose
-        flow2._orchestrator.analyze_document = counted_analyze_document
+        monkeypatch.setattr(flow2, "_do_ingest", counted_do_ingest)
+        monkeypatch.setattr(flow2, "_do_parse", counted_do_parse)
+        monkeypatch.setattr(flow2._orchestrator, "decompose", counted_decompose)
+        monkeypatch.setattr(flow2._orchestrator, "analyze_document", counted_analyze_document)
 
         resumed_findings, _ = await flow2.run(
             sample_bill_file, output_dir=tmp_path, checkpoint_path=checkpoint

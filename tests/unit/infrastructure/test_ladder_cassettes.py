@@ -12,6 +12,9 @@ exercised end-to-end.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Any
+
 import pytest
 from pydantic import BaseModel, Field
 
@@ -32,11 +35,11 @@ class _FakeInner(LLMPort):
 
     _default_model = "test-model"
 
-    def __init__(self, script):
+    def __init__(self, script: Sequence[tuple[str, Any]]) -> None:
         self._script = list(script)
         self.requests: list[LLMRequest] = []
 
-    def _next(self):
+    def _next(self) -> tuple[str, Any]:
         if not self._script:
             raise AssertionError("Unexpected extra LLM call in ladder test")
         return self._script.pop(0)

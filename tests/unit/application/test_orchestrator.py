@@ -3,7 +3,7 @@
 import pytest
 
 from leggie.application.agents.orchestrator import Orchestrator
-from leggie.domain.models import Article, Document, Event, EventType
+from leggie.domain.models import Article, Document, Event, EventType, Finding
 
 SAMPLE_DOC = Document(
     title="Test Bill",
@@ -61,7 +61,7 @@ class TestOrchestrator:
     async def test_analyze_document_matches_serial_result(self):
         """Parallel fan-out must yield the same findings as the serial path."""
         orch = Orchestrator()
-        serial_findings: list = []
+        serial_findings: list[Finding] = []
         for article in SAMPLE_DOC.articles:
             serial_findings.extend(await orch.analyze_article(article))
         parallel_findings = await orch.analyze_document(SAMPLE_DOC)

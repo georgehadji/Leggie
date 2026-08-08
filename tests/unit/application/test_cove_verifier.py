@@ -1,8 +1,10 @@
 """Tests for CoVe evidence loop — Chain of Verification."""
 
+from typing import Any
+
 import pytest
 
-from leggie.application.ports.llm import LLMResponse
+from leggie.application.ports.llm import LLMPort, LLMResponse
 from leggie.application.services.cove_verifier import CoVeVerifier
 from leggie.domain.models import (
     IRAC,
@@ -21,10 +23,15 @@ from leggie.domain.models.structured_output import (
 )
 
 
-class FakeLLM:
-    """Scripted LLM: returns a canned object per requested schema."""
+class FakeLLM(LLMPort):
+    """Scripted LLM: returns a canned object per requested schema.
 
-    def __init__(self, responses: dict) -> None:
+    Subclasses the port rather than duck-typing it, so a new abstract method
+    on LLMPort breaks this fake loudly instead of leaving it silently behind
+    the interface it stands in for.
+    """
+
+    def __init__(self, responses: dict[str, Any]) -> None:
         self._responses = responses
         self.calls: list[str] = []
 
@@ -87,7 +94,9 @@ class TestCoVeVerifier:
         ]
         result = await verifier.verify(make_finding_with_citations(cites))
         assert len(result.questions) == 1
-        assert result.questions[0].citation.identifier == "ΦΕΚ Α 137/2023"
+        citation = result.questions[0].citation
+        assert citation is not None
+        assert citation.identifier == "ΦΕΚ Α 137/2023"
 
     @pytest.mark.asyncio
     async def test_verify_multiple_citations(self):

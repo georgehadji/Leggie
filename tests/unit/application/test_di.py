@@ -4,16 +4,20 @@ import pytest
 
 from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.event_bus import EventBusPort
-from leggie.application.ports.llm import LLMPort
+from leggie.application.ports.llm import LLMPort, LLMRequest, LLMResponse
 from leggie.application.ports.reasoner import ReasonerPort
 from leggie.application.ports.router import RouterPort
+from leggie.domain.models import ModelTier
 from leggie.infrastructure.container import BindingNotFoundError, Container
 
 
 class FakeLLM(LLMPort):
-    async def generate(self, request):
-        from leggie.application.ports.llm import LLMResponse
-        return LLMResponse(content="fake", model="fake", tier_used=None, usage={})
+    async def generate(self, request: LLMRequest) -> LLMResponse:
+        # tier_used is a ModelTier, not optional — this fake used to pass None,
+        # building an LLMResponse the type never permitted.
+        return LLMResponse(
+            content="fake", model="fake", tier_used=ModelTier.FREE, usage={}
+        )
 
     async def generate_structured(self, request, schema):
         return (None, await self.generate(request))

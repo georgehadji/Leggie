@@ -38,6 +38,7 @@ jobs:
         run: |
           ruff check leggie/ tests/
           mypy leggie/ --ignore-missing-imports
+          mypy tests/ --ignore-missing-imports
           lint-imports --debug  # ARCH-02: --debug avoids a Rich Live-display crash in normal mode
           bandit -c pyproject.toml -r leggie/
 

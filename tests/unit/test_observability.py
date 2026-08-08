@@ -41,22 +41,20 @@ class TestTraceContext:
 
 class TestTimer:
     @pytest.mark.asyncio
-    async def test_timer_context(self):
+    async def test_timer_context(self, monkeypatch):
         logger = get_logger("test.timer")
         calls = []
-        # Patch to capture log calls
-        original_info = logger.info
 
         def capture_info(event, **kwargs):
             calls.append((event, kwargs))
 
-        logger.info = capture_info
+        # monkeypatch rather than `logger.info = ...`: assigning over a bound
+        # method is a type error, and the manual try/finally restore only ran
+        # for this one attribute.
+        monkeypatch.setattr(logger, "info", capture_info)
 
-        try:
-            async with Timer(logger, "test_operation", key="value"):
-                pass  # Operation completes instantly
-        finally:
-            logger.info = original_info
+        async with Timer(logger, "test_operation", key="value"):
+            pass  # Operation completes instantly
 
         assert len(calls) >= 1
         event, kwargs = calls[0]

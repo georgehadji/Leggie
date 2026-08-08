@@ -4,12 +4,13 @@ Per BUILD_PLAN §8: "Each Port has a fake + contract test."
 """
 
 from dataclasses import FrozenInstanceError
+from typing import Any
 
 import pytest
 
 from leggie.application.ports.blackboard import BlackboardPort
 from leggie.application.ports.citation_parser import CitationParserPort
-from leggie.application.ports.event_bus import EventBusPort
+from leggie.application.ports.event_bus import EventBusPort, EventHandler
 from leggie.application.ports.llm import LLMPort, LLMRequest, LLMResponse
 from leggie.application.ports.reasoner import (
     ReasonerPort,
@@ -41,11 +42,15 @@ class FakeLLM(LLMPort):
 
 
 class FakeRouter(RouterPort):
-    async def route(self, task_type, budget_remaining=None):
+    async def route(
+        self, task_type: str, budget_remaining: float | None = None
+    ) -> RouteResult:
         return RouteResult(model="fake-model", tier=ModelTier.BUDGET, max_tokens=4096)
-    async def cascade(self, task_type, current_tier, failure_reason=None):
+    async def cascade(
+        self, task_type: str, current_tier: ModelTier, failure_reason: str | None = None
+    ) -> RouteResult | None:
         return None
-    def supported_models(self):
+    def supported_models(self) -> list[str]:
         return ["fake-model"]
 
 
@@ -68,22 +73,24 @@ class FakeCitationParser(CitationParserPort):
 
 
 class FakeEventBus(EventBusPort):
-    async def publish(self, event):
+    async def publish(self, event: Event) -> None:
         pass
-    def subscribe(self, event_type, handler):
+    def subscribe(self, event_type: EventType, handler: EventHandler) -> None:
         pass
-    def unsubscribe(self, event_type, handler):
+    def unsubscribe(self, event_type: EventType, handler: EventHandler) -> None:
         pass
 
 
 class FakeState(StatePort):
-    async def get_state(self, run_id):
+    async def get_state(self, run_id: str) -> WorkflowState | None:
         return WorkflowState.IDLE
-    async def set_state(self, run_id, state):
+    async def set_state(self, run_id: str, state: WorkflowState) -> None:
         pass
-    async def get_checkpoint(self, run_id, stage):
+    async def get_checkpoint(self, run_id: str, stage: str) -> dict[str, Any] | None:
         return None
-    async def save_checkpoint(self, run_id, stage, data):
+    async def save_checkpoint(
+        self, run_id: str, stage: str, data: dict[str, Any]
+    ) -> None:
         pass
 
 
@@ -185,7 +192,11 @@ class TestReasonerRequestDTO:
     def test_request_frozen(self):
         request = ReasonerRequest(problem="test", preset="preset")
         with pytest.raises(FrozenInstanceError):
-            request.problem = "modified"
+            # The illegal assignment is the assertion: the DTO is frozen, so
+            # mypy is right that this cannot type-check. Narrowly silenced
+            # rather than reworked, because rewriting it to satisfy the checker
+            # would stop it from testing what it exists to test.
+            request.problem = "modified"  # type: ignore[misc]
 
     def test_request_default_values(self):
         request = ReasonerRequest(problem="test")
@@ -210,7 +221,7 @@ class TestReasonerResultDTO:
             errors=[],
         )
         with pytest.raises(FrozenInstanceError):
-            result.synthesis = "modified"
+            result.synthesis = "modified"  # type: ignore[misc]  # see test_request_frozen
 
     def test_result_with_citations(self):
         citation = Citation(

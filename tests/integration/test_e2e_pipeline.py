@@ -90,7 +90,10 @@ class TestEndToEnd:
     @pytest.mark.asyncio
     async def test_full_pipeline_state_complete(self, bill_file, tmp_path):
         """Flow reaches DONE state."""
-        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow, WorkflowState
+        # WorkflowState is re-exported incidentally by bill_analysis_flow;
+        # import it from the module that defines it.
+        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
+        from leggie.domain.models import WorkflowState
 
         flow = BillAnalysisFlow()
         await flow.run(bill_file, output_dir=tmp_path)

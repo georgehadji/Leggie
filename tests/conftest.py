@@ -19,6 +19,7 @@ relaxed to let the suite reach a real provider.
 from __future__ import annotations
 
 import socket
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -36,7 +37,7 @@ _NEUTRALISED_CREDENTIALS = (
 
 
 @pytest.fixture(autouse=True)
-def hermetic_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+def hermetic_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Blank provider credentials and reset the cached Settings singleton.
 
     The singleton is reset on both sides of the test: once so this test cannot
@@ -51,7 +52,7 @@ def hermetic_settings(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def socket_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+def socket_guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Prevent any outbound network connections during tests.
 
     Monkeypatches ``socket.socket.connect`` to raise a ``RuntimeError``

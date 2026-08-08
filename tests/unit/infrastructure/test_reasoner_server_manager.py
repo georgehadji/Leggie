@@ -1,5 +1,7 @@
 """Tests for ReasonerServerManager — fakes for health probe + spawner, no real process/network."""
 
+from typing import Any
+
 import pytest
 
 from leggie.application.ports.reasoner import ReasonerUnavailableError
@@ -30,8 +32,10 @@ class FakeProcess:
         return self._exit_code if self._exit_code is not None else 0
 
 
-def _settings(**overrides) -> ReasonerSettings:
-    defaults = {
+def _settings(**overrides: Any) -> ReasonerSettings:
+    # Annotated as Any-valued: the literal mixes bool/int/str, so mypy would
+    # otherwise infer dict[str, object] and reject the ** expansion.
+    defaults: dict[str, Any] = {
         "enabled": True,
         "autostart": True,
         "startup_timeout": 1,

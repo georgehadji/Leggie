@@ -141,7 +141,9 @@ class StructuredOutputDecorator(LLMPort):
                     response_format={"type": "json_object"},
                 )
                 response = await self._inner.generate(repair_req)
-                obj = parser.parse(response.content, schema)
+                # The port hands `schema` down as a bare `type`, so the
+                # parser's schema-bound return variable resolves to Any here.
+                obj: Any = parser.parse(response.content, schema)
                 return obj, response
         except (LLMError, ValueError):
             pass

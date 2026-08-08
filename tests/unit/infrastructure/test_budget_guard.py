@@ -261,7 +261,7 @@ class _FakeLLM:
         return resp
 
     async def generate_structured(self, _request: Any, _schema: type) -> tuple[Any, Any]:
-        return await self.generate(_request), None  # type: ignore[return-value]
+        return await self.generate(_request), None
 
     async def count_tokens(self, _text: str, _model: str | None = None) -> int:
         return 0

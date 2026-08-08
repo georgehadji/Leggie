@@ -15,7 +15,11 @@ from leggie.domain.scoring import (
 )
 
 
-def make_finding(finding_type=FindingType.CONSTITUTIONAL, severity="medium", confidence=0.6):
+def make_finding(
+    finding_type: FindingType = FindingType.CONSTITUTIONAL,
+    severity: str = "medium",
+    confidence: float = 0.6,
+) -> Finding:
     return Finding(
         finding_type=finding_type,
         irac=IRAC(issue="test", rule="r", application="a", conclusion="c"),

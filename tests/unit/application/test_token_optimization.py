@@ -1,6 +1,8 @@
 """Tests for Token Optimization Plan — TOK-1, TOK-4, TOK-12 regression coverage."""
 from __future__ import annotations
 
+from typing import Any
+
 from leggie.application.ports.llm import LLMPort, LLMRequest, LLMResponse
 from leggie.infrastructure.llm.ladder import StructuredOutputDecorator
 
@@ -67,7 +69,7 @@ class TestTOK1DecoratorStack:
         class Simple(BaseModel):
             pass
 
-        async def run():
+        async def run() -> Any:
             try:
                 return await ladder.generate_structured(
                     LLMRequest(prompt="test", max_tokens=1024, temperature=0.0), Simple
@@ -91,7 +93,7 @@ class TestTOK1DecoratorStack:
         class Simple(BaseModel):
             pass
 
-        async def run():
+        async def run() -> Any:
             try:
                 return await ladder.generate_structured(
                     LLMRequest(prompt="test", max_tokens=1024, temperature=0.0), Simple

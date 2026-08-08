@@ -26,7 +26,11 @@ class TestRunManifest:
         assert d["run_id"] == "r1"
         assert d["status"] == "completed"
         assert d["finding_count"] == 3
-        assert d["costs"]["tokens_used"] == {"budget": 100}
+        # to_dict() is typed dict[str, object], so the nested costs mapping has
+        # to be narrowed before indexing — which also asserts its shape.
+        costs = d["costs"]
+        assert isinstance(costs, dict)
+        assert costs["tokens_used"] == {"budget": 100}
         # Must be JSON-serialisable
         json.dumps(d)
 

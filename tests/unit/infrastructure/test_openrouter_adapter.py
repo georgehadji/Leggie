@@ -1,6 +1,11 @@
 """Tests for OpenRouter LLM adapter — mock HTTP."""
 
+from __future__ import annotations
+
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +17,60 @@ from leggie.infrastructure.llm import (
     OpenRouterProvider,
 )
 from leggie.infrastructure.llm.base import LLMError, LLMRateLimitError
+
+_OK_BODY: dict[str, Any] = {
+    "choices": [{"message": {"content": "OK", "role": "assistant"}, "finish_reason": "stop"}],
+    "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+    "model": "openai/gpt-5.6-luna",
+}
+
+
+@contextmanager
+def _provider_with_response(
+    *,
+    status: int = 200,
+    body: dict[str, Any] | None = None,
+    text: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> Iterator[tuple[OpenRouterProvider, AsyncMock]]:
+    """Yield a provider whose HTTP client returns one canned response.
+
+    The mocked `post` is yielded alongside it so a test can assert on the
+    request the adapter actually put on the wire. That indirection is the whole
+    point: the tests this replaced built their own headers/body dict, applied
+    the adapter's rules to it by hand, and asserted on their own copy — they
+    passed without `generate()` ever being called, so no adapter change could
+    have failed them.
+    """
+    provider = OpenRouterProvider(api_key="sk-test")
+    payload = _OK_BODY if body is None else body
+    resp = MagicMock()
+    resp.status_code = status
+    resp.json.return_value = payload
+    resp.text = json.dumps(payload) if text is None else text
+    # A bare MagicMock answers any header lookup with a truthy mock, and
+    # float(MagicMock()) is 1.0 — so the 429 path parsed a phantom Retry-After
+    # and slept for a real second on every run. An explicit dict keeps
+    # Retry-After under the test's control.
+    resp.headers = {} if headers is None else headers
+    with patch.object(provider._http_client, "post", new_callable=AsyncMock) as post, \
+         patch.object(provider._rate_limiter, "acquire", new_callable=AsyncMock):
+        post.return_value = resp
+        yield provider, post
+
+
+def _sent_body(post: AsyncMock) -> dict[str, Any]:
+    """The JSON body the adapter posted."""
+    body = post.call_args.kwargs["json"]
+    assert isinstance(body, dict)
+    return body
+
+
+def _sent_headers(post: AsyncMock) -> dict[str, str]:
+    """The headers the adapter posted."""
+    headers = post.call_args.kwargs["headers"]
+    assert isinstance(headers, dict)
+    return headers
 
 
 class TestOpenRouterProvider:
@@ -41,116 +100,120 @@ class TestLLMAdapterInit:
 
 
 class TestOpenRouterAPIMock:
-    """E2E style: build real response and verify provider handles it."""
-
-    def _make_mock_response(self, status=200, body=None):
-        """Build a mock httpx response."""
-        body = body or {
-            "choices": [{"message": {"content": "OK", "role": "assistant"}}],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
-            "model": "openai/gpt-5.6-luna",
-        }
-        resp = MagicMock()
-        resp.status_code = status
-        resp.json.return_value = body
-        resp.text = json.dumps(body)
-        return resp
+    """Drive the real generate() against a mocked transport."""
 
     @pytest.mark.asyncio
     async def test_generate_success(self):
-        """Provider parses successful response correctly."""
-        mock_response = self._make_mock_response(
-            body={
-                "choices": [{
-                    "message": {"content": "Legal analysis result", "role": "assistant"},
-                    "finish_reason": "stop",
-                }],
-                "usage": {"prompt_tokens": 200, "completion_tokens": 100},
-                "model": "openai/gpt-5.6-luna",
-            }
-        )
+        """Provider parses a successful response into an LLMResponse."""
+        body = {
+            "choices": [{
+                "message": {"content": "Legal analysis result", "role": "assistant"},
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 200, "completion_tokens": 100},
+            "model": "openai/gpt-5.6-luna",
+        }
+        with _provider_with_response(body=body) as (provider, _post):
+            response = await provider.generate(
+                LLMRequest(
+                    prompt="Analyze this bill",
+                    system_prompt="You are a legal analyst",
+                    seed=42,
+                )
+            )
 
-        OpenRouterProvider(api_key="sk-test")
-        # Build request body from provider generate
-        LLMRequest(prompt="Analyze this bill", system_prompt="You are a legal analyst", seed=42)
-
-        # Manually simulate what generate() does with the response
-
-        # Parse the mock response the same way generate() would
-        data = mock_response.json()
-        choice = data["choices"][0]
-        content = choice["message"]["content"]
-        usage = data["usage"]
-
-        assert content == "Legal analysis result"
-        assert usage["prompt_tokens"] == 200
-        assert usage["completion_tokens"] == 100
-
-    def test_rate_limit_detection(self):
-        """Rate limit status code is distinguishable."""
-        assert 429 != 200  # Rate limit is HTTP 429
-
-    def test_error_status_detection(self):
-        """Error status codes are distinguishable."""
-        assert 500 != 200  # Server error
-        assert 401 != 200  # Unauthorized
+        assert response.content == "Legal analysis result"
+        assert response.finish_reason == "stop"
+        assert response.usage["prompt_tokens"] == 200
+        assert response.usage["completion_tokens"] == 100
 
     @pytest.mark.asyncio
-    async def test_system_prompt_added_to_messages(self):
-        """Verify system prompt handling logic."""
-        request = LLMRequest(prompt="User message", system_prompt="System instruction")
+    @pytest.mark.parametrize("status", [400, 401, 500, 503])
+    async def test_non_200_raises_llm_error(self, status: int):
+        """Any non-200, non-429 status surfaces as LLMError naming the code."""
+        with _provider_with_response(status=status, text="upstream detail") as (provider, _), \
+             pytest.raises(LLMError) as exc:
+            await provider.generate(LLMRequest(prompt="x"))
+        assert str(status) in str(exc.value)
 
-        # Simulate the message building that OpenRouterProvider does
-        messages = []
-        if request.system_prompt:
-            messages.append({"role": "system", "content": request.system_prompt})
-        messages.append({"role": "user", "content": request.prompt})
+    @pytest.mark.asyncio
+    async def test_429_raises_rate_limit_error(self):
+        """429 is distinguished from other errors by its own exception type."""
+        with _provider_with_response(status=429, text="") as (provider, _), \
+             pytest.raises(LLMRateLimitError):
+            await provider.generate(LLMRequest(prompt="x"))
 
-        assert len(messages) == 2
-        assert messages[0] == {"role": "system", "content": "System instruction"}
-        assert messages[1] == {"role": "user", "content": "User message"}
+    @pytest.mark.asyncio
+    async def test_system_prompt_is_first_message(self):
+        with _provider_with_response() as (provider, post):
+            await provider.generate(
+                LLMRequest(prompt="User message", system_prompt="System instruction")
+            )
+
+        assert _sent_body(post)["messages"] == [
+            {"role": "system", "content": "System instruction"},
+            {"role": "user", "content": "User message"},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_no_system_prompt_sends_user_message_only(self):
+        with _provider_with_response() as (provider, post):
+            await provider.generate(LLMRequest(prompt="User message"))
+
+        assert _sent_body(post)["messages"] == [{"role": "user", "content": "User message"}]
 
     @pytest.mark.asyncio
     async def test_seed_passed_in_body(self):
-        """Seed is included in API request body."""
-        request = LLMRequest(prompt="Test", seed=42)
-        body = {"model": "test", "messages": [], "seed": request.seed}
-        assert body["seed"] == 42
+        with _provider_with_response() as (provider, post):
+            await provider.generate(LLMRequest(prompt="Test", seed=42))
 
-    def test_http_headers_built_correctly(self):
+        assert _sent_body(post)["seed"] == 42
+
+    @pytest.mark.asyncio
+    async def test_seed_omitted_when_unset(self):
+        """Determinism is opt-in — an unset seed must not reach the wire."""
+        with _provider_with_response() as (provider, post):
+            await provider.generate(LLMRequest(prompt="Test"))
+
+        assert "seed" not in _sent_body(post)
+
+    @pytest.mark.asyncio
+    async def test_response_format_forwarded(self):
+        with _provider_with_response() as (provider, post):
+            await provider.generate(
+                LLMRequest(prompt="Test", response_format={"type": "json_object"})
+            )
+
+        assert _sent_body(post)["response_format"] == {"type": "json_object"}
+
+    @pytest.mark.asyncio
+    async def test_http_headers_built_correctly(self):
         """OpenRouter attribution headers."""
-        prov = OpenRouterProvider(api_key="sk-test")
+        with _provider_with_response() as (provider, post):
+            await provider.generate(LLMRequest(prompt="Test"))
 
-        headers = {
-            "Authorization": f"Bearer {prov._api_key}",
-            "HTTP-Referer": "https://github.com/georgehadji/Leggie",
-            "X-Title": "Leggie",
-            "content-type": "application/json",
-        }
-
+        headers = _sent_headers(post)
         assert headers["Authorization"] == "Bearer sk-test"
         assert headers["HTTP-Referer"] == "https://github.com/georgehadji/Leggie"
         assert headers["X-Title"] == "Leggie"
 
-    def test_thinking_model_adds_reasoning(self):
+    @pytest.mark.asyncio
+    async def test_thinking_model_adds_reasoning(self):
         """Thinking models get include_reasoning: true."""
-        model = "openai/gpt-5.6-luna:thinking"
-        body = {"model": model, "messages": []}
+        with _provider_with_response() as (provider, post):
+            await provider.generate(
+                LLMRequest(prompt="Test", model="openai/gpt-5.6-luna:thinking")
+            )
 
-        if ":thinking" in model:
-            body["include_reasoning"] = True
+        assert _sent_body(post)["include_reasoning"] is True
 
-        assert body["include_reasoning"] is True
-
-    def test_non_thinking_model_no_reasoning(self):
+    @pytest.mark.asyncio
+    async def test_non_thinking_model_no_reasoning(self):
         """Non-thinking models do NOT get include_reasoning."""
-        model = "openai/gpt-5.6-luna"
-        body = {"model": model, "messages": []}
+        with _provider_with_response() as (provider, post):
+            await provider.generate(LLMRequest(prompt="Test", model="openai/gpt-5.6-luna"))
 
-        if ":thinking" in model:
-            body["include_reasoning"] = True
-
-        assert "include_reasoning" not in body
+        assert "include_reasoning" not in _sent_body(post)
 
 
 # ── PROD-14 transport tests ──────────────────────────────────────────────
@@ -161,43 +224,28 @@ class TestErrorBodyTruncation:
     @pytest.mark.asyncio
     async def test_500_body_truncated(self):
         """A 500 error with a large body is truncated to _MAX_ERROR_BODY_CHARS."""
-        from leggie.infrastructure.llm.adapters.openrouter import (
-            _MAX_ERROR_BODY_CHARS,
-            OpenRouterProvider,
-        )
-        provider = OpenRouterProvider(api_key="sk-test")
+        from leggie.infrastructure.llm.adapters.openrouter import _MAX_ERROR_BODY_CHARS
 
         big_body = "x" * (_MAX_ERROR_BODY_CHARS + 500)
-        mock_resp = MagicMock()
-        mock_resp.status_code = 500
-        mock_resp.text = big_body
+        with _provider_with_response(status=500, text=big_body) as (provider, _), \
+             pytest.raises(LLMError) as exc:
+            await provider.generate(LLMRequest(prompt="test"))
 
-        with patch.object(provider._http_client, "post", new_callable=AsyncMock) as mock_post, \
-             patch.object(provider._rate_limiter, "acquire", new_callable=AsyncMock):
-            mock_post.return_value = mock_resp
-            with pytest.raises(LLMError) as exc:
-                await provider.generate(LLMRequest(prompt="test"))
-            body_in_exc = str(exc.value)
-            assert len(body_in_exc) < len(big_body), \
-                f"Error body was not truncated: {len(body_in_exc)} chars"
-            assert big_body not in body_in_exc
+        body_in_exc = str(exc.value)
+        assert len(body_in_exc) < len(big_body), \
+            f"Error body was not truncated: {len(body_in_exc)} chars"
+        assert big_body not in body_in_exc
 
     @pytest.mark.asyncio
     async def test_429_empty_body_does_not_include_text(self):
         """A 429 with no sensitive body does not leak."""
-        from leggie.infrastructure.llm.adapters.openrouter import OpenRouterProvider
-        provider = OpenRouterProvider(api_key="sk-test")
+        with _provider_with_response(status=429, text="") as (provider, _), \
+             pytest.raises(LLMRateLimitError) as exc:
+            await provider.generate(LLMRequest(prompt="test"))
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 429
-        mock_resp.text = ""
-
-        with patch.object(provider._http_client, "post", new_callable=AsyncMock) as mock_post, \
-             patch.object(provider._rate_limiter, "acquire", new_callable=AsyncMock):
-            mock_post.return_value = mock_resp
-            with pytest.raises(LLMRateLimitError) as exc:
-                await provider.generate(LLMRequest(prompt="test"))
-            assert "OpenRouter rate limited" in str(exc.value)
+        assert "OpenRouter rate limited" in str(exc.value)
+        # No Retry-After header was sent, so none may be claimed in the message.
+        assert "retry after" not in str(exc.value)
 
 
 class TestRetryAfter:
@@ -236,22 +284,14 @@ class TestReasoningTokenVisibility:
     discarded — making a reasoning-driven truncation invisible downstream.
     """
 
-    async def _generate_with(self, body: dict) -> dict[str, int]:
+    async def _generate_with(self, body: dict[str, Any]) -> dict[str, int]:
         """Run generate() against a canned OpenRouter body, return its usage."""
-        provider = OpenRouterProvider(api_key="sk-test")
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = body
-        mock_resp.text = json.dumps(body)
-
-        with patch.object(provider._http_client, "post", new_callable=AsyncMock) as mock_post, \
-             patch.object(provider._rate_limiter, "acquire", new_callable=AsyncMock):
-            mock_post.return_value = mock_resp
+        with _provider_with_response(body=body) as (provider, _):
             response = await provider.generate(LLMRequest(prompt="x", max_tokens=100))
         return response.usage
 
     @staticmethod
-    def _body(finish_reason: str, usage: dict) -> dict:
+    def _body(finish_reason: str, usage: dict[str, Any]) -> dict[str, Any]:
         return {
             "choices": [{
                 "message": {"content": "{}", "role": "assistant"},

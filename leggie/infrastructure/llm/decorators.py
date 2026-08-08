@@ -5,15 +5,23 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from functools import wraps
-from typing import Any
+from typing import Any, TypeVar, cast
 
 from leggie.application.ports.llm import LLMPort
 from leggie.infrastructure.llm.base import BudgetExceededError, LLMRateLimitError, LLMTimeoutError
 
+# Preserves the decorated function's own signature. Typed as
+# Callable[..., Any] -> Callable[..., Any], this decorator erased the return
+# type of everything it wrapped: `await provider.generate(req)` handed back Any,
+# so no caller of a retried method was checked against LLMResponse at all.
+AsyncFn = TypeVar("AsyncFn", bound=Callable[..., Any])
 
-def with_retry(max_retries: int = 3, base_delay: float = 1.0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+
+def with_retry(
+    max_retries: int = 3, base_delay: float = 1.0
+) -> Callable[[AsyncFn], AsyncFn]:
     """Decorator: retry LLM calls on transient failures with exponential backoff."""
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+    def decorator(func: AsyncFn) -> AsyncFn:
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             last_exc: Exception | None = None
@@ -25,8 +33,8 @@ def with_retry(max_retries: int = 3, base_delay: float = 1.0) -> Callable[[Calla
                     if attempt < max_retries - 1:
                         delay = base_delay * (2 ** attempt)
                         await asyncio.sleep(delay)
-            raise last_exc  # type: ignore
-        return wrapper
+            raise last_exc  # type: ignore[misc]
+        return cast(AsyncFn, wrapper)
     return decorator
 
 

@@ -36,7 +36,13 @@ jobs:
         run: ruff check leggie/ tests/
 
       - name: Type check with mypy
-        run: mypy leggie/ --ignore-missing-imports
+        # tests/ is checked too (v1.0 exit criterion). It was held out while it
+        # carried 143 errors; those are fixed, so it is wired in here to stop
+        # them coming back. The strictness relaxations for tests/ live in
+        # pyproject.toml [[tool.mypy.overrides]].
+        run: |
+          mypy leggie/ --ignore-missing-imports
+          mypy tests/ --ignore-missing-imports
 
       - name: Enforce architecture with import-linter
         # ARCH-02: normal-mode rendering crashes with "Only one live display

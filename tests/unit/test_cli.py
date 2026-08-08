@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -49,6 +50,7 @@ class TestPreviewHandler:
         result = await handler.handle(PreviewBillCommand(file_path=str(bill)))
 
         assert result.success is True
+        assert result.data is not None
         assert "articles" in result.data
         assert result.data["articles"][0]["article_id"] == "1"
 
@@ -126,6 +128,7 @@ class TestOtherHandlers:
         result = await handler.handle(ParseDocumentCommand(file_path=str(bill)))
 
         assert result.success is True
+        assert result.data is not None
         assert result.data["articles"][0]["id"] == "1"
 
     @pytest.mark.asyncio
@@ -148,6 +151,7 @@ class TestOtherHandlers:
         handler = ParseDocumentHandler(container=container)
         result = await handler.handle(ParseDocumentCommand(file_path=str(bill)))
 
+        assert result.data is not None
         parsed = result.data["articles"][0]["paragraphs"][0]["text"]
         assert len(parsed) > 200
         assert parsed == long_text.strip()
@@ -169,6 +173,7 @@ class TestOtherHandlers:
         )
 
         assert result.success is True
+        assert result.data is not None
         assert "Analysis complete" in result.data
 
     def test_parse_command(self):
@@ -326,30 +331,33 @@ class TestNewFlags:
 class TestPresenter:
     """PROD-33: Presenter routes output and respects quiet/json modes."""
 
-    def _reset_presenter(self):
-        import leggie.interfaces.cli as cli
-        cli.presenter = cli.Presenter()
-        return cli
+    @pytest.fixture
+    def cli(self, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+        """The CLI module with a fresh presenter, restored on teardown.
 
-    def test_info_hidden_when_quiet(self, capsys):
-        cli = self._reset_presenter()
-        cli.presenter = cli.Presenter(quiet=True)
+        `presenter` is a module global. The previous helper overwrote it and
+        never put it back, so the last quiet/json presenter installed here
+        leaked into every test that ran afterwards.
+        """
+        import leggie.interfaces.cli as cli_module
+        monkeypatch.setattr(cli_module, "presenter", cli_module.Presenter())
+        return cli_module
+
+    def test_info_hidden_when_quiet(self, cli, capsys, monkeypatch):
+        monkeypatch.setattr(cli, "presenter", cli.Presenter(quiet=True))
         cli.presenter.info("important")
         assert capsys.readouterr().out == ""
 
-    def test_info_hidden_when_json(self, capsys):
-        cli = self._reset_presenter()
-        cli.presenter = cli.Presenter(json_mode=True)
+    def test_info_hidden_when_json(self, cli, capsys, monkeypatch):
+        monkeypatch.setattr(cli, "presenter", cli.Presenter(json_mode=True))
         cli.presenter.info("noise")
         assert capsys.readouterr().out == ""
 
-    def test_result_always_shown_in_quiet(self, capsys):
-        cli = self._reset_presenter()
-        cli.presenter = cli.Presenter(quiet=True)
+    def test_result_always_shown_in_quiet(self, cli, capsys, monkeypatch):
+        monkeypatch.setattr(cli, "presenter", cli.Presenter(quiet=True))
         cli.presenter.result("PAYLOAD")
         assert capsys.readouterr().out == "PAYLOAD\n"
 
-    def test_error_to_stderr(self, capsys):
-        cli = self._reset_presenter()
+    def test_error_to_stderr(self, cli, capsys):
         cli.presenter.error("boom")
         assert "boom" in capsys.readouterr().err

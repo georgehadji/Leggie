@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import NoReturn
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -54,7 +55,9 @@ class TestWithRetry:
     async def test_retries_then_succeeds(self):
         """Transient timeout → retry → success."""
         calls = {"n": 0}
-        async def flaky():
+        # with_retry now preserves the wrapped signature, so these helpers must
+        # be annotated for the call through `wrapped` to type-check.
+        async def flaky() -> str:
             calls["n"] += 1
             if calls["n"] < 3:
                 raise LLMTimeoutError("timeout")
@@ -67,7 +70,7 @@ class TestWithRetry:
 
     @pytest.mark.asyncio
     async def test_exhausts_retries_raises(self):
-        async def always_fails():
+        async def always_fails() -> NoReturn:
             raise LLMRateLimitError("rate limited")
         wrapped = with_retry(max_retries=2, base_delay=0)(always_fails)
         with pytest.raises(LLMRateLimitError):
@@ -76,7 +79,7 @@ class TestWithRetry:
     @pytest.mark.asyncio
     async def test_no_retry_on_success(self):
         calls = {"n": 0}
-        async def ok():
+        async def ok() -> str:
             calls["n"] += 1
             return "ok"
         wrapped = with_retry(max_retries=3, base_delay=0)(ok)

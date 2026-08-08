@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 # Constitutions: the current Greek Σύνταγμα articles (revised 2019).
 CONSTITUTION_ARTICLES = [f"Σύνταγμα Άρθρο {n}" for n in range(1, 121)]
@@ -51,7 +52,7 @@ def identifier_count() -> int:
     return len(CONSTITUTION_ARTICLES) + len(FEK_REFERENCES) + len(CELEX_REFS) + len(CHARTER_ARTICLES)
 
 
-def build() -> dict:
+def build() -> dict[str, Any]:
     """Assemble the citation index document."""
     identifiers = (
         CONSTITUTION_ARTICLES + FEK_REFERENCES + CELEX_REFS + CHARTER_ARTICLES
@@ -65,7 +66,7 @@ def build() -> dict:
         "source": "Built offline by tools/build_citation_index.py",
         "version": 1,
         "identifier_count": len(identifiers),
-        "build_date": datetime.now(timezone.utc).isoformat(),
+        "build_date": datetime.now(UTC).isoformat(),
         "categories": {
             "constitution": len(CONSTITUTION_ARTICLES),
             "fek": len(FEK_REFERENCES),

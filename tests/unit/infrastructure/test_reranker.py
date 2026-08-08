@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -73,7 +74,7 @@ class TestRerankerRerank:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"results": [{"index": 0, "relevance_score": 0.5}]}
-        captured: dict = {}
+        captured: dict[str, Any] = {}
         async def _post(body):
             captured.update(body)
             return mock_resp

@@ -11,6 +11,7 @@ regression (e.g. an await introduced between the check and the assignment).
 """
 
 import asyncio
+from typing import Any
 
 import pytest
 
@@ -36,8 +37,10 @@ class FakeProcess:
         return 0
 
 
-def _settings(**overrides) -> ReasonerSettings:
-    defaults = {
+def _settings(**overrides: Any) -> ReasonerSettings:
+    # See test_reasoner_server_manager._settings: the mixed-type literal needs
+    # an explicit Any value type for the ** expansion to type-check.
+    defaults: dict[str, Any] = {
         "enabled": True,
         "autostart": True,
         "startup_timeout": 1,

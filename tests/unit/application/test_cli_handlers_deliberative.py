@@ -7,6 +7,8 @@ LEGGIE_REASONER__ENABLED is not set — no accidental network/process activity.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
@@ -35,7 +37,7 @@ class FakeDeliberativeFlow:
         self.server_manager = server_manager
         self.citation_parser = citation_parser
         self.max_tokens_per_run = max_tokens_per_run
-        self.run_calls: list[dict] = []
+        self.run_calls: list[dict[str, Any]] = []
         FakeDeliberativeFlow.instances.append(self)
 
     async def run(self, file_path, output_dir="Outputs", perspective="neutral"):
@@ -135,6 +137,7 @@ class TestDeliberativeRoutingDisabled:
         result = await handler.handle(command)
 
         assert result.success is False
+        assert result.error is not None
         assert "disabled" in result.error.lower()
         assert len(FakeDeliberativeFlow.instances) == 0
 
@@ -206,6 +209,7 @@ class TestDeliberativeRoutingEnabled:
         result = await handler.handle(command)
 
         assert result.success is False
+        assert result.error is not None
         assert "unavailable" in result.error.lower()
 
     @pytest.mark.asyncio
@@ -232,6 +236,7 @@ class TestDeliberativeRoutingEnabled:
         result = await handler.handle(command)
 
         assert result.success is False
+        assert result.error is not None
         assert "budget" in result.error.lower()
 
 
@@ -259,6 +264,7 @@ class TestDeliberativeFallback:
         result = await handler.handle(command)
 
         assert result.success is False
+        assert result.error is not None
         assert "--fallback" in result.error
 
     @pytest.mark.asyncio

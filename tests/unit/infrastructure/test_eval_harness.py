@@ -58,7 +58,12 @@ class TestGoldSet:
         assert len(loaded.get_labels("bill-002")) == 1
 
 
-def make_finding(finding_type, issue_text="test issue", confidence=0.7, severity="medium"):
+def make_finding(
+    finding_type: FindingType,
+    issue_text: str = "test issue",
+    confidence: float = 0.7,
+    severity: str = "medium",
+) -> Finding:
     return Finding(
         finding_type=finding_type,
         irac=IRAC(

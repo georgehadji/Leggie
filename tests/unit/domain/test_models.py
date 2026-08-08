@@ -163,7 +163,9 @@ class TestFinding:
             ],
         )
         assert len(finding.evidence) == 1
-        assert finding.evidence[0].citation.resolved is True
+        citation = finding.evidence[0].citation
+        assert citation is not None
+        assert citation.resolved is True
 
     def test_finding_frozen(self):
         finding = Finding(

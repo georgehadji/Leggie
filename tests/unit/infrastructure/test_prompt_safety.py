@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from leggie.application.ports.llm import LLMRequest
+from leggie.application.ports.llm import LLMPort, LLMRequest
 from leggie.infrastructure.llm.prompt_safety import (
     DefaultQuarantineStrategy,
     PromptHardeningDecorator,
 )
 
 
-class _CaptureLLM:
+class _CaptureLLM(LLMPort):
     """Records the request it receives so tests can assert hardening."""
 
     _default_model = "test-model"
