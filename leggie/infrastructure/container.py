@@ -25,7 +25,6 @@ from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
 from leggie.application.ports.reasoner import ReasonerPort
-from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.ports.state import StatePort
 from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
@@ -193,13 +192,11 @@ class Container:
         locator = ResourceLocator()
         self.register(CheckpointStore, lambda: CheckpointStore(str(locator.checkpoint_path())))
 
-        # Blackboard / Retrieval / Reranker
+        # Blackboard / Reranker
         from leggie.application.ports.reranker import RerankerPort
         from leggie.infrastructure.blackboard_adapter import BlackboardAdapter
         from leggie.infrastructure.reranker import OpenRouterReranker
-        from leggie.infrastructure.retrieval_adapter import SimpleRetrievalAdapter
         self.register(BlackboardPort, lambda: BlackboardAdapter())
-        self.register(RetrievalPort, lambda: SimpleRetrievalAdapter())
 
         def _create_reranker() -> RerankerPort:
             from leggie.config.settings import get_settings

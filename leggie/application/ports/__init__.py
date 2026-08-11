@@ -13,7 +13,6 @@ from leggie.application.ports.reasoner import (
     ReasonerResult,
     ReasonerUnavailableError,
 )
-from leggie.application.ports.retrieval import RetrievalPort, RetrievalResult
 from leggie.application.ports.router import RouteResult, RouterPort
 from leggie.application.ports.state import StatePort
 
@@ -21,8 +20,6 @@ __all__ = [
     "LLMPort",
     "RouterPort",
     "RouteResult",
-    "RetrievalPort",
-    "RetrievalResult",
     "StatePort",
     "EventBusPort",
     "BlackboardPort",

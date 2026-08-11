@@ -364,10 +364,10 @@ EXIT_INTERRUPTED = 6
 def _exit_code_for(exc: BaseException) -> int:
     """Return the documented exit code for an exception type (Template Method)."""
     # Import lazily to avoid circular imports at module load.
+    from leggie.application.ports.llm import BudgetExceededError, LLMConfigurationError, LLMError
     from leggie.application.workflow.bill_analysis_flow import ParseIntegrityError
     from leggie.infrastructure.ingest import IngestError, UnsupportedFormatError
     from leggie.infrastructure.ingest.base import InputNotFoundError
-    from leggie.application.ports.llm import BudgetExceededError, LLMConfigurationError, LLMError
 
     if isinstance(exc, KeyboardInterrupt):
         return EXIT_INTERRUPTED

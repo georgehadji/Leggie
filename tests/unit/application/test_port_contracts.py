@@ -18,7 +18,6 @@ from leggie.application.ports.reasoner import (
     ReasonerResult,
     ReasonerUnavailableError,
 )
-from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.router import RouteResult, RouterPort
 from leggie.application.ports.state import StatePort
 from leggie.domain.models import (
@@ -52,15 +51,6 @@ class FakeRouter(RouterPort):
         return None
     def supported_models(self) -> list[str]:
         return ["fake-model"]
-
-
-class FakeRetrieval(RetrievalPort):
-    async def search(self, query, corpus="default", top_k=10, mode="hybrid"):
-        return []
-    async def get_document(self, document_id, corpus="default"):
-        return None
-    async def corpus_stats(self, corpus="default"):
-        return {"size": 0}
 
 
 class FakeCitationParser(CitationParserPort):

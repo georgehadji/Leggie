@@ -16,7 +16,6 @@ from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.parse import ParsePort
 from leggie.application.ports.reranker import RerankerPort
-from leggie.application.ports.retrieval import RetrievalPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.ports.state import StatePort
 from leggie.domain.models import WorkflowState
@@ -105,11 +104,6 @@ class TestContainerBindings:
         board = container.get(BlackboardPort)
         from leggie.infrastructure.blackboard_adapter import BlackboardAdapter
         assert isinstance(board, BlackboardAdapter)
-
-    def test_retrieval_port_resolves(self, container: Container):
-        retrieval = container.get(RetrievalPort)
-        from leggie.infrastructure.retrieval_adapter import SimpleRetrievalAdapter
-        assert isinstance(retrieval, SimpleRetrievalAdapter)
 
     def test_router_port_resolves(self, container: Container):
         router = container.get(RouterPort)
