@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from leggie.application.ports.llm import LLMRateLimitError, LLMTimeoutError
 from leggie.infrastructure import llm
-from leggie.infrastructure.llm.base import LLMRateLimitError, LLMTimeoutError
 from leggie.infrastructure.llm.decorators import with_retry
 
 

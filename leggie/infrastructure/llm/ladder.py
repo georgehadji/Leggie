@@ -15,8 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from leggie.application.ports.llm import LLMPort, LLMRequest, LLMResponse
-from leggie.infrastructure.llm.base import LLMError
+from leggie.application.ports.llm import LLMError, LLMPort, LLMRequest, LLMResponse
 from leggie.observability import get_logger
 
 logger = get_logger(__name__)

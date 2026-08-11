@@ -268,13 +268,13 @@ class TestExitCodes:
     """Every documented exit code is produced by a test (PROD-19)."""
 
     def test_budget_exceeded_exit_code(self):
-        from leggie.infrastructure.llm.base import BudgetExceededError
+        from leggie.application.ports.llm import BudgetExceededError
         from leggie.interfaces.cli import EXIT_BUDGET_EXCEEDED, _exit_code_for
         assert _exit_code_for(BudgetExceededError("over")) == EXIT_BUDGET_EXCEEDED
 
     def test_config_error_exit_code(self):
+        from leggie.application.ports.llm import LLMConfigurationError
         from leggie.infrastructure.ingest import UnsupportedFormatError
-        from leggie.infrastructure.llm.base import LLMConfigurationError
         from leggie.interfaces.cli import EXIT_CONFIG_ERROR, _exit_code_for
         assert _exit_code_for(LLMConfigurationError("bad key")) == EXIT_CONFIG_ERROR
         assert _exit_code_for(UnsupportedFormatError("unknown")) == EXIT_CONFIG_ERROR
@@ -285,8 +285,8 @@ class TestExitCodes:
         assert _exit_code_for(ParseIntegrityError("bad")) == EXIT_DEGRADED_PARSE
 
     def test_provider_unavailable_exit_code(self):
+        from leggie.application.ports.llm import LLMError, LLMTimeoutError
         from leggie.infrastructure.ingest import IngestError
-        from leggie.infrastructure.llm.base import LLMError, LLMTimeoutError
         from leggie.interfaces.cli import EXIT_PROVIDER_UNAVAILABLE, _exit_code_for
         assert _exit_code_for(LLMError("down")) == EXIT_PROVIDER_UNAVAILABLE
         assert _exit_code_for(LLMTimeoutError("down")) == EXIT_PROVIDER_UNAVAILABLE

@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from leggie.application.ports.llm import LLMConfigurationError, LLMError, LLMRateLimitError
 from leggie.application.ports.reranker import RerankResult
-from leggie.infrastructure.llm.base import LLMConfigurationError, LLMError, LLMRateLimitError
 from leggie.infrastructure.reranker import OpenRouterReranker
 
 

@@ -7,8 +7,12 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any, TypeVar, cast
 
-from leggie.application.ports.llm import LLMPort
-from leggie.infrastructure.llm.base import BudgetExceededError, LLMRateLimitError, LLMTimeoutError
+from leggie.application.ports.llm import (
+    BudgetExceededError,
+    LLMPort,
+    LLMRateLimitError,
+    LLMTimeoutError,
+)
 
 # Preserves the decorated function's own signature. Typed as
 # Callable[..., Any] -> Callable[..., Any], this decorator erased the return

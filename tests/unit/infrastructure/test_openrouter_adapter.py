@@ -10,13 +10,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leggie.application.ports.llm import LLMRequest
+from leggie.application.ports.llm import LLMError, LLMRateLimitError, LLMRequest
 from leggie.infrastructure.llm import (
     LLMAdapter,
     LLMConfigurationError,
     OpenRouterProvider,
 )
-from leggie.infrastructure.llm.base import LLMError, LLMRateLimitError
 
 _OK_BODY: dict[str, Any] = {
     "choices": [{"message": {"content": "OK", "role": "assistant"}, "finish_reason": "stop"}],

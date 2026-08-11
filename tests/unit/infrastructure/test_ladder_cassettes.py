@@ -18,10 +18,9 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, Field
 
-from leggie.application.ports.llm import LLMPort, LLMRequest, LLMResponse
+from leggie.application.ports.llm import LLMError, LLMPort, LLMRequest, LLMResponse
 from leggie.domain.models import ModelTier
 from leggie.infrastructure.budget_guard import BudgetGuard
-from leggie.infrastructure.llm.base import LLMError
 from leggie.infrastructure.llm.decorators import BudgetGuardDecorator
 from leggie.infrastructure.llm.ladder import StructuredOutputDecorator
 
@@ -142,7 +141,7 @@ class TestBudgetBlock:
 
     @pytest.mark.asyncio
     async def test_over_budget_raises_budget_exceeded(self):
-        from leggie.infrastructure.llm.base import BudgetExceededError
+        from leggie.application.ports.llm import BudgetExceededError
         # A guard too small for even one call.
         guard = BudgetGuard(max_tokens=10, max_cost=0.000001)
         inner = _FakeInner([("success", {"content": "{}"})])

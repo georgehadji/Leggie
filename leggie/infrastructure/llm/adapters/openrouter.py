@@ -12,7 +12,13 @@ from typing import Any
 
 import httpx
 
-from leggie.application.ports.llm import LLMRequest, LLMResponse
+from leggie.application.ports.llm import (
+    LLMConfigurationError,
+    LLMError,
+    LLMRateLimitError,
+    LLMRequest,
+    LLMResponse,
+)
 from leggie.infrastructure.llm.base import BaseLLMProvider
 from leggie.infrastructure.llm.decorators import with_retry
 from leggie.infrastructure.rate_limiter import RateLimiter
@@ -41,7 +47,6 @@ class OpenRouterProvider(BaseLLMProvider):
                  rate_limiter: RateLimiter | None = None,
                  http_client: httpx.AsyncClient | None = None) -> None:
         if not api_key:
-            from leggie.infrastructure.llm.base import LLMConfigurationError
             raise LLMConfigurationError("OpenRouter API key not configured")
         self._api_key = api_key
         self._base_url = base_url
@@ -95,13 +100,11 @@ class OpenRouterProvider(BaseLLMProvider):
             retry_after = _parse_retry_after(resp)
             if retry_after is not None:
                 await asyncio.sleep(retry_after)
-            from leggie.infrastructure.llm.base import LLMRateLimitError
             raise LLMRateLimitError(
                 "OpenRouter rate limited"
                 + (f" (retry after {retry_after}s)" if retry_after else "")
             )
         if resp.status_code != 200:
-            from leggie.infrastructure.llm.base import LLMError
             body_text = resp.text[:_MAX_ERROR_BODY_CHARS]
             raise LLMError(
                 f"OpenRouter API error {resp.status_code}: {body_text}"

@@ -58,3 +58,30 @@ class LLMPort(ABC):
     async def count_tokens(self, text: str, model: str | None = None) -> int:
         """Count tokens for the given text and model."""
         ...
+
+
+# IMPL-1 Group C (2026-08-10): moved from infrastructure/llm/base.py. Callers
+# across every layer are expected to catch these (cli_handlers.py did, across
+# a layer boundary import-linter had to whitelist) — an exception a caller is
+# meant to catch is part of the port's contract, not an implementation detail.
+# Mirrors this codebase's own ReasonerUnavailableError precedent
+# (application/ports/reasoner.py). BaseLLMProvider stays in infrastructure —
+# it has no cross-layer callers, it's a provider-adapter-internal ABC.
+class LLMError(Exception):
+    """Base LLM error."""
+
+
+class LLMConfigurationError(LLMError):
+    """No API key configured for the requested provider."""
+
+
+class LLMTimeoutError(LLMError):
+    """LLM call timed out."""
+
+
+class LLMRateLimitError(LLMError):
+    """Rate limited by provider."""
+
+
+class BudgetExceededError(LLMError):
+    """Budget guard tripped."""

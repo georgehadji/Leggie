@@ -157,10 +157,22 @@ ignore_imports = [
     # equivalent — it uses different regexes/output shape than GreekCitationParser.
     # See ARCHITECTURE_IMPLEMENTATION_PLAN_2026-08-10.md §2.1 Group A footnote.
     "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.parse",
-    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.llm.base",
+    # IMPL-1 Group C (2026-08-10): LLMError/LLMConfigurationError/LLMTimeoutError/
+    # LLMRateLimitError/BudgetExceededError moved to application/ports/llm.py —
+    # callers across layer boundaries are expected to catch them, which makes
+    # them the port's contract, not infra's (mirrors ReasonerUnavailableError's
+    # existing home in application/ports/reasoner.py). BaseLLMProvider stayed in
+    # infrastructure/llm/base.py; it has no cross-layer callers. This line is gone.
+    # IMPL-1 Group B (2026-08-10) reassessed these as permanent, not debt: the
+    # plan proposed a string-key container binding, but CheckpointStore(path)/
+    # GoldSet(path)/EvalScorer(gold_set) all take a per-request runtime value
+    # (--checkpoint-path, gold_set_path) that a zero-arg container factory
+    # cannot supply. A string key wouldn't remove the import — cli_handlers
+    # still has to construct the class directly either way. Same reasoning
+    # applies to bill_analysis_flow's checkpoint_store: run(checkpoint_path=...)
+    # constructs one when the caller didn't inject one.
     "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.persistence.checkpoint_store",
     "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.persistence.eval_harness",
-    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.persistence.sqlite_event_store",
     "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.reasoner.server_manager",
     "leggie.application.workflow.bill_analysis_flow -> leggie.infrastructure.persistence.checkpoint_store",
     # ingest_parse.py's lazy-fallback factories mirror container.py's own

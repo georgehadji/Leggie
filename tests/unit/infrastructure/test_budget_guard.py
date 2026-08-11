@@ -152,7 +152,7 @@ class TestBudgetReservation:
             except Exception:
                 import sys
 
-                from leggie.infrastructure.llm.base import BudgetExceededError
+                from leggie.application.ports.llm import BudgetExceededError
                 if isinstance(sys.exc_info()[1], BudgetExceededError):
                     return "blocked"
                 raise

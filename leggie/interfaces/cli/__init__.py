@@ -367,7 +367,7 @@ def _exit_code_for(exc: BaseException) -> int:
     from leggie.application.workflow.bill_analysis_flow import ParseIntegrityError
     from leggie.infrastructure.ingest import IngestError, UnsupportedFormatError
     from leggie.infrastructure.ingest.base import InputNotFoundError
-    from leggie.infrastructure.llm.base import BudgetExceededError, LLMConfigurationError, LLMError
+    from leggie.application.ports.llm import BudgetExceededError, LLMConfigurationError, LLMError
 
     if isinstance(exc, KeyboardInterrupt):
         return EXIT_INTERRUPTED

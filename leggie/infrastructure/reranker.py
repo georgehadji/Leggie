@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from leggie.application.ports.llm import LLMConfigurationError, LLMError, LLMRateLimitError
 from leggie.application.ports.reranker import RerankerPort, RerankResult
 
 if TYPE_CHECKING:
@@ -27,7 +28,6 @@ class OpenRouterReranker(RerankerPort):
         default_model: str = "cohere/rerank-4-pro",
     ) -> None:
         if not api_key:
-            from leggie.infrastructure.llm.base import LLMConfigurationError
             raise LLMConfigurationError("OpenRouter API key not configured")
         self._api_key = api_key
         self._base_url = base_url
@@ -58,7 +58,6 @@ class OpenRouterReranker(RerankerPort):
         try:
             import httpx
         except ImportError as exc:
-            from leggie.infrastructure.llm.base import LLMError
             raise LLMError("httpx not installed") from exc
 
         headers = {
@@ -77,10 +76,8 @@ class OpenRouterReranker(RerankerPort):
     def _parse(self, resp: httpx.Response, documents: list[str]) -> list[RerankResult]:
         """Parse a response into RerankResults (separated for testability)."""
         if resp.status_code == 429:
-            from leggie.infrastructure.llm.base import LLMRateLimitError
             raise LLMRateLimitError(f"OpenRouter rerank rate limited: {resp.text}")
         if resp.status_code != 200:
-            from leggie.infrastructure.llm.base import LLMError
             raise LLMError(f"OpenRouter rerank error {resp.status_code}: {resp.text}")
 
         data = resp.json()

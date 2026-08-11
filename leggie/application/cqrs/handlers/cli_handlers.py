@@ -24,7 +24,7 @@ from leggie.application.cqrs.commands.cli_commands import (
 from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.event_bus import EventBusPort
 from leggie.application.ports.ingest import IngestPort
-from leggie.application.ports.llm import LLMPort
+from leggie.application.ports.llm import LLMConfigurationError, LLMPort
 from leggie.application.ports.parse import ParsePort
 from leggie.application.ports.reasoner import ReasonerPort
 from leggie.application.ports.reranker import RerankerPort
@@ -44,8 +44,6 @@ logger = get_logger(__name__)
 def _resolve_llm_from_container(container: Container) -> LLMPort | None:
     """Resolve LLMPort from *container*, returning None on configuration errors."""
     if container.has_binding(LLMPort):
-        from leggie.infrastructure.llm.base import LLMConfigurationError
-
         try:
             llm: LLMPort = container.get(LLMPort)
             return llm
@@ -361,12 +359,15 @@ class ReplayRunHandler(CommandHandler["ReplayRunCommand", dict[str, object]]):
         self._container = container
 
     async def handle(self, command: ReplayRunCommand) -> CommandResult[dict[str, object]]:
-        from leggie.infrastructure.persistence.sqlite_event_store import SqliteEventStore
         try:
-            # Resolve event store from container
+            # Resolve event store from container. Duck-typed capability check
+            # instead of isinstance(store, SqliteEventStore) — replay() isn't on
+            # EventBusPort (InMemoryEventBus has no durable log to replay), and
+            # container.get() already returns Any, so nothing here needs the
+            # concrete type.
             store = self._container.get(EventBusPort)
 
-            if not isinstance(store, SqliteEventStore):
+            if not hasattr(store, "replay"):
                 return CommandResult(
                     success=False,
                     error="Replay requires a SQLite event store (set LEGGIE_DB__URL=sqlite:///leggie.db)",
