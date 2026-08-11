@@ -147,7 +147,7 @@ leggie/
 │   ├── clustering/   # Dedup, cross-article merging
 │   └── specs/        # Composable business rules (Specification pattern)
 ├── application/      # Use-cases, workflow, orchestration
-│   ├── ports/        # 11 abstract interfaces (LLM, Router, Retrieval, State, EventBus, Blackboard, CitationParser, Reranker, Reasoner, Parse, Ingest)
+│   ├── ports/        # 10 abstract interfaces (LLM, Router, State, EventBus, Blackboard, CitationParser, Reranker, Reasoner, Parse, Ingest)
 │   ├── workflow/     # FlowStateMachine + BillAnalysisFlow + Stage lifecycle
 │   ├── agents/       # 5 lens workers, CalibratedSkeptic, ImprovementEngine, Orchestrator
 │   ├── blackboard/   # Schema-grounded aggregation with Observer pattern

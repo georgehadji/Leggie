@@ -6,6 +6,22 @@
 
 Input gate: README/pyproject/CI present. **No ADR directory exists** — `[UNKNOWN — ADRs not provided]` applies to every design-rationale claim below; IMPL-6 already names this gap. Dockerfile present, no compose/k8s.
 
+> **Post-audit correction (2026-08-10, during IMPL-6):** verifying this audit
+> against source before building the implementation plan turned up two
+> errors, both in D7/Primary Risk #5 below. **D7 is WITHDRAWN**: the
+> deterministic pipeline does resolve citations against a real 181-identifier
+> index (`container.py` wires `CitationParserPort` with
+> `citation_index.json`) — the audit's claim that "no code path ever
+> populates a resolution index" was false, traced to reading the fail-closed
+> branch without checking the container binding. **A real bug was found in
+> D7's place: D22** — the *deliberative* pipeline (`cli_handlers.py`, prior
+> to IMPL-1) hand-constructed an unindexed `GreekCitationParser()`, so every
+> citation in a `_deliberative.md` report read "unverified" for a different
+> reason than D7 described. Fixed by IMPL-1 Group A (commit `28e10aa`). Full
+> account: `docs/ARCHITECTURE_IMPLEMENTATION_PLAN_2026-08-10.md` §0, ADR-0003.
+> IMPL-1/2/3/5 are now closed — see `docs/ADR/` for outcomes; this file's
+> body otherwise stands as the 2026-08-10 point-in-time record.
+
 ---
 
 ## Phase 1 — Architectural Fingerprinting
@@ -53,7 +69,8 @@ Input gate: README/pyproject/CI present. **No ADR directory exists** — `[UNKNO
 - [VERIFIED] Orchestration centralized (`BillAnalysisFlow.run()`), routing (`StaticRouter`/`RouterPort`) and provider details (`OpenRouterProvider` behind `LLMPort`) stay isolated — unchanged from prior audit.
 - [VERIFIED] Async consistent; concurrency bounded per-run via `asyncio.Semaphore` — but **every semaphore is instance-scoped, not global**: `orchestrator.py:66,218`, `skeptic.py:191`, `cove_verifier.py:152`, `bill_overview.py:41` each construct their own semaphore per `BillAnalysisFlow`/`Orchestrator` instance, sized from `LEGGIE_LLM__MAX_CONCURRENCY` (`config/settings.py:26`). **No process- or machine-wide governor exists.** Two concurrent `leggie analyze` invocations each independently spend up to `max_concurrency` — the ceiling is per-run, not per-host. This is IMPL-3 exactly as scoped, and matches the prior audit's Primary Risk #1 ("single-process bottleneck") which was never actually closed, only reworded. Severity **MEDIUM** (real under batch/CI use, not under interactive single-run use).
 - [VERIFIED] D9 (rate limiter) is genuinely closed, not "likely" as the architecture-contract skill hedges: `adapters/openrouter.py:49,59` — `RateLimiter(max_rate=5.0)` constructed in `__init__`, `.acquire()` awaited before every call.
-- [VERIFIED] D7 (citation resolution) is genuinely still open: `citation/__init__.py:117-126` — fail-closed by design when no index is supplied, and nothing in the live flow calls `build_resolution_index()` before `resolve()`. Confirmed correct-but-toothless, unchanged from the architecture-contract skill's 2026-07-14 note.
+- [FALSE, WITHDRAWN 2026-08-10] D7 (citation resolution) claimed "genuinely still open... nothing in the live flow calls `build_resolution_index()`". Wrong: `container.py:153-168` loads `citation_index.json` (181 identifiers) and wires it into `CitationParserPort` for the deterministic pipeline. The real defect was elsewhere — see D22 below and the correction note at the top of this file.
+- [VERIFIED, FIXED 2026-08-10] **D22** (new, found during IMPL-1 planning): the *deliberative* pipeline's `cli_handlers.py` hand-constructed `GreekCitationParser()` with no `resolution_index`, while its deterministic sibling got the indexed one from the container — same class, two construction sites, divergent behavior. Every citation in a `_deliberative.md` report read "unverified" regardless of whether it was a real, resolvable identifier. Fixed by routing both paths through `container.get(CitationParserPort)` (commit `28e10aa`); regression test in `test_container_bindings.py::test_citation_parser_port_carries_resolution_index`.
 - [VERIFIED] Failure semantics: retry via `with_retry` (now correctly typed, this session's fix), fallback via `StaticRouter.cascade()`, partial-failure isolation via `return_exceptions=True` in `analyze_document()` (D6, closed 2026-07-11 — the prior audit's [HYPOTHESIS] "could isolate lens failures" IMMEDIATE item is done).
 - [N/A] FastAPI/Redis/Docker stack checks: no FastAPI app in this repo (Reasoner is an external HTTP service, `ReasonerAdapter` is a plain client); no Redis; Docker exists (see Phase 3) but is a single CLI container, not a service topology — "are service boundaries reflected in container boundaries" doesn't apply to a single-binary CLI image.
 
@@ -89,7 +106,7 @@ Test/type/lint gates are all green (734 passed, 82.70% cov, ruff clean, `mypy le
 2. **False lockfile guarantee** — Docker builds are not actually reproducible despite the Dockerfile's own comment claiming they are. [VERIFIED]
 3. **No cross-run concurrency governor** — per-run semaphores don't compose under concurrent invocations. [VERIFIED]
 4. **`RetrievalPort` dead abstraction** — maintained surface area, zero reachable behavior. [VERIFIED]
-5. **Citation resolution permanently toothless (D7)** — every citation reports "unverified" because no code path ever populates a resolution index; correct-by-design fail-closed behavior, but it means the CoVe/citation-verification story is currently vacuous in production runs. [VERIFIED]
+5. ~~**Citation resolution permanently toothless (D7)**~~ — **[WITHDRAWN 2026-08-10]**, see correction note at top of file. Replaced by **D22** (deliberative-path parser lacked the index; fixed by IMPL-1).
 
 ### CRITICAL VIOLATIONS
 None.
@@ -109,7 +126,7 @@ None.
 - **[Phase 5, MEDIUM]** → IMPL-2: either wire `RetrievalPort` into a real call site (e.g., a citation-context or precedent-lookup use) or delete `SimpleRetrievalAdapter` + the DI registration + the port itself → no port should exist with zero callers.
 - **[Phase 4, MEDIUM]** → IMPL-3: add a governor above the per-run semaphores (module-level `asyncio.Semaphore` sized from a new `LEGGIE_LLM__GLOBAL_MAX_CONCURRENCY`, or a lock file / OS-level mutex for the CLI's single-host case) → concurrent CLI invocations stop competing for the same OpenRouter rate budget blind to each other.
 - **[Phase 2/5, LOW-MEDIUM]** → IMPL-4: extract the 4 aggregation rounds in `BlackboardAggregator.aggregate()` into a `list[AggregationStage]` iterated in order → new rounds register instead of requiring an edit to `aggregate()`.
-- **[Phase 5, LOW]** → D7: either wire a real resolution index (e.g., from the bill's own citation set via `build_resolution_index()`) into the live flow, or rename the finding from "unverified" to something that doesn't imply verification was attempted, since today it never is.
+- ~~**[Phase 5, LOW]** → D7: ...~~ **WITHDRAWN 2026-08-10** — the index was already wired for the deterministic path; D22 (the real defect, deliberative-path only) is fixed as of IMPL-1.
 
 **LONG-TERM**
 - Target-state unchanged from the prior audit for genuine multi-bill scale (task queue, Redis/Postgres-backed budget + event store) — nothing this pass found changes that trajectory; it's still correctly deferred.

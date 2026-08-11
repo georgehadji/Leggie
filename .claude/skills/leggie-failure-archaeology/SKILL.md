@@ -155,7 +155,25 @@ From `tasks/todo.md` §0 ("What changed vs the initial spec"):
   from 12–14.5% to 2.1%. Yield at the full 91 articles remains unproven —
   that, not the 5-lens configuration itself, is the open gap.
 
-## Open defect ledger (2026-07-14 snapshot)
+### 16. D22 — deliberative citations silently unverified — SETTLED 2026-08-10
+
+- **Symptom:** every citation in every `<stem>_deliberative.md` report read
+  "unverified," even for citations that were real, well-formed, known
+  identifiers.
+- **Root cause:** `cli_handlers.py`'s deliberative construction path built
+  `GreekCitationParser()` with no `resolution_index`, while the
+  deterministic path's construction site (same class) got the container's
+  indexed instance. Two construction sites for one class, only one wired
+  correctly — found while implementing the IMPL-1 composition-root refactor,
+  not from a bug report.
+- **Fix:** route both paths through `container.get(CitationParserPort)`
+  (commit `28e10aa`). Regression test:
+  `test_container_bindings.py::test_citation_parser_port_carries_resolution_index`.
+- **Moral:** "the same class, constructed twice" is a smell worth chasing
+  even when both call sites compile and pass their own local tests — see
+  ADR-0003, ADR-0002.
+
+## Open defect ledger (2026-07-14 snapshot; D7/D22 updated 2026-08-10)
 
 | ID | Defect | Status |
 |---|---|---|
@@ -163,7 +181,8 @@ From `tasks/todo.md` §0 ("What changed vs the initial spec"):
 | D4 | Verbalized Sampling unwired | CLOSED — `--verbalized-sampling` flag + `LEGGIE_ANALYSIS__USE_VERBALIZED_SAMPLING` wired into flow |
 | D5 | ModelBasedReranker unwired | PARTIAL — `LEGGIE_ANALYSIS__RERANKER=model` selector exists, but `configure_defaults()` binds no RerankerPort → silently composite |
 | D6 | article-level failure isolation | CLOSED with D3 (smoke v2 onward ran parallel fan-out) |
-| D7 | citation resolution index empty | PARTIAL — container loads `data/citation_index.json` into `GreekCitationParser` (`container.py:134`); index file is tiny (309B) — coverage, not wiring, is the gap |
+| D7 | citation resolution index empty | CLOSED 2026-08-10 — container loads `data/citation_index.json` (181 identifiers) into `GreekCitationParser` for the deterministic pipeline via `CitationParserPort`; this row's own prior "empty index" claim was outdated. See D22 for the real bug it was masking. |
+| D22 | deliberative pipeline's `cli_handlers.py` hand-constructed a second, unindexed `GreekCitationParser()` — every deliberative-report citation read "unverified" regardless of validity | CLOSED 2026-08-10 (IMPL-1 Group A, commit `28e10aa`) — both paths now resolve `CitationParserPort` from the container. ADR-0003. |
 | D8 | cli_handlers container/ad-hoc duplication | CLOSED — no `_try_get_*` fallbacks remain in `cli_handlers.py` |
 | D9 | rate limiter | LIKELY FIXED (constructed in LLMAdapter → OpenRouterProvider) — verify consumption |
 | D10 | resume-from-stage | PARTIAL (store exists, flow checkpoints only budget spend) |

@@ -35,7 +35,7 @@ Dependencies point inward only. Enforced by import-linter
 (`pyproject.toml [tool.importlinter]`, layers contract). Check with:
 `lint-imports` (needs `pip install -e ".[lint]"`).
 
-## 2. The ports (verified 2026-07-14 — 11 ports, README says 7: README is stale)
+## 2. The ports (verified 2026-08-10 — 10 ports; `RetrievalPort` deleted as dead code, IMPL-2/ADR-0004)
 
 | Port | File | Implemented by |
 |---|---|---|
@@ -47,7 +47,6 @@ Dependencies point inward only. Enforced by import-linter
 | `ParsePort` | `ports/parse.py` | `ParseAdapter` (`infrastructure/parse_adapter.py`) |
 | `ReasonerPort` | `ports/reasoner.py` | `ReasonerAdapter` (`infrastructure/reasoner/adapter.py`) — HTTP client to the external Reasoner backend for the deliberative pipeline; lifecycle via `ReasonerServerManager` (`infrastructure/reasoner/server_manager.py`) |
 | `RerankerPort` | `ports/reranker.py` | `OpenRouterReranker` (`infrastructure/reranker.py`) bound in `configure_defaults()` (container.py:176-183) — the `LEGGIE_ANALYSIS__RERANKER=model` selector now resolves a real adapter. D5 closed. |
-| `RetrievalPort` | `ports/retrieval.py` | retrieval (largely future work) |
 | `RouterPort` | `ports/router.py` | `StaticRouter` (`infrastructure/router/`) |
 | `StatePort` | `ports/state.py` | persistence |
 
@@ -141,11 +140,12 @@ CLI path: `interfaces/cli/__init__.py` → `Mediator` → handlers in
 | ID | Weakness | Status |
 |---|---|---|
 | D3 | Article loop was sequential; flow now calls parallel `analyze_document()` (`bill_analysis_flow.py:264`); concurrency via `LEGGIE_LLM__MAX_CONCURRENCY` | CLOSED 2026-07-11 |
-| D7 | Citation `resolution_index` empty → citations only ever "unverified" (fail-closed, correct but toothless) — `infrastructure/citation/__init__.py` `resolve()` | OPEN |
+| D7 | Citation `resolution_index` empty → citations only ever "unverified" | **CLOSED (was FALSE) 2026-08-10** — `container.py:153-168` loads `citation_index.json` (181 identifiers) and wires it into `CitationParserPort` for the deterministic pipeline; verified via `container.get(CitationParserPort).resolve()`. This row's prior "OPEN" claim was itself the bug — see D22, ADR-0003. |
+| D22 | Deliberative pipeline's `cli_handlers.py` constructed a second, bare `GreekCitationParser()` with no index — every deliberative-report citation read "unverified" regardless of validity | CLOSED 2026-08-10 (IMPL-1 Group A, commit `28e10aa`) — both paths now resolve `CitationParserPort` from the container. Regression: `test_container_bindings.py::test_citation_parser_port_carries_resolution_index`. |
 | D8 | `cli_handlers.py` retains legacy `_try_get_*` fallbacks beside the container | verify in source |
 | D9 | `RateLimiter(max_rate=5.0)` now constructed inside `LLMAdapter.__init__` and passed to `OpenRouterProvider` — appears wired; confirm consumption in `adapters/openrouter.py` | LIKELY FIXED, verify |
 | D10 | Resume-from-stage: only budget spend is checkpointed by the flow; `infrastructure/persistence/checkpoint_store.py` exists — check whether flow uses it | PARTIAL, verify |
-| — | README claims 7 ports / 199 tests; source has 11 ports / 531 tests (2026-07-15) | DOC DRIFT |
+| — | README claims 7 ports; source has 10 (2026-08-10, post RetrievalPort deletion) — see below, now fixed | DOC DRIFT |
 | — | Deliberative report skips Skeptic/CoVe by design — its claims are UNVERIFIED prose; do not treat `<stem>_deliberative.md` content as findings-grade evidence | BY DESIGN |
 | — | `LEGGIE_ANALYSIS__RERANKER=model` resolves `OpenRouterReranker` via container binding (2026-07) | CLOSED |
 
@@ -161,6 +161,23 @@ register in `_DEFAULT_LENSES` dict in `orchestrator.py`, add route entry in
 
 **New pipeline stage**: add a `WorkflowState` + `FlowStateMachine` transition,
 emit `STAGE_COMPLETED` events, keep aggregation logic in a service class.
+
+## 6a. Design decisions now recorded as ADRs (2026-08-10)
+
+`docs/ADR/` exists as of IMPL-6. For rationale behind the composition root,
+D22, the RetrievalPort deletion, deliberative's Skeptic/CoVe skip, the
+concurrency-governor WONTFIX, and the aggregation-Strategy deferral, read
+the ADR instead of re-deriving it here:
+
+| Decision | ADR |
+|---|---|
+| 6-layer Clean/Hexagonal order | 0001 |
+| Composition root (`container.py`), string-key vs. port criteria | 0002 |
+| Citations fail closed, index as package data, D22 | 0003 |
+| `RetrievalPort` deleted, CELLAR is the reintroduction trigger | 0004 |
+| Deliberative skips Skeptic/CoVe | 0005 |
+| Concurrency governor WONTFIX, file-lock fallback design | 0006 |
+| Aggregation stays linear, Chain-of-Responsibility trigger | 0007 |
 
 ## When NOT to use this skill
 
