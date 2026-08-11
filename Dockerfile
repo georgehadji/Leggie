@@ -7,11 +7,12 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     build-essential libffi-dev libxml2-dev libxslt1-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel pip-tools
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install runtime dependencies only from lockfile
+# Install runtime dependencies only from lockfile — hashes enforced, so a
+# tampered or drifted requirements.txt fails the build instead of installing.
 COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r /app/requirements.txt
 
 # ── Runtime stage ────────────────────────────────────────────────
 FROM python:3.12-slim@sha256:829dd7cd37a5e64eaea744a246cf9fe31484a16e83e50a2e594ec8a0353e87b5

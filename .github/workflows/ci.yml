@@ -32,6 +32,19 @@ jobs:
         run: |
           pip install -e ".[dev,lint]"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Verify requirements.txt matches pyproject.toml
+        # Drift check (IMPL-5): fails the build if someone edits
+        # pyproject.toml's [project.dependencies] without recompiling the
+        # lockfile. uv, not pip-compile — pip-tools 7.6.0 does not import
+        # under pip>=24 (pip._internal.utils.compat.stdlib_pkgs was removed),
+        # so uv is the lockfile tool this repo actually uses.
+        run: |
+          uv pip compile pyproject.toml --generate-hashes --python 3.12 --output-file /tmp/requirements.txt
+          diff -u requirements.txt /tmp/requirements.txt
+
       - name: Lint with ruff
         run: ruff check leggie/ tests/
 
