@@ -151,7 +151,10 @@ ignore_imports = [
     # cli_handlers now resolves CitationParserPort/IngestPort/ParsePort/ReasonerPort
     # from the container instead of hand-constructing adapters. Also fixed D22
     # (deliberative path was constructing an unindexed citation parser).
-    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.container",
+    # IMPL-1 Group C: the TYPE_CHECKING import of Container itself is gone too —
+    # cli_handlers.py now type-hints against a local ContainerProtocol (get/
+    # has_binding only), mirroring DeliberativeFlow's ServerLifecycle Protocol.
+    # This line is gone.
     # Group A deferred this one: ParseDocumentHandler still imports DocumentParser
     # directly for extract_citations(), which has no ParsePort/CitationParserPort
     # equivalent — it uses different regexes/output shape than GreekCitationParser.

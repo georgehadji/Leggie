@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
 from leggie.application.cqrs.base import CommandHandler, CommandResult
 from leggie.application.cqrs.commands.cli_commands import (
@@ -32,16 +32,25 @@ from leggie.application.ports.router import RouterPort
 from leggie.application.services.cove_verifier import CoVeVerifier
 from leggie.observability import get_logger
 
-if TYPE_CHECKING:
-    from leggie.infrastructure.container import Container
-
 logger = get_logger(__name__)
+
+
+class ContainerProtocol(Protocol):
+    """Minimal capability handlers need from Container (IMPL-1 Group C).
+
+    Kept as a Protocol, not the concrete Container class, so this
+    application-layer module never imports infrastructure — mirrors
+    DeliberativeFlow's ServerLifecycle Protocol.
+    """
+
+    def get(self, port_type: type | str) -> Any: ...
+    def has_binding(self, port_type: type) -> bool: ...
 
 
 # ── Shared resolver helpers ───────────────────────────────────────────
 
 
-def _resolve_llm_from_container(container: Container) -> LLMPort | None:
+def _resolve_llm_from_container(container: ContainerProtocol) -> LLMPort | None:
     """Resolve LLMPort from *container*, returning None on configuration errors."""
     if container.has_binding(LLMPort):
         try:
@@ -53,7 +62,7 @@ def _resolve_llm_from_container(container: Container) -> LLMPort | None:
     return None
 
 
-def _resolve_router_from_container(container: Container) -> RouterPort | None:
+def _resolve_router_from_container(container: ContainerProtocol) -> RouterPort | None:
     """Resolve RouterPort from *container*."""
     if container.has_binding(RouterPort):
         router: RouterPort = container.get(RouterPort)
@@ -61,7 +70,7 @@ def _resolve_router_from_container(container: Container) -> RouterPort | None:
     return None
 
 
-def _resolve_cove_from_container(container: Container) -> CoVeVerifier:
+def _resolve_cove_from_container(container: ContainerProtocol) -> CoVeVerifier:
     """Resolve a CoVeVerifier wired with LLM + router + citation parser."""
     llm = _resolve_llm_from_container(container)
     router = _resolve_router_from_container(container)
@@ -77,7 +86,7 @@ def _resolve_cove_from_container(container: Container) -> CoVeVerifier:
 class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]]):
     """Handle bill document parsing."""
 
-    def __init__(self, container: Container) -> None:
+    def __init__(self, container: ContainerProtocol) -> None:
         self._container = container
 
     async def handle(self, command: ParseDocumentCommand) -> CommandResult[dict[str, Any]]:
@@ -134,7 +143,7 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]])
 class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
     """Handle bill analysis using BillAnalysisFlow (deterministic) or DeliberativeFlow (opt-in)."""
 
-    def __init__(self, container: Container) -> None:
+    def __init__(self, container: ContainerProtocol) -> None:
         self._container = container
 
     async def handle(self, command: AnalyzeBillCommand) -> CommandResult[str]:
@@ -264,7 +273,7 @@ class PreviewBillHandler(CommandHandler[PreviewBillCommand, dict[str, Any]]):
     pass into `leggie analyze --articles`.
     """
 
-    def __init__(self, container: Container) -> None:
+    def __init__(self, container: ContainerProtocol) -> None:
         self._container = container
 
     async def handle(self, command: PreviewBillCommand) -> CommandResult[dict[str, Any]]:
@@ -302,7 +311,7 @@ class PreviewBillHandler(CommandHandler[PreviewBillCommand, dict[str, Any]]):
 class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
     """Handle gold-set evaluation."""
 
-    def __init__(self, container: Container) -> None:
+    def __init__(self, container: ContainerProtocol) -> None:
         self._container = container
 
     async def handle(self, command: EvalGoldSetCommand) -> CommandResult[list[Any]]:
@@ -355,7 +364,7 @@ def _find_bill_file(bill_id: str, search_dir: Path) -> Path | None:
 class ReplayRunHandler(CommandHandler["ReplayRunCommand", dict[str, object]]):
     """Handle run replay from the SQLite event store (PROD-06d)."""
 
-    def __init__(self, container: Container) -> None:
+    def __init__(self, container: ContainerProtocol) -> None:
         self._container = container
 
     async def handle(self, command: ReplayRunCommand) -> CommandResult[dict[str, object]]:
