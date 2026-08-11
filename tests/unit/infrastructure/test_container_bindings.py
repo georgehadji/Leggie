@@ -75,6 +75,32 @@ class TestContainerBindings:
         from leggie.infrastructure.citation import GreekCitationParser
         assert isinstance(parser, GreekCitationParser)
 
+    @pytest.mark.asyncio
+    async def test_citation_parser_port_carries_resolution_index(self, container: Container):
+        """D22: the container must wire a populated resolution index, not a
+        bare parser — a bare GreekCitationParser() fails closed and reports
+        every citation as unverified regardless of whether it actually
+        resolves. Regression for AnalyzeBillHandler._handle_deliberative
+        constructing GreekCitationParser() by hand instead of resolving
+        CitationParserPort from this same container."""
+        import json
+
+        from leggie.domain.models import Citation, CitationScheme
+        from leggie.infrastructure.resources import ResourceLocator
+
+        index_path = ResourceLocator().package_resource("leggie.data", "citation_index.json")
+        known_identifier = json.loads(index_path.read_text(encoding="utf-8"))["identifiers"][0]
+
+        parser = container.get(CitationParserPort)
+        citation = Citation(
+            scheme=CitationScheme.UNKNOWN,
+            identifier=known_identifier,
+            original_text=known_identifier,
+        )
+        resolved = await parser.resolve(citation)
+
+        assert resolved.resolved is True
+
     def test_blackboard_port_resolves(self, container: Container):
         board = container.get(BlackboardPort)
         from leggie.infrastructure.blackboard_adapter import BlackboardAdapter

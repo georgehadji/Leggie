@@ -147,17 +147,28 @@ layers = [
 # entries are gone: they're legal downward dependencies now, not ignored ones.
 ignore_imports = [
     # ARCH-04 — removed by Phase 2 (composition-root construction moved to container.py)
-    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.citation",
+    # IMPL-1 Group A (2026-08-10): citation/ingest/reasoner.adapter drained —
+    # cli_handlers now resolves CitationParserPort/IngestPort/ParsePort/ReasonerPort
+    # from the container instead of hand-constructing adapters. Also fixed D22
+    # (deliberative path was constructing an unindexed citation parser).
     "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.container",
-    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.ingest",
-    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.llm.base",
+    # Group A deferred this one: ParseDocumentHandler still imports DocumentParser
+    # directly for extract_citations(), which has no ParsePort/CitationParserPort
+    # equivalent — it uses different regexes/output shape than GreekCitationParser.
+    # See ARCHITECTURE_IMPLEMENTATION_PLAN_2026-08-10.md §2.1 Group A footnote.
     "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.parse",
+    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.llm.base",
     "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.persistence.checkpoint_store",
     "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.persistence.eval_harness",
     "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.persistence.sqlite_event_store",
-    "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.reasoner.adapter",
     "leggie.application.cqrs.handlers.cli_handlers -> leggie.infrastructure.reasoner.server_manager",
     "leggie.application.workflow.bill_analysis_flow -> leggie.infrastructure.persistence.checkpoint_store",
+    # ingest_parse.py's lazy-fallback factories mirror container.py's own
+    # IngestPort/ParsePort bindings exactly (verified 2026-08-10: both are
+    # one-line passthroughs to IngestAdapter()/ParseAdapter()). Deleting the
+    # file requires making BillAnalysisFlow/DeliberativeFlow's ingester/parser
+    # params non-optional, which touches ~57 test construction sites across
+    # 3 files that rely on the default today — deferred to its own phase.
     "leggie.application.workflow.ingest_parse -> leggie.infrastructure.ingest_adapter",
     "leggie.application.workflow.ingest_parse -> leggie.infrastructure.parse_adapter",
 ]

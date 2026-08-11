@@ -17,6 +17,7 @@ import pytest
 
 from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
 from leggie.application.cqrs.handlers import cli_handlers
+from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.reasoner import ReasonerPort, ReasonerRequest, ReasonerResult
 from leggie.config.settings import ReasonerSettings, Settings
 from leggie.infrastructure.container import Container
@@ -124,16 +125,24 @@ def _reset_instances():
 
 
 @pytest.fixture
-def patch_collaborators(monkeypatch):
+def patch_collaborators(monkeypatch) -> Container:
     """Real DeliberativeFlow + real ReasonerServerManager logic; fake only the
-    OS/network-touching leaves (process spawn, HTTP client, citation parser)."""
-    import leggie.infrastructure.citation as citation_module
-    import leggie.infrastructure.reasoner.adapter as adapter_module
+    OS/network-touching leaves (process spawn, HTTP client, citation parser).
+
+    D22: _handle_deliberative resolves ReasonerPort/CitationParserPort from
+    the container now, so those two are registered bindings rather than
+    monkeypatched classes (see test_cli_handlers_deliberative.py)."""
     import leggie.infrastructure.reasoner.server_manager as server_manager_module
 
-    monkeypatch.setattr(adapter_module, "ReasonerAdapter", FakeReasonerAdapter)
     monkeypatch.setattr(server_manager_module, "ReasonerServerManager", RealManagerFakeProcess)
-    monkeypatch.setattr(citation_module, "GreekCitationParser", FakeGreekCitationParser)
+
+    container = Container()
+    container.register(
+        ReasonerPort,
+        lambda: FakeReasonerAdapter(base_url="http://fake", api_key="", request_timeout=1.0),
+    )
+    container.register(CitationParserPort, lambda: FakeGreekCitationParser())
+    return container
 
 
 def _settings_with_reasoner(**overrides) -> Settings:
@@ -154,7 +163,7 @@ class TestReasonerProcessLifecycle:
         bill = tmp_path / "bill.txt"
         bill.write_text(SAMPLE_BILL, encoding="utf-8")
 
-        handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        handler = cli_handlers.AnalyzeBillHandler(container=patch_collaborators)
         command = AnalyzeBillCommand(
             file_path=str(bill), pipeline="deliberative", output_path=str(tmp_path / "out"),
         )
@@ -200,7 +209,7 @@ class TestReasonerProcessLifecycle:
 
         bill = tmp_path / "bill.txt"
         bill.write_text(SAMPLE_BILL, encoding="utf-8")
-        handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        handler = cli_handlers.AnalyzeBillHandler(container=patch_collaborators)
         command = AnalyzeBillCommand(file_path=str(bill), pipeline="deliberative")
         result = await handler.handle(command)
 
@@ -251,7 +260,7 @@ class TestReasonerProcessLifecycle:
 
         bill = tmp_path / "bill.txt"
         bill.write_text(SAMPLE_BILL, encoding="utf-8")
-        handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        handler = cli_handlers.AnalyzeBillHandler(container=patch_collaborators)
         command = AnalyzeBillCommand(
             file_path=str(bill), pipeline="deliberative", fallback=True
         )

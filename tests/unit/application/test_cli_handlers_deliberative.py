@@ -13,6 +13,8 @@ import pytest
 
 from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
 from leggie.application.cqrs.handlers import cli_handlers
+from leggie.application.ports.citation_parser import CitationParserPort
+from leggie.application.ports.reasoner import ReasonerPort
 from leggie.config.settings import ReasonerSettings, Settings
 from leggie.infrastructure.container import Container
 
@@ -76,17 +78,29 @@ def _reset_fake_instances():
 
 
 @pytest.fixture
-def patch_deliberative_collaborators(monkeypatch):
-    """Patch the classes AnalyzeBillHandler locally imports for the deliberative path."""
+def patch_deliberative_collaborators(monkeypatch) -> Container:
+    """Wire a Container with fakes for the deliberative path's collaborators.
+
+    D22 fix: AnalyzeBillHandler._handle_deliberative resolves ReasonerPort and
+    CitationParserPort from the container instead of constructing
+    ReasonerAdapter/GreekCitationParser directly, so those two are registered
+    as bindings here rather than monkeypatched. DeliberativeFlow and
+    ReasonerServerManager are still hand-constructed by the handler (Group C,
+    not yet container-resolved) so those stay monkeypatched via local import.
+    """
     import leggie.application.workflow.deliberative_flow as deliberative_flow_module
-    import leggie.infrastructure.citation as citation_module
-    import leggie.infrastructure.reasoner.adapter as adapter_module
     import leggie.infrastructure.reasoner.server_manager as server_manager_module
 
     monkeypatch.setattr(deliberative_flow_module, "DeliberativeFlow", FakeDeliberativeFlow)
-    monkeypatch.setattr(adapter_module, "ReasonerAdapter", FakeReasonerAdapter)
     monkeypatch.setattr(server_manager_module, "ReasonerServerManager", FakeReasonerServerManager)
-    monkeypatch.setattr(citation_module, "GreekCitationParser", FakeGreekCitationParser)
+
+    container = Container()
+    container.register(
+        ReasonerPort,
+        lambda: FakeReasonerAdapter(base_url="http://fake", api_key="", request_timeout=1.0),
+    )
+    container.register(CitationParserPort, lambda: FakeGreekCitationParser())
+    return container
 
 
 def _settings_with_reasoner(**reasoner_overrides) -> Settings:
@@ -142,11 +156,10 @@ class TestDeliberativeRoutingDisabled:
         assert len(FakeDeliberativeFlow.instances) == 0
 
 
-@pytest.mark.usefixtures("patch_deliberative_collaborators")
 class TestDeliberativeRoutingEnabled:
     @pytest.mark.asyncio
     async def test_constructs_deliberative_flow_with_configured_presets(
-        self, monkeypatch, tmp_path
+        self, monkeypatch, tmp_path, patch_deliberative_collaborators
     ):
         settings = _settings_with_reasoner(
             enabled=True,
@@ -157,7 +170,7 @@ class TestDeliberativeRoutingEnabled:
         import leggie.config.settings as settings_module
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
-        handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        handler = cli_handlers.AnalyzeBillHandler(container=patch_deliberative_collaborators)
         bill_path = str(tmp_path / "bill.txt")
         command = AnalyzeBillCommand(
             file_path=bill_path, pipeline="deliberative", perspective="neutral"
@@ -171,14 +184,20 @@ class TestDeliberativeRoutingEnabled:
         assert flow.stage2_preset == "custom-stage2"
         assert flow.run_calls[0]["file_path"] == bill_path
         assert flow.run_calls[0]["perspective"] == "neutral"
+        # D22: reasoner/citation_parser must come from the container, not a
+        # hand-constructed default.
+        assert isinstance(flow.reasoner, FakeReasonerAdapter)
+        assert isinstance(flow.citation_parser, FakeGreekCitationParser)
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_settings_perspective_when_unset(self, monkeypatch, tmp_path):
+    async def test_falls_back_to_settings_perspective_when_unset(
+        self, monkeypatch, tmp_path, patch_deliberative_collaborators
+    ):
         settings = _settings_with_reasoner(enabled=True, perspective="neutral")
         import leggie.config.settings as settings_module
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
-        handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        handler = cli_handlers.AnalyzeBillHandler(container=patch_deliberative_collaborators)
         command = AnalyzeBillCommand(
             file_path=str(tmp_path / "bill.txt"), pipeline="deliberative", perspective=None
         )
@@ -188,7 +207,9 @@ class TestDeliberativeRoutingEnabled:
         assert flow.run_calls[0]["perspective"] == "neutral"
 
     @pytest.mark.asyncio
-    async def test_reasoner_unavailable_error_reported_cleanly(self, monkeypatch, tmp_path):
+    async def test_reasoner_unavailable_error_reported_cleanly(
+        self, monkeypatch, tmp_path, patch_deliberative_collaborators
+    ):
         from leggie.application.ports.reasoner import ReasonerUnavailableError
 
         class RaisingFlow(FakeDeliberativeFlow):
@@ -202,7 +223,7 @@ class TestDeliberativeRoutingEnabled:
         import leggie.config.settings as settings_module
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
-        handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        handler = cli_handlers.AnalyzeBillHandler(container=patch_deliberative_collaborators)
         command = AnalyzeBillCommand(
             file_path=str(tmp_path / "bill.txt"), pipeline="deliberative"
         )
@@ -213,7 +234,9 @@ class TestDeliberativeRoutingEnabled:
         assert "unavailable" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_budget_exceeded_reported_cleanly(self, monkeypatch, tmp_path):
+    async def test_budget_exceeded_reported_cleanly(
+        self, monkeypatch, tmp_path, patch_deliberative_collaborators
+    ):
         from leggie.application.workflow.deliberative_flow import (
             DeliberativeBudgetExceededError,
         )
@@ -229,7 +252,7 @@ class TestDeliberativeRoutingEnabled:
         import leggie.config.settings as settings_module
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
-        handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        handler = cli_handlers.AnalyzeBillHandler(container=patch_deliberative_collaborators)
         command = AnalyzeBillCommand(
             file_path=str(tmp_path / "bill.txt"), pipeline="deliberative"
         )
@@ -240,10 +263,11 @@ class TestDeliberativeRoutingEnabled:
         assert "budget" in result.error.lower()
 
 
-@pytest.mark.usefixtures("patch_deliberative_collaborators")
 class TestDeliberativeFallback:
     @pytest.mark.asyncio
-    async def test_no_fallback_aborts_on_reasoner_unavailable(self, monkeypatch, tmp_path):
+    async def test_no_fallback_aborts_on_reasoner_unavailable(
+        self, monkeypatch, tmp_path, patch_deliberative_collaborators
+    ):
         from leggie.application.ports.reasoner import ReasonerUnavailableError
 
         class RaisingFlow(FakeDeliberativeFlow):
@@ -257,7 +281,7 @@ class TestDeliberativeFallback:
         import leggie.config.settings as settings_module
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
-        handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        handler = cli_handlers.AnalyzeBillHandler(container=patch_deliberative_collaborators)
         command = AnalyzeBillCommand(
             file_path=str(tmp_path / "bill.txt"), pipeline="deliberative", fallback=False
         )
@@ -269,7 +293,7 @@ class TestDeliberativeFallback:
 
     @pytest.mark.asyncio
     async def test_fallback_true_routes_to_deterministic_on_unavailable(
-        self, monkeypatch, tmp_path
+        self, monkeypatch, tmp_path, patch_deliberative_collaborators
     ):
         from leggie.application.ports.reasoner import ReasonerUnavailableError
 
@@ -295,7 +319,7 @@ class TestDeliberativeFallback:
             cli_handlers.AnalyzeBillHandler, "_handle_deterministic", fake_deterministic
         )
 
-        handler = cli_handlers.AnalyzeBillHandler(container=Container())
+        handler = cli_handlers.AnalyzeBillHandler(container=patch_deliberative_collaborators)
         command = AnalyzeBillCommand(
             file_path=str(tmp_path / "bill.txt"), pipeline="deliberative", fallback=True
         )

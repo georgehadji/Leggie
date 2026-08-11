@@ -23,7 +23,10 @@ from leggie.application.cqrs.commands.cli_commands import (
 )
 from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.event_bus import EventBusPort
+from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.llm import LLMPort
+from leggie.application.ports.parse import ParsePort
+from leggie.application.ports.reasoner import ReasonerPort
 from leggie.application.ports.reranker import RerankerPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.services.cove_verifier import CoVeVerifier
@@ -81,15 +84,20 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]])
 
     async def handle(self, command: ParseDocumentCommand) -> CommandResult[dict[str, Any]]:
         try:
-            from leggie.infrastructure.ingest import IngestorFactory
-            from leggie.infrastructure.parse import DocumentParser
+            ingest_port = self._container.get(IngestPort)
+            parse_port = self._container.get(ParsePort)
 
-            text = await IngestorFactory.ingest(Path(command.file_path))
-            parser = DocumentParser()
-            doc, report = parser.parse_with_integrity(
+            text = await ingest_port.ingest(Path(command.file_path))
+            doc, report = parse_port.parse_with_integrity(
                 text, title=Path(command.file_path).stem
             )
-            citations = parser.extract_citations(text)
+            # extract_citations is a DocumentParser-only method, not on ParsePort —
+            # it duplicates GreekCitationParser's regexes with different coverage
+            # (no URL scheme) and a different FEK identifier format. Left as a
+            # direct infra import pending a decision on which parser is canonical
+            # (see ARCHITECTURE_IMPLEMENTATION_PLAN_2026-08-10.md §2.1 Group A).
+            from leggie.infrastructure.parse import DocumentParser
+            citations = DocumentParser().extract_citations(text)
 
             output = {
                 "title": doc.title,
@@ -201,22 +209,22 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 DeliberativeBudgetExceededError,
                 DeliberativeFlow,
             )
-            from leggie.infrastructure.citation import GreekCitationParser
-            from leggie.infrastructure.reasoner.adapter import ReasonerAdapter
+
+            # D22: this used to hand-construct GreekCitationParser() with no
+            # resolution_index, while the deterministic path (_resolve_cove_from_container)
+            # got the container's 181-identifier index — every deliberative-report
+            # citation reported "unverified" regardless of whether it actually resolved.
             from leggie.infrastructure.reasoner.server_manager import ReasonerServerManager
 
-            reasoner = ReasonerAdapter(
-                base_url=settings.reasoner.base_url,
-                api_key=settings.reasoner.api_key,
-                request_timeout=float(settings.reasoner.request_timeout),
-            )
+            reasoner = self._container.get(ReasonerPort)
+            citation_parser = self._container.get(CitationParserPort)
             server_manager = ReasonerServerManager(settings.reasoner)
             flow = DeliberativeFlow(
                 reasoner=reasoner,
                 stage1_preset=settings.reasoner.stage1_preset,
                 stage2_preset=settings.reasoner.stage2_preset,
                 server_manager=server_manager,
-                citation_parser=GreekCitationParser(),
+                citation_parser=citation_parser,
                 max_tokens_per_run=settings.budget.max_tokens_per_run,
             )
             try:
