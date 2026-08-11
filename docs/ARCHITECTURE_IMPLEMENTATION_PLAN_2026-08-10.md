@@ -274,6 +274,11 @@ Recommended, in order of laziness:
    `# ponytail: advisory file lock, per-host only — Redis if multi-host appears`.
 3. Redis/queue only when Leggie stops being a CLI.
 
+**CLOSED 2026-08-10 — WONTFIX.** Asked directly: concurrent `leggie analyze`
+invocations are not a usage pattern here. Option 1 stands as the answer — no
+governor built. Reopens if that changes (batch usage, CI running multiple
+analyses at once); the file-lock design above is the fallback plan when it does.
+
 **Decision required from the operator before building anything here:** are
 concurrent `leggie analyze` runs a thing you actually do? If no, close IMPL-3
 as WONTFIX with that reason recorded, which is a legitimate outcome and
