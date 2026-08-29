@@ -85,6 +85,7 @@ class TestCoVeVerifier:
                 identifier="ΦΕΚ Α 137/2023",
                 original_text="ΦΕΚ Α 137/2023",
                 resolved=True,
+                checked=True,
             ),
         ]
         result = await verifier.verify(make_finding_with_citations(cites))
@@ -100,12 +101,14 @@ class TestCoVeVerifier:
                 identifier="ΦΕΚ Α 1/2023",
                 original_text="ΦΕΚ Α 1/2023",
                 resolved=True,
+                checked=True,
             ),
             Citation(
                 scheme=CitationScheme.CELEX,
                 identifier="32018L1972",
                 original_text="CELEX:32018L1972",
                 resolved=True,
+                checked=True,
             ),
         ]
         result = await verifier.verify(make_finding_with_citations(cites))
@@ -124,6 +127,7 @@ class TestCoVeVerifier:
                         identifier="ΦΕΚ Α 1/2023",
                         original_text="ΦΕΚ Α 1/2023",
                         resolved=True,
+                        checked=True,
                     ),
                 ]
             ),

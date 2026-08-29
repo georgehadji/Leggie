@@ -61,7 +61,11 @@ class TestReasonerAdapterHappyPath:
         assert result.open_questions == ["question A"]
         assert len(result.citations) == 1
         assert result.citations[0].scheme == CitationScheme.FEK
-        assert result.citations[0].resolved is True
+        # Deliberative pipeline skips CoVe/Skeptic entirely, so nothing here was
+        # actually checked against a configured index — the Reasoner backend's
+        # own "resolved": true claim must not be passed through as verified.
+        assert result.citations[0].resolved is False
+        assert result.citations[0].checked is False
         assert result.models_used == ["anthropic/claude-sonnet-4", "openai/gpt-5.6-luna"]
         assert result.total_tokens == {"prompt_tokens": 1000, "completion_tokens": 500}
         assert result.duration_seconds == 12.5

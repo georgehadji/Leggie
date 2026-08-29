@@ -117,6 +117,7 @@ class GreekCitationParser(CitationParserPort):
         if self._resolution_index:
             resolved = citation.identifier in self._resolution_index
             evidence = "resolved against internal index" if resolved else "not found in index"
+            checked = True
         else:
             # Fail closed: with no index we have not actually checked anything,
             # so we must not report the citation as resolved. Structural parsing
@@ -124,12 +125,14 @@ class GreekCitationParser(CitationParserPort):
             # "invalid".
             resolved = False
             evidence = "no resolution index configured — not independently verified"
+            checked = False
 
         return Citation(
             scheme=citation.scheme,
             identifier=citation.identifier,
             original_text=citation.original_text,
             resolved=resolved,
+            checked=checked,
             resolution_evidence=evidence,
         )
 

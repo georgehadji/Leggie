@@ -86,6 +86,7 @@ class TestCitation:
             identifier="ΦΕΚ Α 137/2023",
             original_text="ΦΕΚ Α 137/2023",
             resolved=True,
+            checked=True,
             resolution_evidence="verified against gov-et-laws index",
         )
         assert cite.resolved is True
@@ -97,6 +98,38 @@ class TestCitation:
                 identifier="   ",
                 original_text="ΦΕΚ",
             )
+
+    def test_checked_defaults_false(self):
+        cite = Citation(
+            scheme=CitationScheme.FEK,
+            identifier="ΦΕΚ Α 137/2023",
+            original_text="ΦΕΚ Α 137/2023",
+        )
+        assert cite.checked is False
+
+    def test_resolved_without_checked_is_rejected(self):
+        """resolved=True must never be claimable without checked=True — a
+        citation that was never checked against an index cannot be 'verified',
+        only 'unverified' (see CoVeVerifier._check_citations)."""
+        with pytest.raises(Exception):
+            Citation(
+                scheme=CitationScheme.FEK,
+                identifier="ΦΕΚ Α 137/2023",
+                original_text="ΦΕΚ Α 137/2023",
+                resolved=True,
+                checked=False,
+            )
+
+    def test_resolved_with_checked_is_accepted(self):
+        cite = Citation(
+            scheme=CitationScheme.FEK,
+            identifier="ΦΕΚ Α 137/2023",
+            original_text="ΦΕΚ Α 137/2023",
+            resolved=True,
+            checked=True,
+        )
+        assert cite.resolved is True
+        assert cite.checked is True
 
 
 class TestIRAC:
@@ -155,6 +188,7 @@ class TestFinding:
                         identifier="32018L1972",
                         original_text="CELEX:32018L1972",
                         resolved=True,
+                        checked=True,
                     ),
                     text_excerpt="Directive 2018/1972 defines...",
                     verdict="supports",

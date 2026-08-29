@@ -287,7 +287,7 @@ class CoVeVerifier:
         for cite in cites:
             resolved = await self._citation_parser.resolve(cite)
             evidence = resolved.resolution_evidence or ""
-            if not resolved.resolved and "no resolution index" not in evidence:
+            if resolved.checked and not resolved.resolved:
                 return True, f"{cite.identifier} ({evidence})"
             status = "verified" if resolved.resolved else "unverified against registry"
             notes.append(f"{cite.identifier}: {status}")

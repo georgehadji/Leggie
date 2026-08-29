@@ -11,7 +11,7 @@ from enum import Enum, StrEnum, auto
 from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -154,6 +154,12 @@ class Citation(BaseModel):
     identifier: str = Field(description="Normalized ID within the scheme")
     original_text: str = Field(description="Raw citation text as found in source")
     resolved: bool = False
+    checked: bool = Field(
+        default=False,
+        description="True iff resolve() actually checked this citation against a "
+        "configured index. False means 'not checked' — resolved=False here must "
+        "never be read as 'disproven', only as 'unverified'.",
+    )
     resolution_evidence: str | None = None
 
     @field_validator("identifier")
@@ -162,6 +168,12 @@ class Citation(BaseModel):
         if not v.strip():
             raise ValueError("identifier must not be empty")
         return v.strip()
+
+    @model_validator(mode="after")
+    def _resolved_implies_checked(self) -> Citation:
+        if self.resolved and not self.checked:
+            raise ValueError("resolved=True requires checked=True (was it actually checked?)")
+        return self
 
 
 class Evidence(BaseModel):
