@@ -34,9 +34,13 @@ jobs:
         run: |
           pip install -e ".[dev,lint]"
 
+      - name: Check formatting with ruff
+        run: |
+          ruff format --check leggie/ tests/ scripts/
+
       - name: Lint with ruff
         run: |
-          ruff check leggie/ tests/
+          ruff check leggie/ tests/ scripts/
 
       - name: Type check with mypy
         run: |

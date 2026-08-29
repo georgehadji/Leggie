@@ -125,7 +125,7 @@ net for. Both are now wired, on `pre-push` so they do not tax every commit:
 
 | Stage | Gates | Cost |
 |---|---|---|
-| `pre-commit` | ruff autofix, ruff, mypy, bandit | sub-second to ~1s |
+| `pre-commit` | ruff autofix, ruff format, ruff, mypy, bandit | sub-second to ~1s |
 | `pre-push` | + import-linter, pytest + 80% coverage floor | ~10s |
 
 Two deliberate choices:
@@ -137,10 +137,13 @@ Two deliberate choices:
   the network dependency. (The old mypy hook ran in an isolated environment with
   only pydantic installed, so it type-checked against a different dependency set
   than CI did.)
-- **`ruff format` is deliberately not a hook.** `ci.yml` has no format step, so
-  formatting was never a gate, and the tree is ~85 files away from
-  ruff-format-clean. Enabling it rewrites nearly every file. Worth doing — in
-  its own commit, not silently attached to every future one.
+- **`ruff format` is now a gate too**, added after the fact. It was initially
+  left out because the tree had never been format-clean and enabling it rewrote
+  82 files — too large a diff to attach silently to an unrelated change. That
+  reformat has since been done as its own commit (all 82 files verified AST
+  byte-identical), and the check now runs in all three places like any other
+  gate. The reformat SHA is listed in `.git-blame-ignore-revs` so it does not
+  pollute `git blame`.
 
 Verified in both directions: with a planted `F841` and a failing test, the
 pre-commit stage fails on `gate: ruff` and the pre-push stage fails on both

@@ -259,9 +259,9 @@ python scripts/run_gates.py ruff mypy
 python scripts/run_gates.py --list
 ```
 
-`scripts/run_gates.py` runs the same five gates as `.github/workflows/ci.yml`,
-in the same order — ruff, mypy, import-linter, bandit, pytest with the 80%
-coverage floor — and exits non-zero if any fails.
+`scripts/run_gates.py` runs the same six gates as `.github/workflows/ci.yml`,
+in the same order — ruff format, ruff, mypy, import-linter, bandit, pytest with
+the 80% coverage floor — and exits non-zero if any fails.
 
 ### What runs automatically
 
@@ -270,7 +270,7 @@ coverage floor — and exits non-zero if any fails.
 
 | Stage | Gates | Why here |
 |---|---|---|
-| **pre-commit** | ruff autofix, ruff, mypy, bandit | fast — sub-second to ~1s |
+| **pre-commit** | ruff autofix, ruff format, ruff, mypy, bandit | fast — sub-second to ~1s |
 | **pre-push** | + import-linter, pytest + coverage floor | ~10s; the last gate before code leaves the machine |
 
 Keep all three in lockstep: a gate changed in one must change in the others, in
@@ -280,7 +280,8 @@ The individual commands, if you want them one at a time:
 
 ```bash
 pytest tests/ -v                    # tests
-ruff check leggie/ tests/           # lint
+ruff format --check leggie/ tests/ scripts/  # formatting
+ruff check leggie/ tests/ scripts/  # lint
 mypy leggie/ --ignore-missing-imports  # types
 lint-imports                        # architecture layer contract
 bandit -c pyproject.toml -r leggie/    # security scan

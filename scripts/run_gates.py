@@ -46,7 +46,8 @@ PY = sys.executable
 
 # Mirrors the step order of .github/workflows/ci.yml.
 GATES: dict[str, list[str]] = {
-    "ruff": [PY, "-m", "ruff", "check", "leggie/", "tests/"],
+    "ruff-format": [PY, "-m", "ruff", "format", "--check", "leggie/", "tests/", "scripts/"],
+    "ruff": [PY, "-m", "ruff", "check", "leggie/", "tests/", "scripts/"],
     "mypy": [PY, "-m", "mypy", "leggie/", "--ignore-missing-imports"],
     "import-linter": [_console_script("lint-imports")],
     "bandit": [PY, "-m", "bandit", "-c", "pyproject.toml", "-r", "leggie/"],

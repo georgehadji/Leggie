@@ -16,17 +16,29 @@ repos:
   - repo: local
     hooks:
       # ── On every commit: fast gates ──────────────────────────────────
+      # `files:` keeps these autofixers to exactly the directories the gates
+      # check. Without it they rewrite every .py in the repo — including
+      # .claude/skills/ scripts that no gate verifies.
       - id: ruff-fix
         name: "ruff --fix (autofix touched files)"
         entry: python -m ruff check --fix --unsafe-fixes
         language: system
         types_or: [python, pyi]
+        files: ^(leggie|tests|scripts)/
 
-      # NOTE: `ruff format` is deliberately NOT a hook. .github/workflows/ci.yml
-      # has no format step, so formatting has never been a gate here, and the
-      # tree is currently ~85 files away from ruff-format-clean. Adopting it is
-      # a worthwhile change, but it is a repo-wide reformat that belongs in its
-      # own commit — not silently attached to every commit from now on.
+      - id: ruff-format
+        name: "ruff format (autoformat touched files)"
+        entry: python -m ruff format
+        language: system
+        types_or: [python, pyi]
+        files: ^(leggie|tests|scripts)/
+
+      - id: gate-ruff-format
+        name: "gate: ruff format --check"
+        entry: python scripts/run_gates.py ruff-format
+        language: system
+        pass_filenames: false
+        always_run: true
 
       - id: gate-ruff
         name: "gate: ruff (whole tree, as CI runs it)"
