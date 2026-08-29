@@ -115,8 +115,17 @@ class CompositeReranker(Reranker):
 class ModelBasedReranker(Reranker):
     """Reranker using a dedicated rerank model (Cohere, NVIDIA via OpenRouter).
 
-    Calls an external RerankerPort to score finding relevance against a query.
-    Batch-calls once per rerank() call, caches scores, falls back to composite.
+    Calls an external RerankerPort once per ``rerank()`` to score finding
+    relevance against a query, falling back to composite scoring for any finding
+    the model did not score — and for the whole batch if the call fails.
+
+    Batch scores are scoped to a single call and never stored on the instance.
+    An earlier version cached them in an instance field that was never reset, so
+    a second ``rerank()`` on the same object skipped the model call entirely:
+    none of the new batch's finding IDs were in the stale dict, every lookup
+    missed, and every finding silently fell through to composite scoring with
+    nothing logged or raised. ``BillAnalysisFlow`` builds its reranker once in
+    ``__init__``, so any flow reused for a second ``run()`` hit it.
     """
 
     def __init__(
@@ -130,23 +139,43 @@ class ModelBasedReranker(Reranker):
         self._query = query
         self._model = model
         self._fallback = composite_fallback or CompositeReranker()
-        self._batch_scores: dict[Any, float] | None = None
+
+    async def rerank(self, findings: list[Finding]) -> list[ScoredFinding]:
+        """Score and reorder a batch with a single call to the rerank model."""
+        if not findings:
+            return []
+        batch_scores = await self._compute_batch_scores(findings)
+        scored = [await self._apply_score(f, findings, batch_scores) for f in findings]
+        scored.sort(key=lambda s: s.composite_score, reverse=True)
+        return scored
 
     async def score(self, finding: Finding, all_findings: list[Finding]) -> ScoredFinding:
-        """Score via model if batch scores cached, else fall back to composite."""
-        if self._batch_scores is None:
-            self._batch_scores = await self._compute_batch_scores(all_findings)
+        """Score a single finding against its batch.
 
-        score = self._batch_scores.get(finding.id)
-        if score is not None:
-            return ScoredFinding(
-                finding=finding,
-                composite_score=score,
-                severity_score=0.0,
-                confidence_score=0.0,
-                novelty_score=0.0,
-            )
-        return await self._fallback.score(finding, all_findings)
+        Computes batch scores on every call, so scoring a whole list this way
+        costs one model call per finding. ``rerank()`` is the batched entry
+        point and is what the pipeline uses.
+        """
+        batch_scores = await self._compute_batch_scores(all_findings)
+        return await self._apply_score(finding, all_findings, batch_scores)
+
+    async def _apply_score(
+        self,
+        finding: Finding,
+        all_findings: list[Finding],
+        batch_scores: dict[Any, float],
+    ) -> ScoredFinding:
+        """Turn one model score into a ScoredFinding, or fall back to composite."""
+        score = batch_scores.get(finding.id)
+        if score is None:
+            return await self._fallback.score(finding, all_findings)
+        return ScoredFinding(
+            finding=finding,
+            composite_score=score,
+            severity_score=0.0,
+            confidence_score=0.0,
+            novelty_score=0.0,
+        )
 
     async def _compute_batch_scores(self, findings: list[Finding]) -> dict[Any, float]:
         """Call the rerank model once for the entire batch."""

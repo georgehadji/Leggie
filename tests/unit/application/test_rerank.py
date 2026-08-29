@@ -2,7 +2,12 @@
 
 import pytest
 
-from leggie.application.services.rerank import CompositeReranker, ScoredFinding
+from leggie.application.ports.reranker import RerankerPort, RerankResult
+from leggie.application.services.rerank import (
+    CompositeReranker,
+    ModelBasedReranker,
+    ScoredFinding,
+)
 from leggie.domain.models import IRAC, Confidence, Finding, FindingType, Severity
 
 
@@ -86,3 +91,112 @@ class TestCompositeReranker:
         finding = make_finding()
         novelty = reranker._compute_novelty(finding, [finding])
         assert novelty == 1.0  # Only one finding = fully novel
+
+
+class _CountingRerankerPort(RerankerPort):
+    """Fake rerank port: counts calls and records the documents it was sent."""
+
+    def __init__(self, scores: list[float] | None = None, fail: bool = False) -> None:
+        self.calls = 0
+        self.received_documents: list[list[str]] = []
+        self._scores = scores
+        self._fail = fail
+
+    async def rerank(self, query, documents, model="", top_k=None):  # type: ignore[no-untyped-def]
+        self.calls += 1
+        self.received_documents.append(list(documents))
+        if self._fail:
+            raise RuntimeError("rerank service unavailable")
+        scores = self._scores if self._scores is not None else [1.0] * len(documents)
+        return [
+            RerankResult(index=i, relevance_score=scores[i])
+            for i in range(min(len(documents), len(scores)))
+        ]
+
+
+def _fell_back_per_finding(scored: ScoredFinding) -> bool:
+    """True when this finding took the per-finding composite fallback.
+
+    `_apply_score` delegates to CompositeReranker for a finding the model did
+    not score, which fills the component scores; a model-scored finding has them
+    zeroed. Note this does NOT detect the whole-batch failure path, where
+    `_compute_batch_scores` collapses composite results down to bare scores —
+    check the composite_score value for that.
+    """
+    return scored.severity_score != 0.0 or scored.novelty_score != 0.0
+
+
+class TestModelBasedReranker:
+    """The rerank model must be re-queried for every batch.
+
+    Batch scores were once cached in an instance field that was never reset. A
+    second `rerank()` on the same instance then skipped the model call: none of
+    the new batch's finding IDs were in the stale dict, so every lookup missed
+    and every finding silently fell through to composite scoring. Nothing logged
+    or raised — the reranker just quietly stopped being model-based.
+    """
+
+    @pytest.mark.asyncio
+    async def test_second_rerank_queries_the_model_again(self):
+        port = _CountingRerankerPort(scores=[0.9, 0.8])
+        reranker = ModelBasedReranker(reranker_port=port)
+
+        first = [make_finding(issue="first batch A"), make_finding(issue="first batch B")]
+        second = [make_finding(issue="second batch A"), make_finding(issue="second batch B")]
+
+        await reranker.rerank(first)
+        second_scored = await reranker.rerank(second)
+
+        assert port.calls == 2, "the model was not re-queried for the second batch"
+        # The second batch's own text reached the model, not the first batch's.
+        assert any("second batch" in doc for doc in port.received_documents[1])
+        # And its findings carry model scores, not silent composite fallbacks.
+        assert not any(_fell_back_per_finding(s) for s in second_scored)
+        assert [s.composite_score for s in second_scored] == [0.9, 0.8]
+
+    @pytest.mark.asyncio
+    async def test_model_scores_drive_the_order(self):
+        # Deliberately inverted: the finding listed first gets the lowest score.
+        port = _CountingRerankerPort(scores=[0.1, 0.95])
+        reranker = ModelBasedReranker(reranker_port=port)
+        findings = [make_finding(issue="listed first"), make_finding(issue="listed second")]
+
+        scored = await reranker.rerank(findings)
+
+        assert [s.finding.irac.issue for s in scored] == ["listed second", "listed first"]
+        assert [s.composite_score for s in scored] == [0.95, 0.1]
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_composite_when_the_port_raises(self):
+        port = _CountingRerankerPort(fail=True)
+        reranker = ModelBasedReranker(reranker_port=port)
+        findings = [make_finding(severity="critical", confidence=0.9, issue="A")]
+
+        scored = await reranker.rerank(findings)
+        expected = await CompositeReranker().score(findings[0], findings)
+
+        assert port.calls == 1
+        assert len(scored) == 1
+        assert scored[0].composite_score == expected.composite_score
+
+    @pytest.mark.asyncio
+    async def test_findings_the_model_skipped_fall_back_to_composite(self):
+        # Two findings sent, only one score returned.
+        port = _CountingRerankerPort(scores=[0.9])
+        reranker = ModelBasedReranker(reranker_port=port)
+        findings = [make_finding(issue="scored"), make_finding(issue="unscored")]
+
+        scored = await reranker.rerank(findings)
+
+        assert len(scored) == 2
+        by_issue = {s.finding.irac.issue: s for s in scored}
+        assert not _fell_back_per_finding(by_issue["scored"])
+        assert _fell_back_per_finding(by_issue["unscored"])
+
+    @pytest.mark.asyncio
+    async def test_empty_batch_does_not_call_the_model(self):
+        port = _CountingRerankerPort()
+        reranker = ModelBasedReranker(reranker_port=port)
+
+        assert await reranker.rerank([]) == []
+        assert port.calls == 0
