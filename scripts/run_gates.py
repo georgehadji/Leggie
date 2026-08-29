@@ -51,8 +51,13 @@ GATES: dict[str, list[str]] = {
     "import-linter": [_console_script("lint-imports")],
     "bandit": [PY, "-m", "bandit", "-c", "pyproject.toml", "-r", "leggie/"],
     "pytest": [
-        PY, "-m", "pytest", "tests/",
-        "--tb=short", "--cov=leggie", "--cov-fail-under=80",
+        PY,
+        "-m",
+        "pytest",
+        "tests/",
+        "--tb=short",
+        "--cov=leggie",
+        "--cov-fail-under=80",
     ],
 }
 
@@ -80,7 +85,9 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "gates", nargs="*", metavar="GATE",
+        "gates",
+        nargs="*",
+        metavar="GATE",
         help=f"gates to run (default: all). Choices: {', '.join(GATES)}",
     )
     parser.add_argument("--list", action="store_true", help="list gate names and exit")

@@ -47,7 +47,8 @@ def make_finding(conclusion: str = "conc", quote: str = "") -> Finding:
         finding_type=FindingType.CONSTITUTIONAL,
         irac=IRAC(issue="Άρθρο 5 test", rule="rule", application="app", conclusion=conclusion),
         confidence=Confidence.from_score(0.6),
-        lens="test", model="test",
+        lens="test",
+        model="test",
         evidence=evidence,
     )
 
@@ -61,7 +62,8 @@ def make_finding_with_citations(citations: list[Citation] | None = None) -> Find
         finding_type=FindingType.CONSTITUTIONAL,
         irac=IRAC(issue="test", rule="rule", application="app", conclusion="conc"),
         confidence=Confidence.from_score(0.5),
-        lens="test", model="test",
+        lens="test",
+        model="test",
         evidence=evidence_list,
     )
 
@@ -93,8 +95,18 @@ class TestCoVeVerifier:
     async def test_verify_multiple_citations(self):
         verifier = CoVeVerifier()
         cites = [
-            Citation(scheme=CitationScheme.FEK, identifier="ΦΕΚ Α 1/2023", original_text="ΦΕΚ Α 1/2023", resolved=True),
-            Citation(scheme=CitationScheme.CELEX, identifier="32018L1972", original_text="CELEX:32018L1972", resolved=True),
+            Citation(
+                scheme=CitationScheme.FEK,
+                identifier="ΦΕΚ Α 1/2023",
+                original_text="ΦΕΚ Α 1/2023",
+                resolved=True,
+            ),
+            Citation(
+                scheme=CitationScheme.CELEX,
+                identifier="32018L1972",
+                original_text="CELEX:32018L1972",
+                resolved=True,
+            ),
         ]
         result = await verifier.verify(make_finding_with_citations(cites))
         assert result.verified_count == 2
@@ -105,9 +117,16 @@ class TestCoVeVerifier:
         verifier = CoVeVerifier()
         findings = [
             make_finding_with_citations(),
-            make_finding_with_citations([
-                Citation(scheme=CitationScheme.FEK, identifier="ΦΕΚ Α 1/2023", original_text="ΦΕΚ Α 1/2023", resolved=True),
-            ]),
+            make_finding_with_citations(
+                [
+                    Citation(
+                        scheme=CitationScheme.FEK,
+                        identifier="ΦΕΚ Α 1/2023",
+                        original_text="ΦΕΚ Α 1/2023",
+                        resolved=True,
+                    ),
+                ]
+            ),
         ]
         results = await verifier.verify_batch(findings)
         assert len(results) == 2
@@ -116,12 +135,15 @@ class TestCoVeVerifier:
     # ── LLM 4-step CoVe path ────────────────────────────────────────
     @pytest.mark.asyncio
     async def test_llm_consistent_keeps_finding(self):
-        llm = FakeLLM({
-            "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι προβλέπει;"]),
-            "CoVeAnswerResponse": CoVeAnswerResponse(answer="ok", supported_by_source=True),
-            "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
-                consistency="consistent", reason="r", keep=True),
-        })
+        llm = FakeLLM(
+            {
+                "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι προβλέπει;"]),
+                "CoVeAnswerResponse": CoVeAnswerResponse(answer="ok", supported_by_source=True),
+                "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                    consistency="consistent", reason="r", keep=True
+                ),
+            }
+        )
         verifier = CoVeVerifier(llm=llm)
         result = await verifier.verify(make_finding(), source_text="πηγή")
         assert result.dropped is False
@@ -130,12 +152,15 @@ class TestCoVeVerifier:
 
     @pytest.mark.asyncio
     async def test_llm_inconsistent_drops_finding(self):
-        llm = FakeLLM({
-            "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι προβλέπει;"]),
-            "CoVeAnswerResponse": CoVeAnswerResponse(answer="no", supported_by_source=False),
-            "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
-                consistency="inconsistent", reason="contradicted", keep=False),
-        })
+        llm = FakeLLM(
+            {
+                "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι προβλέπει;"]),
+                "CoVeAnswerResponse": CoVeAnswerResponse(answer="no", supported_by_source=False),
+                "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                    consistency="inconsistent", reason="contradicted", keep=False
+                ),
+            }
+        )
         verifier = CoVeVerifier(llm=llm)
         result = await verifier.verify(make_finding(), source_text="πηγή")
         assert result.dropped is True
@@ -152,13 +177,21 @@ class TestCoVeVerifier:
 
     @pytest.mark.asyncio
     async def test_llm_partially_consistent_revises(self):
-        llm = FakeLLM({
-            "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι;"]),
-            "CoVeAnswerResponse": CoVeAnswerResponse(answer="partial", supported_by_source=True),
-            "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
-                consistency="partially_consistent", reason="fix",
-                keep=True, revised_conclusion="διορθωμένο", confidence_adjustment=-0.2),
-        })
+        llm = FakeLLM(
+            {
+                "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι;"]),
+                "CoVeAnswerResponse": CoVeAnswerResponse(
+                    answer="partial", supported_by_source=True
+                ),
+                "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                    consistency="partially_consistent",
+                    reason="fix",
+                    keep=True,
+                    revised_conclusion="διορθωμένο",
+                    confidence_adjustment=-0.2,
+                ),
+            }
+        )
         verifier = CoVeVerifier(llm=llm)
         original = make_finding(conclusion="αρχικό")
         result = await verifier.verify(original, source_text="πηγή")
@@ -169,9 +202,11 @@ class TestCoVeVerifier:
 
     @pytest.mark.asyncio
     async def test_llm_no_questions_passes_through(self):
-        llm = FakeLLM({
-            "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=[]),
-        })
+        llm = FakeLLM(
+            {
+                "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=[]),
+            }
+        )
         verifier = CoVeVerifier(llm=llm)
         result = await verifier.verify(make_finding(), source_text="πηγή")
         assert result.dropped is False
@@ -181,14 +216,21 @@ class TestCoVeVerifier:
     @pytest.mark.asyncio
     async def test_llm_citation_disproven_drops_without_llm_calls(self):
         from leggie.infrastructure.citation import GreekCitationParser
+
         parser = GreekCitationParser(resolution_index={"ΦΕΚ Α 1/2020"})  # our citation not in it
         llm = FakeLLM({})  # must not be called — citation gate short-circuits
         verifier = CoVeVerifier(llm=llm, citation_parser=parser)
         finding = make_finding()
-        finding = finding.model_copy(update={"irac": IRAC(
-            issue=finding.irac.issue, rule="Βλ. ΦΕΚ Α 999/2023",
-            application=finding.irac.application, conclusion=finding.irac.conclusion,
-        )})
+        finding = finding.model_copy(
+            update={
+                "irac": IRAC(
+                    issue=finding.irac.issue,
+                    rule="Βλ. ΦΕΚ Α 999/2023",
+                    application=finding.irac.application,
+                    conclusion=finding.irac.conclusion,
+                )
+            }
+        )
         result = await verifier.verify(finding, source_text="πηγή")
         assert result.dropped is True
         assert llm.calls == []
@@ -196,32 +238,44 @@ class TestCoVeVerifier:
     @pytest.mark.asyncio
     async def test_llm_citation_no_index_does_not_disprove(self):
         from leggie.infrastructure.citation import GreekCitationParser
+
         parser = GreekCitationParser()  # no index configured
-        llm = FakeLLM({
-            "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι;"]),
-            "CoVeAnswerResponse": CoVeAnswerResponse(answer="ok", supported_by_source=True),
-            "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
-                consistency="consistent", reason="r", keep=True),
-        })
+        llm = FakeLLM(
+            {
+                "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι;"]),
+                "CoVeAnswerResponse": CoVeAnswerResponse(answer="ok", supported_by_source=True),
+                "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                    consistency="consistent", reason="r", keep=True
+                ),
+            }
+        )
         verifier = CoVeVerifier(llm=llm, citation_parser=parser)
         finding = make_finding()
-        finding = finding.model_copy(update={"irac": IRAC(
-            issue=finding.irac.issue, rule="Βλ. ΦΕΚ Α 999/2023",
-            application=finding.irac.application, conclusion=finding.irac.conclusion,
-        )})
+        finding = finding.model_copy(
+            update={
+                "irac": IRAC(
+                    issue=finding.irac.issue,
+                    rule="Βλ. ΦΕΚ Α 999/2023",
+                    application=finding.irac.application,
+                    conclusion=finding.irac.conclusion,
+                )
+            }
+        )
         result = await verifier.verify(finding, source_text="πηγή")
         assert result.dropped is False  # unverifiable, not disproven — LLM decides
 
     @pytest.mark.asyncio
     async def test_plan_questions_from_text_excerpt(self):
         from leggie.infrastructure.citation import GreekCitationParser
+
         parser = GreekCitationParser()
         verifier = CoVeVerifier(citation_parser=parser)
         finding = Finding(
             finding_type=FindingType.CONSTITUTIONAL,
             irac=IRAC(issue="test", rule="rule", application="app", conclusion="conc"),
             confidence=Confidence.from_score(0.5),
-            lens="test", model="test",
+            lens="test",
+            model="test",
             evidence=[Evidence(text_excerpt="ΦΕΚ Α 137/2023", verdict="supports")],
         )
         result = await verifier.verify(finding)

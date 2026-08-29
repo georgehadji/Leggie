@@ -8,25 +8,36 @@ from leggie.application.agents.implementation_lens import ImplementationLens
 from leggie.application.agents.legal_coherence_lens import LegalCoherenceLens
 from leggie.domain.models import Article, FindingType
 
-VAGUE_ARTICLE = Article(id="1", raw_text=(
-    "Άρθρο 1: Ο αρμόδιος φορέας λαμβάνει κατάλληλα μέτρα "
-    "ανάλογα με τις ειδικές συνθήκες."
-))
+VAGUE_ARTICLE = Article(
+    id="1",
+    raw_text=(
+        "Άρθρο 1: Ο αρμόδιος φορέας λαμβάνει κατάλληλα μέτρα ανάλογα με τις ειδικές συνθήκες."
+    ),
+)
 
-COST_ARTICLE = Article(id="2", raw_text=(
-    "Άρθρο 2: Η δαπάνη καλύπτεται από τον κρατικό προϋπολογισμό. "
-    "Το πρόστιμο ανέρχεται έως 500.000 ευρώ."
-))
+COST_ARTICLE = Article(
+    id="2",
+    raw_text=(
+        "Άρθρο 2: Η δαπάνη καλύπτεται από τον κρατικό προϋπολογισμό. "
+        "Το πρόστιμο ανέρχεται έως 500.000 ευρώ."
+    ),
+)
 
-DEADLINE_ARTICLE = Article(id="3", raw_text=(
-    "Άρθρο 3: Εντός 15 ημερών από την έναρξη ισχύος, οι ενδιαφερόμενοι "
-    "υποβάλλουν αίτηση. Ισχύει μεταβατική περίοδος 30 ημερών."
-))
+DEADLINE_ARTICLE = Article(
+    id="3",
+    raw_text=(
+        "Άρθρο 3: Εντός 15 ημερών από την έναρξη ισχύος, οι ενδιαφερόμενοι "
+        "υποβάλλουν αίτηση. Ισχύει μεταβατική περίοδος 30 ημερών."
+    ),
+)
 
-GDPR_ARTICLE = Article(id="4", raw_text=(
-    "Άρθρο 4: Η επεξεργασία προσωπικών δεδομένων γίνεται με συγκατάθεση "
-    "του υποκειμένου, σύμφωνα με τον ΓΚΠΔ."
-))
+GDPR_ARTICLE = Article(
+    id="4",
+    raw_text=(
+        "Άρθρο 4: Η επεξεργασία προσωπικών δεδομένων γίνεται με συγκατάθεση "
+        "του υποκειμένου, σύμφωνα με τον ΓΚΠΔ."
+    ),
+)
 
 
 class TestLegalCoherenceLens:
@@ -90,6 +101,7 @@ class TestAllLenses:
     @pytest.mark.asyncio
     async def test_all_lenses_via_orchestrator(self):
         from leggie.application.agents.orchestrator import Orchestrator
+
         orch = Orchestrator()
         assert len(orch.supported_lenses) == 5
         assert "constitutional" in orch.supported_lenses
@@ -101,6 +113,7 @@ class TestAllLenses:
     @pytest.mark.asyncio
     async def test_article_through_all_lenses(self):
         from leggie.application.agents.orchestrator import Orchestrator
+
         orch = Orchestrator()
         article = Article(id="1", raw_text=VAGUE_ARTICLE.raw_text + "\n" + COST_ARTICLE.raw_text)
         findings = await orch.analyze_article(article)
@@ -110,9 +123,12 @@ class TestAllLenses:
     async def test_document_parallel(self):
         from leggie.application.agents.orchestrator import Orchestrator
         from leggie.domain.models import Document
+
         orch = Orchestrator()
         doc = Document(
-            title="Test", source_format="txt", raw_text="test",
+            title="Test",
+            source_format="txt",
+            raw_text="test",
             articles=[VAGUE_ARTICLE, COST_ARTICLE, DEADLINE_ARTICLE, GDPR_ARTICLE],
         )
         findings = await orch.analyze_document(doc)

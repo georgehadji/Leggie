@@ -22,7 +22,9 @@ class LLMSettings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_default_model: str = "google/gemini-2.5-flash"
     max_concurrency: int = Field(
-        default=5, ge=1, le=100,
+        default=5,
+        ge=1,
+        le=100,
         description="Max concurrent article analyses per document",
     )
 
@@ -58,7 +60,9 @@ class BudgetSettings(BaseSettings):
 class RetrievalSettings(BaseSettings):
     """Retrieval configuration — corpora, embeddings, hybrid parameters."""
 
-    model_config = SettingsConfigDict(env_prefix="LEGGIE_RETRIEVAL_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="LEGGIE_RETRIEVAL_", env_file=".env", extra="ignore"
+    )
 
     embed_model: str = "spyrosbriakos/greek_legal_bert_v2"
     dense_top_k: int = 10
@@ -72,7 +76,9 @@ class RetrievalSettings(BaseSettings):
 class AnalysisSettings(BaseSettings):
     """Analysis pipeline configuration — opt-in experimental features."""
 
-    model_config = SettingsConfigDict(env_prefix="LEGGIE_ANALYSIS_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="LEGGIE_ANALYSIS_", env_file=".env", extra="ignore"
+    )
 
     use_verbalized_sampling: bool = False
     reranker: Literal["composite", "model"] = "composite"
@@ -111,9 +117,7 @@ class ReasonerSettings(BaseSettings):
     home: str = Field(default="", description="Path to Reasoner repository for auto-start")
     base_url: str = Field(default="http://localhost:8003", description="Reasoner backend URL")
     api_key: str = Field(default="", description="Reasoner ADMIN_API_KEY (secret)")
-    autostart: bool = Field(
-        default=True, description="Auto-start Reasoner backend if not running"
-    )
+    autostart: bool = Field(default=True, description="Auto-start Reasoner backend if not running")
     startup_timeout: int = Field(
         default=60, ge=1, description="Seconds to wait for Reasoner to become healthy"
     )

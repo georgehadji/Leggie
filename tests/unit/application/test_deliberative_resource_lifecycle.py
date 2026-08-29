@@ -100,8 +100,14 @@ class FakeReasonerAdapter:
 
     async def reason(self, request: ReasonerRequest) -> ReasonerResult:  # noqa: ARG002
         return ReasonerResult(
-            synthesis="ok", critical_insights=[], open_questions=[], citations=[],
-            models_used=["fake"], total_tokens={}, duration_seconds=0.01, errors=[],
+            synthesis="ok",
+            critical_insights=[],
+            open_questions=[],
+            citations=[],
+            models_used=["fake"],
+            total_tokens={},
+            duration_seconds=0.01,
+            errors=[],
         )
 
 
@@ -146,9 +152,13 @@ class TestReasonerProcessLifecycle:
         self, monkeypatch, tmp_path, patch_collaborators
     ):
         settings = _settings_with_reasoner(
-            enabled=True, autostart=True, startup_timeout=1, base_url="http://localhost:8003",
+            enabled=True,
+            autostart=True,
+            startup_timeout=1,
+            base_url="http://localhost:8003",
         )
         import leggie.config.settings as settings_module
+
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
         bill = tmp_path / "bill.txt"
@@ -156,7 +166,9 @@ class TestReasonerProcessLifecycle:
 
         handler = cli_handlers.AnalyzeBillHandler(container=Container())
         command = AnalyzeBillCommand(
-            file_path=str(bill), pipeline="deliberative", output_path=str(tmp_path / "out"),
+            file_path=str(bill),
+            pipeline="deliberative",
+            output_path=str(tmp_path / "out"),
         )
         result = await handler.handle(command)
 
@@ -193,9 +205,13 @@ class TestReasonerProcessLifecycle:
         monkeypatch.setattr(deliberative_flow_module, "DeliberativeFlow", RaisingFlow)
 
         settings = _settings_with_reasoner(
-            enabled=True, autostart=True, startup_timeout=1, base_url="http://localhost:8003",
+            enabled=True,
+            autostart=True,
+            startup_timeout=1,
+            base_url="http://localhost:8003",
         )
         import leggie.config.settings as settings_module
+
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
         bill = tmp_path / "bill.txt"
@@ -232,10 +248,12 @@ class TestReasonerProcessLifecycle:
                 raise OSError("simulated: process already reaped")
 
         import leggie.infrastructure.reasoner.server_manager as server_manager_module
+
         monkeypatch.setattr(server_manager_module, "ReasonerServerManager", BrokenShutdownManager)
 
         settings = _settings_with_reasoner(enabled=True)
         import leggie.config.settings as settings_module
+
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
         deterministic_called = {"v": False}
@@ -243,6 +261,7 @@ class TestReasonerProcessLifecycle:
         async def fake_deterministic(_self, _command):
             deterministic_called["v"] = True
             from leggie.application.cqrs.base import CommandResult
+
             return CommandResult(success=True, data="deterministic ran")
 
         monkeypatch.setattr(
@@ -252,9 +271,7 @@ class TestReasonerProcessLifecycle:
         bill = tmp_path / "bill.txt"
         bill.write_text(SAMPLE_BILL, encoding="utf-8")
         handler = cli_handlers.AnalyzeBillHandler(container=Container())
-        command = AnalyzeBillCommand(
-            file_path=str(bill), pipeline="deliberative", fallback=True
-        )
+        command = AnalyzeBillCommand(file_path=str(bill), pipeline="deliberative", fallback=True)
         result = await handler.handle(command)
 
         # --fallback must still trigger despite the shutdown() failure — proves

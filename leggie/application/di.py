@@ -5,6 +5,5 @@ leggie.infrastructure.container instead.
 """
 
 raise ImportError(
-    "The DI container has moved to leggie.infrastructure.container. "
-    "Import from there instead."
+    "The DI container has moved to leggie.infrastructure.container. Import from there instead."
 )

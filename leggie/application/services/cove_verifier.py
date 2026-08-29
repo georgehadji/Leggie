@@ -55,6 +55,7 @@ def article_number(text: str) -> str:
 @dataclass
 class VerificationQuestion:
     """A single verification question and its factored answer."""
+
     question: str = ""
     citation: Citation | None = None
     verified: bool = False
@@ -69,6 +70,7 @@ class CoVeResult:
     ``finding`` is the (possibly revised) finding to carry forward. ``dropped``
     is True when cross-check found the baseline contradicted by the source.
     """
+
     finding: Finding
     questions: list[VerificationQuestion] = field(default_factory=list)
     all_verified: bool = False
@@ -126,8 +128,12 @@ class CoVeVerifier:
             result = await self._verify_deterministic(finding)
         log.info(
             "cove_result: finding=%s consistency=%s dropped=%s verified=%d/%d reason=%s",
-            finding.id, result.consistency, result.dropped, result.verified_count,
-            len(result.questions), (result.reason or "")[:120],
+            finding.id,
+            result.consistency,
+            result.dropped,
+            result.verified_count,
+            len(result.questions),
+            (result.reason or "")[:120],
         )
         return result
 
@@ -167,16 +173,20 @@ class CoVeVerifier:
         questions: list[VerificationQuestion] = []
         for evidence in finding.evidence:
             if evidence.citation:
-                questions.append(VerificationQuestion(
-                    citation=evidence.citation,
-                    question=f"Does the citation {evidence.citation.identifier} resolve correctly?",
-                ))
+                questions.append(
+                    VerificationQuestion(
+                        citation=evidence.citation,
+                        question=f"Does the citation {evidence.citation.identifier} resolve correctly?",
+                    )
+                )
             elif evidence.text_excerpt and self._citation_parser:
                 for cite in self._citation_parser.parse(evidence.text_excerpt):
-                    questions.append(VerificationQuestion(
-                        citation=cite,
-                        question=f"Does the citation {cite.identifier} resolve correctly?",
-                    ))
+                    questions.append(
+                        VerificationQuestion(
+                            citation=cite,
+                            question=f"Does the citation {cite.identifier} resolve correctly?",
+                        )
+                    )
         return questions
 
     async def _resolve_citation_questions(
@@ -201,8 +211,11 @@ class CoVeVerifier:
         if source_text and quote and not self.validate_quote(quote, source_text):
             log.info("cove_quote_fail: finding=%s (quote not in source)", finding.id)
             return CoVeResult(
-                finding=finding, all_verified=False, failed_count=1,
-                consistency="inconsistent", dropped=True,
+                finding=finding,
+                all_verified=False,
+                failed_count=1,
+                consistency="inconsistent",
+                dropped=True,
                 reason="Verbatim quote not found in source article (fabricated).",
             )
 
@@ -215,8 +228,11 @@ class CoVeVerifier:
             if disproven:
                 log.info("cove_citation_fail: finding=%s", finding.id)
                 return CoVeResult(
-                    finding=finding, all_verified=False, failed_count=1,
-                    consistency="inconsistent", dropped=True,
+                    finding=finding,
+                    all_verified=False,
+                    failed_count=1,
+                    consistency="inconsistent",
+                    dropped=True,
                     reason=f"Citation not found in resolution index: {citation_note}",
                 )
 
@@ -227,8 +243,11 @@ class CoVeVerifier:
             if not questions:
                 # Nothing to check → pass through unchanged.
                 return CoVeResult(
-                    finding=finding, all_verified=True, consistency="consistent",
-                    dropped=False, reason="No verifiable factual claims.",
+                    finding=finding,
+                    all_verified=True,
+                    consistency="consistent",
+                    dropped=False,
+                    reason="No verifiable factual claims.",
                 )
             answered = await self._answer_factored(questions, source_text, model)
             return await self._cross_check(finding, answered, source_text, model, citation_note)
@@ -236,8 +255,11 @@ class CoVeVerifier:
             log.warning("cove_llm_error: finding=%s error=%s", finding.id, str(e)[:200])
             # Fail open: keep the finding, mark unverified.
             return CoVeResult(
-                finding=finding, all_verified=False, consistency="unknown",
-                dropped=False, reason=f"CoVe error: {str(e)[:120]}",
+                finding=finding,
+                all_verified=False,
+                consistency="unknown",
+                dropped=False,
+                reason=f"CoVe error: {str(e)[:120]}",
             )
 
     async def _check_citations(self, finding: Finding) -> tuple[bool, str]:
@@ -308,14 +330,12 @@ class CoVeVerifier:
         )
         src_block = (
             f"ΚΕΙΜΕΝΟ-ΠΗΓΗ (άρθρο):\n{source_text}\n\n"
-            if source_text else
-            "ΚΕΙΜΕΝΟ-ΠΗΓΗ: (δεν δόθηκε· απάντησε μόνο αν το γνωρίζεις με βεβαιότητα)\n\n"
+            if source_text
+            else "ΚΕΙΜΕΝΟ-ΠΗΓΗ: (δεν δόθηκε· απάντησε μόνο αν το γνωρίζεις με βεβαιότητα)\n\n"
         )
         for q in questions:
             prompt = f"{src_block}ΕΡΩΤΗΣΗ: {q.question}\n\nΑπάντησε πραγματολογικά."
-            obj = await self._structured(
-                CoVeAnswerResponse, prompt, system, model, max_tokens=1024
-            )
+            obj = await self._structured(CoVeAnswerResponse, prompt, system, model, max_tokens=1024)
             if obj is not None:
                 q.answer = obj.answer
                 q.verified = obj.supported_by_source
@@ -355,17 +375,19 @@ class CoVeVerifier:
             f"ΑΠΑΝΤΗΣΕΙΣ ΕΠΑΛΗΘΕΥΣΗΣ:\n{qa_block}\n\n"
             f"Διασταύρωσε και αποφάσισε."
         )
-        obj = await self._structured(
-            CoVeCrossCheckResponse, prompt, system, model, max_tokens=2048
-        )
+        obj = await self._structured(CoVeCrossCheckResponse, prompt, system, model, max_tokens=2048)
         verified_count = sum(1 for q in questions if q.verified)
         failed_count = len(questions) - verified_count
 
         if obj is None:
             return CoVeResult(
-                finding=finding, questions=questions,
-                all_verified=failed_count == 0, verified_count=verified_count,
-                failed_count=failed_count, consistency="unknown", dropped=False,
+                finding=finding,
+                questions=questions,
+                all_verified=failed_count == 0,
+                verified_count=verified_count,
+                failed_count=failed_count,
+                consistency="unknown",
+                dropped=False,
                 reason="Cross-check produced no verdict.",
             )
 
@@ -384,9 +406,7 @@ class CoVeVerifier:
             reason=obj.reason,
         )
 
-    def _apply_revision(
-        self, finding: Finding, verdict: CoVeCrossCheckResponse
-    ) -> Finding:
+    def _apply_revision(self, finding: Finding, verdict: CoVeCrossCheckResponse) -> Finding:
         """Build a revised finding: corrected conclusion + adjusted confidence."""
         adjustment = verdict.confidence_adjustment
         new_conclusion = (verdict.revised_conclusion or "").strip()
@@ -396,19 +416,23 @@ class CoVeVerifier:
         irac = finding.irac
         if new_conclusion:
             irac = IRAC(
-                issue=irac.issue, rule=irac.rule,
-                application=irac.application, conclusion=new_conclusion,
+                issue=irac.issue,
+                rule=irac.rule,
+                application=irac.application,
+                conclusion=new_conclusion,
             )
         confidence = finding.confidence
         if adjustment != 0.0:
             new_score = min(1.0, max(0.0, finding.confidence.score + adjustment))
             confidence = Confidence.from_score(new_score, provenance="cove-verified")
 
-        return finding.model_copy(update={
-            "irac": irac,
-            "confidence": confidence,
-            "version": finding.version + 1,
-        })
+        return finding.model_copy(
+            update={
+                "irac": irac,
+                "confidence": confidence,
+                "version": finding.version + 1,
+            }
+        )
 
     # ── Helpers ─────────────────────────────────────────────────────────
     @staticmethod

@@ -45,7 +45,9 @@ def score_novelty(
     return 1.0 - max_sim if max_sim >= threshold else 1.0
 
 
-def combine_confidence(evidence_conf: float, verification_conf: float, weight_evidence: float = 0.4) -> Confidence:
+def combine_confidence(
+    evidence_conf: float, verification_conf: float, weight_evidence: float = 0.4
+) -> Confidence:
     """Combine evidence-based and verification-based confidence into a single score."""
     combined = evidence_conf * weight_evidence + verification_conf * (1.0 - weight_evidence)
     return Confidence.from_score(combined, provenance="combined(evidence+verification)")

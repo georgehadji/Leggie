@@ -67,9 +67,7 @@ class TestPreviewHandler:
         container = Container()
         container.configure_defaults()
         handler = PreviewBillHandler(container=container)
-        result = await handler.handle(
-            PreviewBillCommand(file_path=str(bill), output_path=str(out))
-        )
+        result = await handler.handle(PreviewBillCommand(file_path=str(bill), output_path=str(out)))
 
         assert result.success is True
         assert out.exists()
@@ -99,9 +97,7 @@ class TestCliMainDispatch:
         bill = tmp_path / "bill.txt"
         bill.write_text(SAMPLE_BILL, encoding="utf-8")
         out_path = tmp_path / "prev.json"
-        monkeypatch.setattr(
-            sys, "argv", ["leggie", "preview", str(bill), "-o", str(out_path)]
-        )
+        monkeypatch.setattr(sys, "argv", ["leggie", "preview", str(bill), "-o", str(out_path)])
 
         rc = await main()
         assert rc == 0

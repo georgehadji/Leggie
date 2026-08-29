@@ -14,24 +14,33 @@ from leggie.infrastructure.persistence.eval_harness import (
 @pytest.fixture
 def gold_set(tmp_path):
     gs = GoldSet()
-    gs.add_label("bill-001", GoldLabel(
-        article_id="1",
-        finding_type=FindingType.CONSTITUTIONAL,
-        description="Exceeds delegation limits per Article 43",
-        severity=Severity.CRITICAL,
-    ))
-    gs.add_label("bill-001", GoldLabel(
-        article_id="3",
-        finding_type=FindingType.EU_COMPLIANCE,
-        description="Definition diverges from Directive 2018/1972",
-        severity=Severity.HIGH,
-    ))
-    gs.add_label("bill-002", GoldLabel(
-        article_id="2",
-        finding_type=FindingType.TEMPORAL,
-        description="Transition period of 15 days is impractical",
-        severity=Severity.HIGH,
-    ))
+    gs.add_label(
+        "bill-001",
+        GoldLabel(
+            article_id="1",
+            finding_type=FindingType.CONSTITUTIONAL,
+            description="Exceeds delegation limits per Article 43",
+            severity=Severity.CRITICAL,
+        ),
+    )
+    gs.add_label(
+        "bill-001",
+        GoldLabel(
+            article_id="3",
+            finding_type=FindingType.EU_COMPLIANCE,
+            description="Definition diverges from Directive 2018/1972",
+            severity=Severity.HIGH,
+        ),
+    )
+    gs.add_label(
+        "bill-002",
+        GoldLabel(
+            article_id="2",
+            finding_type=FindingType.TEMPORAL,
+            description="Transition period of 15 days is impractical",
+            severity=Severity.HIGH,
+        ),
+    )
     return gs
 
 

@@ -36,16 +36,23 @@ from leggie.infrastructure.llm.structured_parser import StructuredResponseParser
 # 1. pydantic_to_json_schema tests
 # ═══════════════════════════════════════════════════════════════════════
 
-class TestPydanticToJsonSchema:
 
+class TestPydanticToJsonSchema:
     def test_flat_schema(self):
         """A flat model produces an object schema with all fields required."""
         schema = pydantic_to_json_schema(IRACCandidate)
         assert schema["type"] == "object"
         assert schema["additionalProperties"] is False
         # All fields must be in required (strict mode)
-        for field in ("issue", "rule", "application", "conclusion",
-                      "verbatim_quote", "severity", "probability"):
+        for field in (
+            "issue",
+            "rule",
+            "application",
+            "conclusion",
+            "verbatim_quote",
+            "severity",
+            "probability",
+        ):
             assert field in schema["required"], f"{field} missing from required"
         for field in ("issue", "rule"):
             assert schema["properties"][field]["type"] == "string"
@@ -99,6 +106,7 @@ class TestPydanticToJsonSchema:
 
     def test_number_constraints_stripped_for_provider_compatibility(self):
         """minimum/maximum on number fields are stripped — some providers reject them."""
+
         class ConstrainedModel(BaseModel):
             score: float = Field(ge=0.0, le=1.0)
 
@@ -113,8 +121,8 @@ class TestPydanticToJsonSchema:
 # 2. StructuredResponseParser tests
 # ═══════════════════════════════════════════════════════════════════════
 
-class TestStructuredResponseParser:
 
+class TestStructuredResponseParser:
     def make_parser(self) -> StructuredResponseParser:
         return StructuredResponseParser()
 
@@ -123,17 +131,21 @@ class TestStructuredResponseParser:
     def test_parse_valid_json(self):
         """Valid JSON matching the schema parses correctly."""
         parser = self.make_parser()
-        content = json.dumps({
-            "findings": [{
-                "issue": "Test issue",
-                "rule": "Test rule",
-                "application": "Test application",
-                "conclusion": "Test conclusion",
-                "verbatim_quote": "A quote",
-                "severity": "high",
-                "probability": 0.8,
-            }],
-        })
+        content = json.dumps(
+            {
+                "findings": [
+                    {
+                        "issue": "Test issue",
+                        "rule": "Test rule",
+                        "application": "Test application",
+                        "conclusion": "Test conclusion",
+                        "verbatim_quote": "A quote",
+                        "severity": "high",
+                        "probability": 0.8,
+                    }
+                ],
+            }
+        )
         result = parser.parse(content, LensFindings)
         assert isinstance(result, LensFindings)
         assert len(result.findings) == 1
@@ -143,14 +155,18 @@ class TestStructuredResponseParser:
     def test_parse_with_code_fences(self):
         """Markdown code fences are stripped before parsing."""
         parser = self.make_parser()
-        inner = json.dumps({
-            "findings": [{
-                "issue": "Fenced issue",
-                "rule": "Rule",
-                "application": "App",
-                "conclusion": "Conc",
-            }],
-        })
+        inner = json.dumps(
+            {
+                "findings": [
+                    {
+                        "issue": "Fenced issue",
+                        "rule": "Rule",
+                        "application": "App",
+                        "conclusion": "Conc",
+                    }
+                ],
+            }
+        )
         content = f"```json\n{inner}\n```"
         result = parser.parse(content, LensFindings)
         assert len(result.findings) == 1
@@ -159,14 +175,18 @@ class TestStructuredResponseParser:
     def test_parse_code_fences_no_lang(self):
         """Fences without json tag are also stripped."""
         parser = self.make_parser()
-        inner = json.dumps({
-            "findings": [{
-                "issue": "No lang",
-                "rule": "R",
-                "application": "A",
-                "conclusion": "C",
-            }],
-        })
+        inner = json.dumps(
+            {
+                "findings": [
+                    {
+                        "issue": "No lang",
+                        "rule": "R",
+                        "application": "A",
+                        "conclusion": "C",
+                    }
+                ],
+            }
+        )
         content = f"```\n{inner}\n```"
         result = parser.parse(content, LensFindings)
         assert len(result.findings) == 1
@@ -174,12 +194,16 @@ class TestStructuredResponseParser:
     def test_parse_bare_array(self):
         """A bare array is wrapped into the schema's list field."""
         parser = self.make_parser()
-        content = json.dumps([{
-            "issue": "Array item",
-            "rule": "Rule",
-            "application": "App",
-            "conclusion": "Conc",
-        }])
+        content = json.dumps(
+            [
+                {
+                    "issue": "Array item",
+                    "rule": "Rule",
+                    "application": "App",
+                    "conclusion": "Conc",
+                }
+            ]
+        )
         result = parser.parse(content, LensFindings)
         assert len(result.findings) == 1
         assert result.findings[0].issue == "Array item"
@@ -187,14 +211,18 @@ class TestStructuredResponseParser:
     def test_parse_issues_alias(self):
         """Top-level 'issues' is renamed to 'findings'."""
         parser = self.make_parser()
-        content = json.dumps({
-            "issues": [{
-                "issue": "Issues alias",
-                "rule": "Rule",
-                "application": "App",
-                "conclusion": "Conc",
-            }],
-        })
+        content = json.dumps(
+            {
+                "issues": [
+                    {
+                        "issue": "Issues alias",
+                        "rule": "Rule",
+                        "application": "App",
+                        "conclusion": "Conc",
+                    }
+                ],
+            }
+        )
         result = parser.parse(content, LensFindings)
         assert len(result.findings) == 1
 
@@ -210,28 +238,36 @@ class TestStructuredResponseParser:
     def test_normalize_title_to_issue(self):
         """'title' in a finding item is mapped to 'issue'."""
         parser = self.make_parser()
-        content = json.dumps({
-            "findings": [{
-                "title": "Title as issue",
-                "rule": "Rule",
-                "application": "App",
-                "conclusion": "Conc",
-            }],
-        })
+        content = json.dumps(
+            {
+                "findings": [
+                    {
+                        "title": "Title as issue",
+                        "rule": "Rule",
+                        "application": "App",
+                        "conclusion": "Conc",
+                    }
+                ],
+            }
+        )
         result = parser.parse(content, LensFindings)
         assert result.findings[0].issue == "Title as issue"
 
     def test_normalize_constitutional_concern(self):
         """'constitutional_concern' alias is mapped (observed drift)."""
         parser = self.make_parser()
-        content = json.dumps({
-            "findings": [{
-                "constitutional_concern": "CC issue",
-                "rule": "Rule",
-                "application": "App",
-                "conclusion": "Conc",
-            }],
-        })
+        content = json.dumps(
+            {
+                "findings": [
+                    {
+                        "constitutional_concern": "CC issue",
+                        "rule": "Rule",
+                        "application": "App",
+                        "conclusion": "Conc",
+                    }
+                ],
+            }
+        )
         result = parser.parse(content, LensFindings)
         # constitutional_concern appears in issue, application, and
         # conclusion aliases; issue comes first.
@@ -240,72 +276,92 @@ class TestStructuredResponseParser:
     def test_normalize_legal_issue(self):
         """'legal_issue' alias is mapped to 'issue'."""
         parser = self.make_parser()
-        content = json.dumps({
-            "findings": [{
-                "legal_issue": "Legal issue text",
-                "rule": "R",
-                "application": "A",
-                "conclusion": "C",
-            }],
-        })
+        content = json.dumps(
+            {
+                "findings": [
+                    {
+                        "legal_issue": "Legal issue text",
+                        "rule": "R",
+                        "application": "A",
+                        "conclusion": "C",
+                    }
+                ],
+            }
+        )
         result = parser.parse(content, LensFindings)
         assert result.findings[0].issue == "Legal issue text"
 
     def test_normalize_problem(self):
         """'problem' alias is mapped to 'issue'."""
         parser = self.make_parser()
-        content = json.dumps({
-            "findings": [{
-                "problem": "Problem text",
-                "rule": "R",
-                "application": "A",
-                "conclusion": "C",
-            }],
-        })
+        content = json.dumps(
+            {
+                "findings": [
+                    {
+                        "problem": "Problem text",
+                        "rule": "R",
+                        "application": "A",
+                        "conclusion": "C",
+                    }
+                ],
+            }
+        )
         result = parser.parse(content, LensFindings)
         assert result.findings[0].issue == "Problem text"
 
     def test_normalize_finding_text(self):
         """'finding_text' alias is mapped to 'issue'."""
         parser = self.make_parser()
-        content = json.dumps({
-            "findings": [{
-                "finding_text": "Finding text",
-                "rule": "R",
-                "application": "A",
-                "conclusion": "C",
-            }],
-        })
+        content = json.dumps(
+            {
+                "findings": [
+                    {
+                        "finding_text": "Finding text",
+                        "rule": "R",
+                        "application": "A",
+                        "conclusion": "C",
+                    }
+                ],
+            }
+        )
         result = parser.parse(content, LensFindings)
         assert result.findings[0].issue == "Finding text"
 
     def test_normalize_excerpt_to_quote(self):
         """'excerpt' is mapped to 'verbatim_quote'."""
         parser = self.make_parser()
-        content = json.dumps({
-            "findings": [{
-                "issue": "Issue",
-                "rule": "R",
-                "application": "A",
-                "conclusion": "C",
-                "excerpt": "Quote text",
-            }],
-        })
+        content = json.dumps(
+            {
+                "findings": [
+                    {
+                        "issue": "Issue",
+                        "rule": "R",
+                        "application": "A",
+                        "conclusion": "C",
+                        "excerpt": "Quote text",
+                    }
+                ],
+            }
+        )
         result = parser.parse(content, LensFindings)
         assert result.findings[0].verbatim_quote == "Quote text"
 
     def test_canonical_key_takes_priority(self):
         """If canonical key already has a value, alias is not used."""
         parser = self.make_parser()
-        content = json.dumps({
-            "findings": [{
-                "issue": "Canonical issue",
-                "title": "Title that should be ignored",
-                "rule": "R",
-                "application": "A",
-                "conclusion": "C",
-            }],
-        })
+        content = json.dumps(
+            {
+                "findings": [
+                    {
+                        "issue": "Canonical issue",
+                        "title": "Title that should be ignored",
+                        "rule": "R",
+                        "application": "A",
+                        "conclusion": "C",
+                    }
+                ],
+            }
+        )
         result = parser.parse(content, LensFindings)
         assert result.findings[0].issue == "Canonical issue"
 
@@ -354,12 +410,14 @@ class TestStructuredResponseParser:
         """A top-level dict with IRAC fields but no 'findings' key parses as
         empty findings (Pydantic ignores extra keys by default)."""
         parser = self.make_parser()
-        content = json.dumps({
-            "issue": "Single obj",
-            "rule": "R",
-            "application": "A",
-            "conclusion": "C",
-        })
+        content = json.dumps(
+            {
+                "issue": "Single obj",
+                "rule": "R",
+                "application": "A",
+                "conclusion": "C",
+            }
+        )
         result = parser.parse(content, LensFindings)
         assert isinstance(result, LensFindings)
         assert len(result.findings) == 0
@@ -368,6 +426,7 @@ class TestStructuredResponseParser:
 # ═══════════════════════════════════════════════════════════════════════
 # 3. LLMAdapter.generate_structured retry ladder tests
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class TestGenerateStructuredRetry:
     """Test the retry ladder in LLMAdapter.generate_structured."""
@@ -379,14 +438,18 @@ class TestGenerateStructuredRetry:
     @pytest.fixture
     def valid_response(self):
         return LLMResponse(
-            content=json.dumps({
-                "findings": [{
-                    "issue": "Test",
-                    "rule": "Rule",
-                    "application": "App",
-                    "conclusion": "Conc",
-                }],
-            }),
+            content=json.dumps(
+                {
+                    "findings": [
+                        {
+                            "issue": "Test",
+                            "rule": "Rule",
+                            "application": "App",
+                            "conclusion": "Conc",
+                        }
+                    ],
+                }
+            ),
             model="test-model",
             tier_used=ModelTier.BUDGET,
             usage={"prompt_tokens": 10, "completion_tokens": 5},
@@ -404,7 +467,8 @@ class TestGenerateStructuredRetry:
                 usage={},
             )
             result, response = await adapter.generate_structured(
-                LLMRequest(prompt="test"), LensFindings,
+                LLMRequest(prompt="test"),
+                LensFindings,
             )
             assert isinstance(result, LensFindings)
 
@@ -432,7 +496,8 @@ class TestGenerateStructuredRetry:
 
         with patch.object(adapter, "generate", side_effect=mock_generate):
             result, response = await adapter.generate_structured(
-                LLMRequest(prompt="test"), LensFindings,
+                LLMRequest(prompt="test"),
+                LensFindings,
             )
             assert isinstance(result, LensFindings)
             assert call_count == 2
@@ -455,14 +520,18 @@ class TestGenerateStructuredRetry:
                     finish_reason="length",
                 )
             return LLMResponse(
-                content=json.dumps({
-                    "findings": [{
-                        "issue": "Complete",
-                        "rule": "Rule",
-                        "application": "App",
-                        "conclusion": "Conc",
-                    }],
-                }),
+                content=json.dumps(
+                    {
+                        "findings": [
+                            {
+                                "issue": "Complete",
+                                "rule": "Rule",
+                                "application": "App",
+                                "conclusion": "Conc",
+                            }
+                        ],
+                    }
+                ),
                 model="test",
                 tier_used=ModelTier.BUDGET,
                 usage={"prompt_tokens": 10, "completion_tokens": 10},
@@ -471,7 +540,8 @@ class TestGenerateStructuredRetry:
 
         with patch.object(adapter, "generate", side_effect=mock_generate):
             result, response = await adapter.generate_structured(
-                LLMRequest(prompt="test", max_tokens=1000), LensFindings,
+                LLMRequest(prompt="test", max_tokens=1000),
+                LensFindings,
             )
             assert isinstance(result, LensFindings)
             assert len(result.findings) == 1
@@ -496,14 +566,18 @@ class TestGenerateStructuredRetry:
                 )
             # Repair round succeeds
             return LLMResponse(
-                content=json.dumps({
-                    "findings": [{
-                        "issue": "Repaired",
-                        "rule": "Rule",
-                        "application": "App",
-                        "conclusion": "Conc",
-                    }],
-                }),
+                content=json.dumps(
+                    {
+                        "findings": [
+                            {
+                                "issue": "Repaired",
+                                "rule": "Rule",
+                                "application": "App",
+                                "conclusion": "Conc",
+                            }
+                        ],
+                    }
+                ),
                 model="test",
                 tier_used=ModelTier.BUDGET,
                 usage={},
@@ -522,6 +596,7 @@ class TestGenerateStructuredRetry:
     @pytest.mark.asyncio
     async def test_all_attempts_exhausted_raises(self, adapter):
         """When all retries fail, raises LLMError."""
+
         async def mock_generate(req):
             return LLMResponse(
                 content="completely invalid {content}",
@@ -536,8 +611,7 @@ class TestGenerateStructuredRetry:
             pytest.raises(LLMError, match="Failed to parse structured response"),
         ):
             await adapter.generate_structured(
-                LLMRequest(prompt="test", max_tokens=1000,
-                           response_format={"type": "json_object"}),
+                LLMRequest(prompt="test", max_tokens=1000, response_format={"type": "json_object"}),
                 LensFindings,
             )
 
@@ -561,8 +635,7 @@ class TestGenerateStructuredRetry:
             pytest.raises(LLMError, match="no JSON skeleton"),
         ):
             await adapter.generate_structured(
-                LLMRequest(prompt="test", max_tokens=1000,
-                           response_format={"type": "json_object"}),
+                LLMRequest(prompt="test", max_tokens=1000, response_format={"type": "json_object"}),
                 LensFindings,
             )
 
@@ -598,7 +671,8 @@ class TestGenerateStructuredRetry:
 
         with patch.object(adapter, "generate", side_effect=mock_generate):
             await adapter.generate_structured(
-                LLMRequest(prompt="test", max_tokens=1000), LensFindings,
+                LLMRequest(prompt="test", max_tokens=1000),
+                LensFindings,
             )
             assert call_count == 3
 
@@ -606,6 +680,7 @@ class TestGenerateStructuredRetry:
 # ═══════════════════════════════════════════════════════════════════════
 # 4. OpenRouterProvider finish_reason threading tests
 # ═══════════════════════════════════════════════════════════════════════
+
 
 class TestOpenRouterFinishReason:
     """Verify finish_reason is captured from API response."""
@@ -615,10 +690,12 @@ class TestOpenRouterFinishReason:
         """finish_reason='stop' is threaded through."""
         prov = OpenRouterProvider(api_key="sk-test")
         body = {
-            "choices": [{
-                "message": {"content": "OK", "role": "assistant"},
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "message": {"content": "OK", "role": "assistant"},
+                    "finish_reason": "stop",
+                }
+            ],
             "usage": {"prompt_tokens": 10, "completion_tokens": 5},
             "model": "test-model",
         }
@@ -637,10 +714,12 @@ class TestOpenRouterFinishReason:
         """finish_reason='length' is threaded through."""
         prov = OpenRouterProvider(api_key="sk-test")
         body = {
-            "choices": [{
-                "message": {"content": "Partial...", "role": "assistant"},
-                "finish_reason": "length",
-            }],
+            "choices": [
+                {
+                    "message": {"content": "Partial...", "role": "assistant"},
+                    "finish_reason": "length",
+                }
+            ],
             "usage": {"prompt_tokens": 10, "completion_tokens": 100},
             "model": "test-model",
         }
@@ -659,10 +738,12 @@ class TestOpenRouterFinishReason:
         """Missing finish_reason defaults to 'stop'."""
         prov = OpenRouterProvider(api_key="sk-test")
         body = {
-            "choices": [{
-                "message": {"content": "OK", "role": "assistant"},
-                # no finish_reason key
-            }],
+            "choices": [
+                {
+                    "message": {"content": "OK", "role": "assistant"},
+                    # no finish_reason key
+                }
+            ],
             "usage": {},
             "model": "test-model",
         }

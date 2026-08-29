@@ -28,9 +28,13 @@ class Lens(ABC):
     analyze(article) makes a structured LLM call.
     """
 
-    def __init__(self, llm: LLMPort | None = None, model: str = "",
-                 on_degradation: Callable[..., None] | None = None,
-                 use_verbalized_sampling: bool = False) -> None:
+    def __init__(
+        self,
+        llm: LLMPort | None = None,
+        model: str = "",
+        on_degradation: Callable[..., None] | None = None,
+        use_verbalized_sampling: bool = False,
+    ) -> None:
         self._llm = llm
         self._model = model
         self._on_degradation = on_degradation
@@ -67,22 +71,25 @@ class Lens(ABC):
         if self._on_degradation is None:
             return
         try:
-            self._on_degradation(Event(
-                event_type=EventType.DEGRADED,
-                aggregate_id=f"lens:{self.name()}:article:{article.id}",
-                data={
-                    "lens": self.name(),
-                    "article_id": article.id,
-                    "error": str(exc)[:500],
-                    "model": self._model,
-                },
-            ))
+            self._on_degradation(
+                Event(
+                    event_type=EventType.DEGRADED,
+                    aggregate_id=f"lens:{self.name()}:article:{article.id}",
+                    data={
+                        "lens": self.name(),
+                        "article_id": article.id,
+                        "error": str(exc)[:500],
+                        "model": self._model,
+                    },
+                )
+            )
         except Exception:
             log.warning("on_degradation callback failed", exc_info=True)
 
     def _prompt_for(self, name: str) -> tuple[str, str]:
         """Load system + user prompt templates for this lens."""
         import importlib
+
         mod = importlib.import_module(f"leggie.application.agents.prompts.{name}")
         return mod.SYSTEM_PROMPT, mod.USER_PROMPT_TEMPLATE
 
@@ -113,6 +120,7 @@ class Lens(ABC):
         if not self._llm:
             return []
         from leggie.application.services.lens_vs import LensVerbalizedSampling
+
         system, template = self._prompt_for(prompt_name)
         vs = LensVerbalizedSampling(
             llm=self._llm,
@@ -125,20 +133,25 @@ class Lens(ABC):
         )
         return await vs.generate(self, article)
 
-    async def _maybe_retry_greek(self, obj: Any, schema: type, request: LLMRequest,
-                                 system: str) -> Any:
+    async def _maybe_retry_greek(
+        self, obj: Any, schema: type, request: LLMRequest, system: str
+    ) -> Any:
         """Check Greek-script ratio and retry once with stricter instruction if low."""
         from leggie.domain.models import is_greek
+
         if obj is None:
             return obj
         # Flatten all string fields of the parsed object for Greek ratio check
         import dataclasses
+
         text_parts: list[str] = []
         try:
             if hasattr(obj, "model_dump"):
                 _collect_strings(obj.model_dump(), text_parts)
             elif dataclasses.is_dataclass(obj):
-                _collect_strings({f.name: getattr(obj, f.name) for f in dataclasses.fields(obj)}, text_parts)
+                _collect_strings(
+                    {f.name: getattr(obj, f.name) for f in dataclasses.fields(obj)}, text_parts
+                )
             else:
                 text_parts.append(str(obj))
         except Exception:

@@ -18,6 +18,7 @@ from leggie.infrastructure.budget_guard import BudgetAction, BudgetGuard
 
 # ── D2: CalibratedSkeptic.review must preserve Finding identity ──────────
 
+
 def test_d2_skeptic_preserves_finding_identity() -> None:
     """D2 reproducer: skeptic.review() must not generate a new UUID.
 
@@ -62,6 +63,7 @@ def test_d2_skeptic_increments_version_on_adjustment() -> None:
     The FactualGate adds +0.05 confidence for constitutional findings that
     reference 'constitution' or 'Σύνταγμα'. The version must go from 1 → 2.
     """
+
     async def _run() -> None:
         f = Finding(
             id=uuid4(),
@@ -97,6 +99,7 @@ def test_d2_skeptic_no_regression_no_llm() -> None:
     Pre-existing behavior: cheap typed gates never refute, and identity is
     preserved even when no confidence adjustment occurs.
     """
+
     async def _run() -> None:
         original_id = uuid4()
         f = Finding(
@@ -130,6 +133,7 @@ def test_d2_skeptic_no_regression_no_llm() -> None:
 
 # ── D1: BudgetGuard must return BLOCK on budget exceeded ─────────────────
 
+
 def test_d1_budget_guard_blocks_on_exceeded() -> None:
     """D1 reproducer: BudgetGuard must return BLOCK immediately when exceeded.
 
@@ -142,12 +146,8 @@ def test_d1_budget_guard_blocks_on_exceeded() -> None:
     guard.record_usage(prompt_tokens=80, completion_tokens=10, model="test")
 
     # Proposed call would push tokens to 100 (80+10 + 10+10 > 100)
-    action = guard.check(
-        prompt_tokens=10, completion_tokens=10, model="test"
-    )
-    assert action == BudgetAction.BLOCK, (
-        f"Budget exceeded must return BLOCK, got {action}"
-    )
+    action = guard.check(prompt_tokens=10, completion_tokens=10, model="test")
+    assert action == BudgetAction.BLOCK, f"Budget exceeded must return BLOCK, got {action}"
 
 
 def test_d1_budget_guard_degrade_at_80_percent() -> None:
@@ -161,15 +161,11 @@ def test_d1_budget_guard_degrade_at_80_percent() -> None:
 
     # 450+400 = 850 used. 850+50+50 = 950 proposed → 95% > 80%
     action = guard.check(prompt_tokens=50, completion_tokens=50, model="test")
-    assert action == BudgetAction.DEGRADE, (
-        f"80% threshold must still return DEGRADE, got {action}"
-    )
+    assert action == BudgetAction.DEGRADE, f"80% threshold must still return DEGRADE, got {action}"
 
 
 def test_d1_budget_guard_no_regression_allow() -> None:
     """D1 regression guard: under-budget calls still return ALLOW."""
     guard = BudgetGuard(max_tokens=100_000, max_cost=5.0)
-    action = guard.check(
-        prompt_tokens=1_000, completion_tokens=500, model="test"
-    )
+    action = guard.check(prompt_tokens=1_000, completion_tokens=500, model="test")
     assert action == BudgetAction.ALLOW

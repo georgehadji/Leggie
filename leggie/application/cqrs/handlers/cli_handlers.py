@@ -94,8 +94,7 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]])
                         "id": a.id,
                         "title": a.title,
                         "paragraphs": [
-                            {"number": p.number, "text": p.text[:200]}
-                            for p in a.paragraphs
+                            {"number": p.number, "text": p.text[:200]} for p in a.paragraphs
                         ],
                     }
                     for a in doc.articles
@@ -148,7 +147,8 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 router=router,
                 cove=cove,
                 checkpoint_store=checkpoint_store,
-                use_verbalized_sampling=command.use_verbalized_sampling or settings.analysis.use_verbalized_sampling,
+                use_verbalized_sampling=command.use_verbalized_sampling
+                or settings.analysis.use_verbalized_sampling,
                 reranker_name=settings.analysis.reranker,
                 reranker_port=reranker_port,
             )
@@ -308,8 +308,10 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
                 scorer = EvalScorer(gold_set)
                 result = scorer.score(bill_id, findings)
                 results.append(result.to_dict())
-                print(f"  {bill_id}: {result.total_gold} gold, {len(findings)} findings, "
-                      f"P={result.precision:.2f} R={result.recall:.2f}")
+                print(
+                    f"  {bill_id}: {result.total_gold} gold, {len(findings)} findings, "
+                    f"P={result.precision:.2f} R={result.recall:.2f}"
+                )
 
             if command.results_path:
                 p = Path(command.results_path)

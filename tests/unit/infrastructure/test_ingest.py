@@ -1,4 +1,5 @@
 """Tests for the ingest module — Factory pattern."""
+
 from pathlib import Path
 
 import pytest

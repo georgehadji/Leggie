@@ -217,10 +217,7 @@ class TestAmendingTitles:
 
     def test_still_rejects_bare_cross_reference_heading(self, parser):
         """A heading that is *only* a reference has no substantive title."""
-        text = (
-            "Άρθρο 1 Σκοπός\n1. Κείμενο του άρθρου για τον έλεγχο.\n"
-            "Άρθρο 552 του ΚΠολΔ\n"
-        )
+        text = "Άρθρο 1 Σκοπός\n1. Κείμενο του άρθρου για τον έλεγχο.\nΆρθρο 552 του ΚΠολΔ\n"
         doc = parser.parse(text)
         assert "552" not in [a.id for a in doc.articles]
 

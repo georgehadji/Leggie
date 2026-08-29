@@ -82,10 +82,14 @@ class _DowngradingCoVe(CoVeVerifier):
         results = []
         for f in findings:
             if self._marker in f.irac.issue:
-                f = f.model_copy(update={
-                    "confidence": Confidence.from_score(self._new_score, provenance="cove-verified"),
-                    "version": f.version + 1,
-                })
+                f = f.model_copy(
+                    update={
+                        "confidence": Confidence.from_score(
+                            self._new_score, provenance="cove-verified"
+                        ),
+                        "version": f.version + 1,
+                    }
+                )
             results.append(CoVeResult(finding=f, all_verified=True, consistency="consistent"))
         return results
 

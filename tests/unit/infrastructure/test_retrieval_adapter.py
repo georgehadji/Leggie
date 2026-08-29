@@ -20,7 +20,9 @@ class TestSimpleRetrievalAdapter:
     async def test_search_finds_substring(self, tmp_path):
         corpus = tmp_path / "corpus"
         corpus.mkdir()
-        (corpus / "law_1.md").write_text("This is the Greek Constitution article 1.", encoding="utf-8")
+        (corpus / "law_1.md").write_text(
+            "This is the Greek Constitution article 1.", encoding="utf-8"
+        )
         (corpus / "law_2.md").write_text("European GDPR regulation text.", encoding="utf-8")
 
         adapter = SimpleRetrievalAdapter(corpus_dir=str(corpus))

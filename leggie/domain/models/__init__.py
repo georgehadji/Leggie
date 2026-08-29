@@ -24,7 +24,7 @@ def is_greek(text: str, min_ratio: float = 0.50) -> bool:
     """
     if not text:
         return False
-    greek_chars = sum(1 for ch in text if '\u0370' <= ch <= '\u03ff' or '\u1f00' <= ch <= '\u1fff')
+    greek_chars = sum(1 for ch in text if "\u0370" <= ch <= "\u03ff" or "\u1f00" <= ch <= "\u1fff")
     return (greek_chars / max(len(text), 1)) >= min_ratio
 
 

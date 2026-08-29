@@ -9,8 +9,13 @@ from leggie.application.services.blackboard_aggregator import (
 from leggie.domain.models import IRAC, Confidence, Finding, FindingType, Severity
 
 
-def _make(issue: str, confidence: float = 0.8, finding_type=None,
-           lens: str = "test", severity: str = "medium") -> Finding:
+def _make(
+    issue: str,
+    confidence: float = 0.8,
+    finding_type=None,
+    lens: str = "test",
+    severity: str = "medium",
+) -> Finding:
     return Finding(
         finding_type=finding_type or FindingType.CONSTITUTIONAL,
         irac=IRAC(issue=issue, rule="r", application="a", conclusion="c"),

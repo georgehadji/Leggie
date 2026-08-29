@@ -43,18 +43,29 @@ def build_parser() -> argparse.ArgumentParser:
     # analyze
     analyze = subparsers.add_parser("analyze", help="Analyze a legal bill")
     analyze.add_argument("file", type=Path, help="Path to the bill file (PDF/DOCX/HTML/TXT)")
-    analyze.add_argument("--output", "-o", type=Path, default=None, help="Output directory for reports")
-    analyze.add_argument("--lenses", "-l", nargs="+", default=None, help="Lenses to apply (default: all 5)")
     analyze.add_argument(
-        "--articles", "-a", type=str, default=None,
+        "--output", "-o", type=Path, default=None, help="Output directory for reports"
+    )
+    analyze.add_argument(
+        "--lenses", "-l", nargs="+", default=None, help="Lenses to apply (default: all 5)"
+    )
+    analyze.add_argument(
+        "--articles",
+        "-a",
+        type=str,
+        default=None,
         help="Articles to analyze, e.g. '1-5,7,10' or '1,2,3' (default: all)",
     )
     analyze.add_argument(
-        "--verbalized-sampling", action="store_true",
+        "--verbalized-sampling",
+        action="store_true",
         help="Enable verbalized sampling (experimental, increases cost)",
     )
     analyze.add_argument(
-        "--checkpoint", "-c", type=Path, default=None,
+        "--checkpoint",
+        "-c",
+        type=Path,
+        default=None,
         help="Path to persist/restore budget spend across runs (survives a crash mid-run)",
     )
     analyze.add_argument(
@@ -77,7 +88,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # eval
     eval_cmd = subparsers.add_parser("eval", help="Run evaluation against gold set")
-    eval_cmd.add_argument("--gold-set", "-g", type=Path, required=True, help="Path to gold-set JSON")
+    eval_cmd.add_argument(
+        "--gold-set", "-g", type=Path, required=True, help="Path to gold-set JSON"
+    )
     eval_cmd.add_argument("--results", "-r", type=Path, default=None, help="Path to save results")
 
     # parse
@@ -113,7 +126,9 @@ def _build_mediator() -> Mediator:
     container.configure_defaults()
 
     mediator = Mediator()
-    mediator.register_command_handler(ParseDocumentCommand, ParseDocumentHandler(container=container))
+    mediator.register_command_handler(
+        ParseDocumentCommand, ParseDocumentHandler(container=container)
+    )
     mediator.register_command_handler(PreviewBillCommand, PreviewBillHandler(container=container))
     mediator.register_command_handler(AnalyzeBillCommand, AnalyzeBillHandler(container=container))
     mediator.register_command_handler(EvalGoldSetCommand, EvalGoldSetHandler(container=container))
@@ -124,6 +139,7 @@ async def main() -> int:
     """CLI entry point — dispatches through CQRS mediator."""
     # Configure structured logging once at startup (W6)
     from leggie.infrastructure.observability import configure_logging
+
     configure_logging()
 
     parser = build_parser()
@@ -131,6 +147,7 @@ async def main() -> int:
 
     if args.version:
         from leggie import __version__
+
         print(f"Leggie v{__version__}")
         return 0
 
@@ -270,6 +287,7 @@ def _force_utf8_console() -> None:
 def entry_point() -> int:
     """Synchronous entry point for CLI."""
     import asyncio
+
     _force_utf8_console()
     return asyncio.run(main())
 

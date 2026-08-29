@@ -157,9 +157,7 @@ class ReasonerServerManager:
                 stderr=subprocess.DEVNULL,
             )
         except OSError as exc:
-            raise ReasonerUnavailableError(
-                f"Failed to spawn Reasoner backend: {exc}", exc
-            ) from exc
+            raise ReasonerUnavailableError(f"Failed to spawn Reasoner backend: {exc}", exc) from exc
 
     def _find_python(self, home_path: Path) -> str:
         venv_python = home_path / ".venv" / "bin" / "python"

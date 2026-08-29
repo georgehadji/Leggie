@@ -101,8 +101,14 @@ class TestGreekCitationParser:
 
     def test_build_index(self, parser):
         citations = [
-            Citation(scheme=CitationScheme.FEK, identifier="ΦΕΚ Α 137/2023", original_text="ΦΕΚ Α 137/2023"),
-            Citation(scheme=CitationScheme.FEK, identifier="ΦΕΚ Β 42/2022", original_text="ΦΕΚ Β 42/2022"),
+            Citation(
+                scheme=CitationScheme.FEK,
+                identifier="ΦΕΚ Α 137/2023",
+                original_text="ΦΕΚ Α 137/2023",
+            ),
+            Citation(
+                scheme=CitationScheme.FEK, identifier="ΦΕΚ Β 42/2022", original_text="ΦΕΚ Β 42/2022"
+            ),
         ]
         index = parser.build_resolution_index(citations)
         assert "ΦΕΚ Α 137/2023" in index

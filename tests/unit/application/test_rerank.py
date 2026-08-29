@@ -22,7 +22,8 @@ def make_finding(
         irac=IRAC(issue=issue, rule="rule", application="app", conclusion="conc"),
         confidence=Confidence.from_score(confidence),
         severity=Severity(severity),
-        lens="test", model="test",
+        lens="test",
+        model="test",
     )
 
 
@@ -38,23 +39,15 @@ class TestCompositeReranker:
     @pytest.mark.asyncio
     async def test_severity_weights(self):
         reranker = CompositeReranker()
-        critical = await reranker.score(
-            make_finding(severity="critical", issue="critical"), []
-        )
-        low = await reranker.score(
-            make_finding(severity="low", issue="low"), []
-        )
+        critical = await reranker.score(make_finding(severity="critical", issue="critical"), [])
+        low = await reranker.score(make_finding(severity="low", issue="low"), [])
         assert critical.severity_score > low.severity_score
 
     @pytest.mark.asyncio
     async def test_confidence_affects_score(self):
         reranker = CompositeReranker()
-        high_conf = await reranker.score(
-            make_finding(confidence=0.9, issue="high"), []
-        )
-        low_conf = await reranker.score(
-            make_finding(confidence=0.3, issue="low"), []
-        )
+        high_conf = await reranker.score(make_finding(confidence=0.9, issue="high"), [])
+        low_conf = await reranker.score(make_finding(confidence=0.3, issue="low"), [])
         assert high_conf.composite_score > low_conf.composite_score
 
     @pytest.mark.asyncio

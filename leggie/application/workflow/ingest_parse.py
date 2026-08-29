@@ -13,10 +13,12 @@ from leggie.application.ports.parse import ParsePort
 def lazy_ingest_adapter() -> IngestPort:
     """Lazy factory for IngestAdapter to avoid top-level infra import."""
     from leggie.infrastructure.ingest_adapter import IngestAdapter
+
     return IngestAdapter()
 
 
 def lazy_parse_adapter() -> ParsePort:
     """Lazy factory for ParseAdapter to avoid top-level infra import."""
     from leggie.infrastructure.parse_adapter import ParseAdapter
+
     return ParseAdapter()

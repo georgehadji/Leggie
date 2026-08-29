@@ -26,15 +26,18 @@ log = logging.getLogger(__name__)
 def _finding_similarity_article_aware(a: Finding, b: Finding) -> float:
     """Score similarity between two findings by (article, type, lens) + issue overlap."""
     import re
+
     _article_re = re.compile(r"Άρθρο\s+(\d+)", re.IGNORECASE)
 
     def _article_prefix(f: Finding) -> str:
         m = _article_re.search(f.irac.issue)
         return m.group(1) if m else ""
 
-    if (a.finding_type != b.finding_type or
-        a.lens != b.lens or
-        _article_prefix(a) != _article_prefix(b)):
+    if (
+        a.finding_type != b.finding_type
+        or a.lens != b.lens
+        or _article_prefix(a) != _article_prefix(b)
+    ):
         return 0.0
     a_tokens = set(a.irac.issue.lower().split())
     b_tokens = set(b.irac.issue.lower().split())
@@ -101,19 +104,25 @@ class BlackboardAggregator:
 
         for f in findings:
             board.post(f, agent_id="orchestrator")
-            self._record_event(EventType.FINDING_CREATED, {
-                "finding_id": str(f.id),
-                "lens": f.lens,
-                "type": f.finding_type.value,
-            })
+            self._record_event(
+                EventType.FINDING_CREATED,
+                {
+                    "finding_id": str(f.id),
+                    "lens": f.lens,
+                    "type": f.finding_type.value,
+                },
+            )
 
         dedup_survivors = dedup_observer.get_survivors()
         dedup_count = len(findings) - len(dedup_survivors)
         if dedup_count:
-            self._record_event(EventType.DEDUP_REMOVED, {
-                "removed": dedup_count,
-                "survivors": len(dedup_survivors),
-            })
+            self._record_event(
+                EventType.DEDUP_REMOVED,
+                {
+                    "removed": dedup_count,
+                    "survivors": len(dedup_survivors),
+                },
+            )
         board.unsubscribe(dedup_observer.handle)
 
         # If dedup removed everything, stop early
@@ -128,10 +137,13 @@ class BlackboardAggregator:
         survivors, _ = await self._skeptic.review(dedup_survivors)
         refuted_count = len(dedup_survivors) - len(survivors)
         if refuted_count:
-            self._record_event(EventType.FINDING_REFUTED, {
-                "refuted": refuted_count,
-                "survivors": len(survivors),
-            })
+            self._record_event(
+                EventType.FINDING_REFUTED,
+                {
+                    "refuted": refuted_count,
+                    "survivors": len(survivors),
+                },
+            )
         if not survivors:
             return self._complete([])
 
@@ -145,19 +157,28 @@ class BlackboardAggregator:
         dropped = sum(1 for r in cove_results if r.dropped)
         unverified = sum(1 for r in cove_results if not r.all_verified)
         if dropped:
-            self._record_event(EventType.FINDING_REFUTED, {
-                "refuted": dropped,
-                "survivors": len(verified),
-                "stage": "cove",
-            })
+            self._record_event(
+                EventType.FINDING_REFUTED,
+                {
+                    "refuted": dropped,
+                    "survivors": len(verified),
+                    "stage": "cove",
+                },
+            )
         if unverified:
-            self._record_event(EventType.CITATION_FAILED, {
-                "unverified": unverified,
-            })
+            self._record_event(
+                EventType.CITATION_FAILED,
+                {
+                    "unverified": unverified,
+                },
+            )
         else:
-            self._record_event(EventType.CITATION_VERIFIED, {
-                "verified": len(verified),
-            })
+            self._record_event(
+                EventType.CITATION_VERIFIED,
+                {
+                    "verified": len(verified),
+                },
+            )
         if not verified:
             return self._complete([])
 
@@ -182,10 +203,13 @@ class BlackboardAggregator:
         that end with zero findings, which previously returned silently and
         left the event log without a completion record (event-spine invariant).
         """
-        self._record_event(EventType.AGGREGATION_COMPLETED, {
-            "rounds": self._board.round_count,
-            "final_findings": len(findings),
-        })
+        self._record_event(
+            EventType.AGGREGATION_COMPLETED,
+            {
+                "rounds": self._board.round_count,
+                "final_findings": len(findings),
+            },
+        )
         return findings
 
     def _record_event(self, event_type: EventType, data: dict[str, Any]) -> None:

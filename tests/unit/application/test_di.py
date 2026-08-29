@@ -13,6 +13,7 @@ from leggie.infrastructure.container import BindingNotFoundError, Container
 class FakeLLM(LLMPort):
     async def generate(self, request):
         from leggie.application.ports.llm import LLMResponse
+
         return LLMResponse(content="fake", model="fake", tier_used=None, usage={})
 
     async def generate_structured(self, request, schema):
@@ -108,6 +109,7 @@ class TestMigrationShim:
             # Force reimport of the module that always raises
             import importlib
             import leggie.application.di  # noqa: F811
+
             importlib.reload(leggie.application.di)
         msg = str(exc_info.value)
         assert "leggie.infrastructure.container" in msg

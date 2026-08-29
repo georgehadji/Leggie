@@ -84,7 +84,8 @@ class BillAnalysisFlow:
         self._llm = llm
         # Wrap _record_event to accept Event objects from lenses/callbacks
         self._on_degradation = on_degradation or (
-            lambda ev: self._record_event(ev.event_type, ev.data))
+            lambda ev: self._record_event(ev.event_type, ev.data)
+        )
         self._orchestrator = orchestrator or Orchestrator(
             llm=llm,
             on_degradation=self._on_degradation,
@@ -154,9 +155,12 @@ class BillAnalysisFlow:
 
         overview = await self._overview_generator.generate(self._doc)
         self._overview = overview
-        self._record_event(EventType.OVERVIEW_GENERATED, {
-            "articles": len(self._doc.articles),
-        })
+        self._record_event(
+            EventType.OVERVIEW_GENERATED,
+            {
+                "articles": len(self._doc.articles),
+            },
+        )
         return overview
 
     async def run(
@@ -204,7 +208,9 @@ class BillAnalysisFlow:
         logger = bind_trace_id(get_logger(__name__))
         logger.info("flow.started", bill_path=str(file_path), trace_id=trace_id)
 
-        run_checkpoint_path = Path(checkpoint_path) if checkpoint_path is not None else self._checkpoint_path
+        run_checkpoint_path = (
+            Path(checkpoint_path) if checkpoint_path is not None else self._checkpoint_path
+        )
         if self._checkpoint_store is None and run_checkpoint_path is not None:
             self._checkpoint_store = CheckpointStore(str(run_checkpoint_path))
 
@@ -231,10 +237,13 @@ class BillAnalysisFlow:
         if self._state == WorkflowState.IDLE:
             self._transition(WorkflowState.INGESTING, "ingest_started")
             self._source_text = await self._do_ingest(file_path)
-            self._record_event(EventType.ANALYSIS_STARTED, {
-                "file": str(file_path),
-                "size": len(self._source_text),
-            })
+            self._record_event(
+                EventType.ANALYSIS_STARTED,
+                {
+                    "file": str(file_path),
+                    "size": len(self._source_text),
+                },
+            )
             self._transition(WorkflowState.PARSING, "ingest_completed")
 
         # 2. Parse
@@ -263,11 +272,14 @@ class BillAnalysisFlow:
 
             raw_findings = await self._orchestrator.analyze_document(self._doc, lenses)
             for f in raw_findings:
-                self._record_event(EventType.FINDING_CREATED, {
-                    "finding_id": str(f.id),
-                    "lens": f.lens,
-                    "type": f.finding_type.value,
-                })
+                self._record_event(
+                    EventType.FINDING_CREATED,
+                    {
+                        "finding_id": str(f.id),
+                        "lens": f.lens,
+                        "type": f.finding_type.value,
+                    },
+                )
 
             self._findings = raw_findings
             self._transition(WorkflowState.AGGREGATING, "execution_completed")
@@ -305,9 +317,11 @@ class BillAnalysisFlow:
         if self._state == WorkflowState.REPORTING:
             if self._doc and self._findings:
                 exec_summary = await ExecutiveSummaryRenderer().render(
-                    self._doc, self._findings, self._suggestions)
+                    self._doc, self._findings, self._suggestions
+                )
                 article_by_article = await ArticleByArticleRenderer().render(
-                    self._doc, self._findings, self._suggestions)
+                    self._doc, self._findings, self._suggestions
+                )
                 self._reports = [exec_summary, article_by_article]
 
                 # Auto-save reports and findings to output directory
@@ -324,17 +338,19 @@ class BillAnalysisFlow:
 
                 findings_data = []
                 for f in self._findings:
-                    findings_data.append({
-                        "id": str(f.id),
-                        "type": f.finding_type.value,
-                        "severity": f.severity.value,
-                        "confidence": f.confidence.score,
-                        "lens": f.lens,
-                        "issue": f.irac.issue,
-                        "rule": f.irac.rule,
-                        "conclusion": f.irac.conclusion,
-                        "evidence": [e.text_excerpt for e in f.evidence if e.text_excerpt],
-                    })
+                    findings_data.append(
+                        {
+                            "id": str(f.id),
+                            "type": f.finding_type.value,
+                            "severity": f.severity.value,
+                            "confidence": f.confidence.score,
+                            "lens": f.lens,
+                            "issue": f.irac.issue,
+                            "rule": f.irac.rule,
+                            "conclusion": f.irac.conclusion,
+                            "evidence": [e.text_excerpt for e in f.evidence if e.text_excerpt],
+                        }
+                    )
                 with open(findings_path, "w", encoding="utf-8") as findings_file:
                     json.dump(findings_data, findings_file, indent=2, ensure_ascii=False)
 
@@ -358,12 +374,15 @@ class BillAnalysisFlow:
             self._transition(WorkflowState.DONE, "report_completed")
 
         # 10. Done
-        self._record_event(EventType.WORKFLOW_COMPLETED, {
-            "total_findings": len(self._findings),
-            "suggestions": len(self._suggestions),
-            "reports": len(self._reports),
-            "final_state": self._state.value,
-        })
+        self._record_event(
+            EventType.WORKFLOW_COMPLETED,
+            {
+                "total_findings": len(self._findings),
+                "suggestions": len(self._suggestions),
+                "reports": len(self._reports),
+                "final_state": self._state.value,
+            },
+        )
 
         return self._findings, self._reports
 
@@ -372,6 +391,7 @@ class BillAnalysisFlow:
     ) -> list[Finding]:
         """Aggregate findings via BlackboardAggregator (EN3)."""
         from leggie.application.services.blackboard_aggregator import BlackboardAggregator
+
         aggregator = BlackboardAggregator(
             dedup_threshold=self._dedup_threshold,
             reranker=self._reranker,
@@ -383,9 +403,7 @@ class BillAnalysisFlow:
         self._events.extend(aggregator.events)
         return results
 
-    async def _aggregate_inline_dedup(
-        self, raw_findings: list[Finding]
-    ) -> list[Finding]:
+    async def _aggregate_inline_dedup(self, raw_findings: list[Finding]) -> list[Finding]:
         """Inline aggregation part 1: dedup only.
 
         Reranking deliberately does NOT happen here — it runs at the end of
@@ -398,10 +416,13 @@ class BillAnalysisFlow:
             deduped = self._dedup_findings(findings)
             dedup_count = len(findings) - len(deduped)
             if dedup_count:
-                self._record_event(EventType.DEDUP_REMOVED, {
-                    "removed": dedup_count,
-                    "survivors": len(deduped),
-                })
+                self._record_event(
+                    EventType.DEDUP_REMOVED,
+                    {
+                        "removed": dedup_count,
+                        "survivors": len(deduped),
+                    },
+                )
             findings = deduped
 
         return findings
@@ -421,10 +442,13 @@ class BillAnalysisFlow:
         refuted_count = len(findings) - len(survivors)
         findings = survivors
         if refuted_count:
-            self._record_event(EventType.FINDING_REFUTED, {
-                "refuted": refuted_count,
-                "survivors": len(survivors),
-            })
+            self._record_event(
+                EventType.FINDING_REFUTED,
+                {
+                    "refuted": refuted_count,
+                    "survivors": len(survivors),
+                },
+            )
 
         # 7. CoVe Chain-of-Verification (factored) — revise or drop
         if findings:
@@ -434,19 +458,28 @@ class BillAnalysisFlow:
             unverified = sum(1 for r in cove_results if not r.all_verified)
             findings = kept
             if dropped:
-                self._record_event(EventType.FINDING_REFUTED, {
-                    "refuted": dropped,
-                    "survivors": len(kept),
-                    "stage": "cove",
-                })
+                self._record_event(
+                    EventType.FINDING_REFUTED,
+                    {
+                        "refuted": dropped,
+                        "survivors": len(kept),
+                        "stage": "cove",
+                    },
+                )
             if unverified:
-                self._record_event(EventType.CITATION_FAILED, {
-                    "unverified": unverified,
-                })
+                self._record_event(
+                    EventType.CITATION_FAILED,
+                    {
+                        "unverified": unverified,
+                    },
+                )
             else:
-                self._record_event(EventType.CITATION_VERIFIED, {
-                    "verified": len(kept),
-                })
+                self._record_event(
+                    EventType.CITATION_VERIFIED,
+                    {
+                        "verified": len(kept),
+                    },
+                )
 
         # 8. Rerank the verified survivors into the published order
         if findings:
@@ -473,7 +506,8 @@ class BillAnalysisFlow:
 
     def _do_parse(self, text: str, file_path: Path) -> Document:
         doc: Document = self._parser.parse(
-            text, title=file_path.stem, source_format=file_path.suffix.lstrip("."))
+            text, title=file_path.stem, source_format=file_path.suffix.lstrip(".")
+        )
         return doc
 
     def _filter_document(self, doc: Document, selection: str) -> Document:
@@ -490,15 +524,19 @@ class BillAnalysisFlow:
     def _select_article_ids(self, doc: Document, ids: list[str]) -> Document:
         """Return a new Document keeping only articles whose id is in *ids*."""
         selected = [a for a in doc.articles if a.id in ids]
-        self._record_event(EventType.ARTICLES_SELECTED, {
-            "selected": ids,
-            "matched": len(selected),
-        })
+        self._record_event(
+            EventType.ARTICLES_SELECTED,
+            {
+                "selected": ids,
+                "matched": len(selected),
+            },
+        )
         return doc.model_copy(update={"articles": selected}, deep=False)
 
     def _dedup_findings(self, findings: list[Finding]) -> list[Finding]:
         """Remove near-duplicate findings, keeping the best per cluster."""
         import re
+
         _article_re = re.compile(r"Άρθρο\s+(\d+)", re.IGNORECASE)
 
         def _article_prefix(finding: Finding) -> str:
@@ -509,9 +547,11 @@ class BillAnalysisFlow:
             return []
 
         def _finding_similarity(a: Finding, b: Finding) -> float:
-            if (a.finding_type != b.finding_type or
-                a.lens != b.lens or
-                _article_prefix(a) != _article_prefix(b)):
+            if (
+                a.finding_type != b.finding_type
+                or a.lens != b.lens
+                or _article_prefix(a) != _article_prefix(b)
+            ):
                 return 0.0
             a_tokens = set(a.irac.issue.lower().split())
             b_tokens = set(b.irac.issue.lower().split())
@@ -531,11 +571,14 @@ class BillAnalysisFlow:
         next_state = self._fsm.transition(self._state, event)
         if next_state is not None:
             self._state = next_state
-            self._record_event(EventType.STAGE_COMPLETED, {
-                "from": self._state.value if next_state != target else "previous",
-                "to": target.value,
-                "event": event,
-            })
+            self._record_event(
+                EventType.STAGE_COMPLETED,
+                {
+                    "from": self._state.value if next_state != target else "previous",
+                    "to": target.value,
+                    "event": event,
+                },
+            )
         self._save_checkpoint()
 
     def _budget_guard(self) -> Any | None:
@@ -600,7 +643,11 @@ class BillAnalysisFlow:
         # Safety: a checkpoint belongs to a specific input file. Ignore it if
         # we are now processing a different file.
         checkpoint_file_path = data.get("file_path") or ""
-        if file_path is not None and checkpoint_file_path and checkpoint_file_path != str(file_path):
+        if (
+            file_path is not None
+            and checkpoint_file_path
+            and checkpoint_file_path != str(file_path)
+        ):
             return
 
         self._run_id = data.get("run_id") or self._run_id
@@ -628,6 +675,7 @@ class BillAnalysisFlow:
         if guard is None:
             return
         import json
+
         try:
             state = json.loads(self._checkpoint_path.read_text(encoding="utf-8"))
             guard.load_state(state)

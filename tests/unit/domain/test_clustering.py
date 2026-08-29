@@ -16,7 +16,8 @@ def make_finding(issue: str, confidence=0.5, severity="medium") -> Finding:
         irac=IRAC(issue=issue, rule="r", application="a", conclusion="c"),
         confidence=Confidence.from_score(confidence),
         severity=Severity(severity),
-        lens="test", model="test",
+        lens="test",
+        model="test",
     )
 
 

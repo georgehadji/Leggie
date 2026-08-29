@@ -307,9 +307,7 @@ class TestDeliberativeFlowCitationAppendix:
         assert "Παράρτημα" not in content
 
     @pytest.mark.asyncio
-    async def test_citation_parser_with_no_matches_omits_appendix(
-        self, sample_bill_file, tmp_path
-    ):
+    async def test_citation_parser_with_no_matches_omits_appendix(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
         citation_parser = FakeCitationParser(citations=[])
         flow = DeliberativeFlow(
@@ -324,9 +322,7 @@ class TestDeliberativeFlowCitationAppendix:
         assert len(citation_parser.parse_calls) == 1
 
     @pytest.mark.asyncio
-    async def test_citation_parser_with_matches_appends_section(
-        self, sample_bill_file, tmp_path
-    ):
+    async def test_citation_parser_with_matches_appends_section(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
         citation_parser = FakeCitationParser(
             citations=[

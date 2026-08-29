@@ -28,6 +28,7 @@ _SEVERITY_WEIGHTS = {
 @dataclass
 class ScoredFinding:
     """A finding with its composite score."""
+
     finding: Finding
     composite_score: float = 0.0
     severity_score: float = 0.0
@@ -194,7 +195,9 @@ class ModelBasedReranker(Reranker):
                 documents=documents,
                 model=self._model,
             )
-            return {findings[r.index].id: r.relevance_score for r in results if r.index < len(findings)}
+            return {
+                findings[r.index].id: r.relevance_score for r in results if r.index < len(findings)
+            }
         except Exception:
             # Fall back to composite scoring
             scored = [await self._fallback.score(f, findings) for f in findings]
