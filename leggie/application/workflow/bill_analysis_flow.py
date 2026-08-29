@@ -125,7 +125,9 @@ class BillAnalysisFlow:
     ) -> CompositeReranker | ModelBasedReranker:
         """Build the reranker requested by configuration."""
         if reranker_name == "model" and reranker_port is not None:
-            return ModelBasedReranker(reranker_port=reranker_port)
+            return ModelBasedReranker(
+                reranker_port=reranker_port, on_degradation=self._on_degradation
+            )
         return CompositeReranker()
 
     @property

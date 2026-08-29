@@ -8,13 +8,17 @@ Phase 2: simple composite scoring. Phase 3+: LLM-boosted rerank.
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from leggie.domain.models import Finding
+from leggie.domain.models import Event, EventType, Finding
 
 from leggie.application.ports.reranker import RerankerPort
+
+log = logging.getLogger(__name__)
 
 _SEVERITY_WEIGHTS = {
     "critical": 1.0,
@@ -135,11 +139,13 @@ class ModelBasedReranker(Reranker):
         query: str = "Which findings identify the most legally significant constitutional or regulatory issues?",
         model: str = "cohere/rerank-4-pro",
         composite_fallback: CompositeReranker | None = None,
+        on_degradation: Callable[[Event], None] | None = None,
     ) -> None:
         self._port = reranker_port
         self._query = query
         self._model = model
         self._fallback = composite_fallback or CompositeReranker()
+        self._on_degradation = on_degradation
 
     async def rerank(self, findings: list[Finding]) -> list[ScoredFinding]:
         """Score and reorder a batch with a single call to the rerank model."""
@@ -198,7 +204,32 @@ class ModelBasedReranker(Reranker):
             return {
                 findings[r.index].id: r.relevance_score for r in results if r.index < len(findings)
             }
-        except Exception:
-            # Fall back to composite scoring
+        except Exception as e:  # noqa: BLE001 — reranker fallback must never crash the run
+            log.warning(
+                "reranker_port_failed: falling back to composite scoring for %d findings: %s",
+                len(findings),
+                str(e)[:200],
+            )
+            self._emit_degradation(len(findings), e)
             scored = [await self._fallback.score(f, findings) for f in findings]
             return {s.finding.id: s.composite_score for s in scored}
+
+    def _emit_degradation(self, batch_size: int, exc: Exception) -> None:
+        """Emit a degradation event if a callback is registered."""
+        if self._on_degradation is None:
+            return
+        try:
+            self._on_degradation(
+                Event(
+                    event_type=EventType.DEGRADED,
+                    aggregate_id="reranker:model",
+                    data={
+                        "component": "ModelBasedReranker",
+                        "batch_size": batch_size,
+                        "error": str(exc)[:500],
+                        "model": self._model,
+                    },
+                )
+            )
+        except Exception:
+            log.warning("on_degradation callback failed", exc_info=True)

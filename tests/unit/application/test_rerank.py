@@ -1,5 +1,7 @@
 """Tests for Rerank service — scoring and ordering findings."""
 
+import logging
+
 import pytest
 
 from leggie.application.ports.reranker import RerankerPort, RerankResult
@@ -8,7 +10,15 @@ from leggie.application.services.rerank import (
     ModelBasedReranker,
     ScoredFinding,
 )
-from leggie.domain.models import IRAC, Confidence, Finding, FindingType, Severity
+from leggie.domain.models import (
+    IRAC,
+    Confidence,
+    Event,
+    EventType,
+    Finding,
+    FindingType,
+    Severity,
+)
 
 
 def make_finding(
@@ -193,3 +203,64 @@ class TestModelBasedReranker:
 
         assert await reranker.rerank([]) == []
         assert port.calls == 0
+
+
+class TestModelBasedRerankerDegradation:
+    """A whole-batch port failure must be surfaced, never silently masked.
+
+    `_compute_batch_scores` used to catch the port's exception and fall back to
+    composite scoring with nothing logged or raised — the only guard of its
+    kind in the verification chain without a signal. It now logs a warning and,
+    when wired with an `on_degradation` callback (as `BillAnalysisFlow` does),
+    emits an `EventType.DEGRADED` event — the same mechanism lenses already use.
+    """
+
+    @pytest.mark.asyncio
+    async def test_port_failure_is_logged(self, caplog: pytest.LogCaptureFixture) -> None:
+        port = _CountingRerankerPort(fail=True)
+        reranker = ModelBasedReranker(reranker_port=port)
+        findings = [make_finding(issue="A")]
+
+        with caplog.at_level(logging.WARNING):
+            await reranker.rerank(findings)
+
+        assert any("reranker_port_failed" in r.message for r in caplog.records), (
+            "reranker-port failure fell back to composite scoring with no log record"
+        )
+
+    @pytest.mark.asyncio
+    async def test_port_failure_emits_degraded_event(self) -> None:
+        port = _CountingRerankerPort(fail=True)
+        events: list[Event] = []
+        reranker = ModelBasedReranker(reranker_port=port, on_degradation=events.append)
+        findings = [make_finding(issue="A"), make_finding(issue="B")]
+
+        await reranker.rerank(findings)
+
+        assert len(events) == 1
+        assert events[0].event_type == EventType.DEGRADED
+        assert events[0].data["component"] == "ModelBasedReranker"
+        assert events[0].data["batch_size"] == 2
+
+    @pytest.mark.asyncio
+    async def test_broken_on_degradation_callback_does_not_crash_rerank(self) -> None:
+        port = _CountingRerankerPort(fail=True)
+
+        def broken_callback(event: Event) -> None:
+            raise RuntimeError("observer exploded")
+
+        reranker = ModelBasedReranker(reranker_port=port, on_degradation=broken_callback)
+        findings = [make_finding(issue="A")]
+
+        scored = await reranker.rerank(findings)
+
+        assert len(scored) == 1  # still falls back to composite scoring
+
+    @pytest.mark.asyncio
+    async def test_no_callback_registered_is_a_noop(self) -> None:
+        port = _CountingRerankerPort(fail=True)
+        reranker = ModelBasedReranker(reranker_port=port)  # on_degradation defaults to None
+
+        scored = await reranker.rerank([make_finding(issue="A")])
+
+        assert len(scored) == 1
