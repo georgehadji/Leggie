@@ -22,7 +22,12 @@ class CitationParserPort(ABC):
     async def resolve(self, citation: Citation) -> Citation:
         """Resolve a citation against the available index.
 
-        Returns the citation with resolved=True/False + evidence.
+        Returns the citation with resolved=True/False, checked=True/False, and
+        evidence. `checked` MUST be False whenever there was no index to check
+        against. Callers (CoVeVerifier) treat resolved=False+checked=True as
+        "disproven" and resolved=False+checked=False as merely "unverified" —
+        get `checked` wrong and a citation that was never independently
+        checkable looks fabricated.
         """
         ...
 

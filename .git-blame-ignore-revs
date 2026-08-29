@@ -1,0 +1,11 @@
+# Revisions to skip in `git blame` — mechanical, repo-wide reformats with no
+# behavioral change. Each was verified AST-identical before being listed here.
+#
+# Use it by default:
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# (GitHub honours this file automatically.)
+
+# style: apply ruff format across leggie/, tests/ and scripts/ — 82 files,
+# all 82 verified AST byte-identical.
+bc27ede9b8581421d582d7c67e0d5baa620dd68c

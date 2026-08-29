@@ -12,8 +12,11 @@ from leggie.application.ports.llm import LLMPort
 from leggie.infrastructure.llm.base import BudgetExceededError, LLMRateLimitError, LLMTimeoutError
 
 
-def with_retry(max_retries: int = 3, base_delay: float = 1.0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def with_retry(
+    max_retries: int = 3, base_delay: float = 1.0
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator: retry LLM calls on transient failures with exponential backoff."""
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -24,10 +27,12 @@ def with_retry(max_retries: int = 3, base_delay: float = 1.0) -> Callable[[Calla
                 except (LLMRateLimitError, LLMTimeoutError) as e:
                     last_exc = e
                     if attempt < max_retries - 1:
-                        delay = base_delay * (2 ** attempt)
+                        delay = base_delay * (2**attempt)
                         await asyncio.sleep(delay)
             raise last_exc  # type: ignore
+
         return wrapper
+
     return decorator
 
 
@@ -57,6 +62,7 @@ class BudgetGuardDecorator(LLMPort):
     async def generate(self, request: Any) -> Any:
         """Pre-call budget check → generate → post-call record."""
         from leggie.application.ports.llm import LLMResponse
+
         model = request.model or getattr(self._wrapped, "_default_model", "")
 
         # Estimate tokens (use approximate count if not available)
@@ -85,6 +91,7 @@ class BudgetGuardDecorator(LLMPort):
     async def generate_structured(self, request: Any, schema: type) -> tuple[Any, Any]:
         """Check budget, then delegate, then record usage."""
         from leggie.application.ports.llm import LLMResponse
+
         model = request.model or getattr(self._wrapped, "_default_model", "")
 
         prompt_tokens = len(request.prompt) // 4 + 1

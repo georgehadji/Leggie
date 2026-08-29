@@ -62,7 +62,28 @@ class TestBillAnalysisFlow:
         )
         assert flow._orchestrator._use_verbalized_sampling is True
         from leggie.application.services.rerank import ModelBasedReranker
+
         assert isinstance(flow._reranker, ModelBasedReranker)
+
+    @pytest.mark.asyncio
+    async def test_reranker_degradation_reaches_flow_event_log(self):
+        """ModelBasedReranker's on_degradation must be the flow's own callback,
+        so a reranker-port failure lands in the flow's event log exactly like a
+        lens degradation does (FX5)."""
+        from leggie.application.ports.reranker import RerankerPort
+
+        class FailingReranker(RerankerPort):
+            async def rerank(self, query, documents, model="", top_k=None):
+                raise RuntimeError("rerank service unavailable")
+
+        flow = BillAnalysisFlow(reranker_name="model", reranker_port=FailingReranker())
+        await flow._reranker.rerank([_make_finding("Άρθρο 1: test")])
+
+        events = flow.get_event_log()
+        assert any(
+            e.event_type == EventType.DEGRADED and e.data.get("component") == "ModelBasedReranker"
+            for e in events
+        )
 
     @pytest.mark.asyncio
     async def test_run_returns_findings(self, sample_bill_file, tmp_path):
@@ -82,7 +103,9 @@ class TestBillAnalysisFlow:
         flow = BillAnalysisFlow()
         await flow.run(sample_bill_file, output_dir=tmp_path)
         events = flow.get_event_log()
-        assert len(events) >= 5  # At least: analysis_started, stage_completed × 4+, workflow_completed
+        assert (
+            len(events) >= 5
+        )  # At least: analysis_started, stage_completed × 4+, workflow_completed
 
     @pytest.mark.asyncio
     async def test_run_returns_findings_with_irac(self, sample_bill_file, tmp_path):
@@ -189,6 +212,7 @@ class _LLMWithGuard:
     async def generate_structured(self, request, schema):
         from leggie.application.ports.llm import LLMResponse
         from leggie.domain.models import ModelTier
+
         return None, LLMResponse(content="", model="stub", tier_used=ModelTier.BUDGET, usage={})
 
     async def count_tokens(self, text, model=None):  # pragma: no cover
@@ -216,11 +240,19 @@ class TestBudgetCheckpoint:
         from leggie.infrastructure.budget_guard import BudgetGuard
 
         checkpoint = tmp_path / "run.checkpoint.json"
-        checkpoint.write_text(json.dumps({
-            "max_tokens": 1000, "max_cost": 1.0,
-            "tokens_used": 900, "cost_used": 0.5,
-            "degraded": False, "degrade_level": 0,
-        }), encoding="utf-8")
+        checkpoint.write_text(
+            json.dumps(
+                {
+                    "max_tokens": 1000,
+                    "max_cost": 1.0,
+                    "tokens_used": 900,
+                    "cost_used": 0.5,
+                    "degraded": False,
+                    "degrade_level": 0,
+                }
+            ),
+            encoding="utf-8",
+        )
 
         guard = BudgetGuard(max_tokens=1000, max_cost=1.0)
         flow = BillAnalysisFlow(llm=_LLMWithGuard(guard))
@@ -233,14 +265,21 @@ class TestBudgetCheckpoint:
     @pytest.mark.asyncio
     async def test_no_checkpoint_path_is_noop(self, sample_bill_file, tmp_path):
         from leggie.infrastructure.budget_guard import BudgetGuard
+
         guard = BudgetGuard()
         flow = BillAnalysisFlow(llm=_LLMWithGuard(guard))
         findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
         assert flow.state == WorkflowState.DONE
 
 
-def _make_finding(issue: str, confidence: float = 0.8, finding_type=None,
-                  lens: str = "test", severity: str = "medium") -> Finding:
+def _make_finding(
+    issue: str,
+    confidence: float = 0.8,
+    finding_type=None,
+    lens: str = "test",
+    severity: str = "medium",
+    article_id: str = "",
+) -> Finding:
     return Finding(
         finding_type=finding_type or FindingType.CONSTITUTIONAL,
         irac=IRAC(issue=issue, rule="r", application="a", conclusion="c"),
@@ -248,6 +287,7 @@ def _make_finding(issue: str, confidence: float = 0.8, finding_type=None,
         severity=Severity(severity),
         lens=lens,
         model="test",
+        article_id=article_id,
     )
 
 
@@ -264,7 +304,12 @@ class TestArticleSelection:
         assert _parse_article_selection("1-2,5", ["1", "2", "3", "4", "5"]) == ["1", "2", "5"]
 
     def test_range_matches_greek_suffix(self):
-        assert _parse_article_selection("1-3", ["1", "2Α", "2Β", "3", "4"]) == ["1", "2Α", "2Β", "3"]
+        assert _parse_article_selection("1-3", ["1", "2Α", "2Β", "3", "4"]) == [
+            "1",
+            "2Α",
+            "2Β",
+            "3",
+        ]
 
     def test_empty_selection(self):
         assert _parse_article_selection("10-12", ["1", "2", "3"]) == []
@@ -300,6 +345,18 @@ class TestDedupInFlow:
     def test_dedup_empty_list(self):
         flow = BillAnalysisFlow()
         assert flow._dedup_findings([]) == []
+
+    def test_dedup_groups_by_article_id_not_regex(self):
+        """Two findings with the same article_id but issue text that would
+        extract different (or no) article numbers under the old regex must
+        still be grouped correctly — the whole point of consolidating on
+        article_number_of()."""
+        flow = BillAnalysisFlow(dedup_threshold=0.5)
+        f1 = _make_finding("delegation limits exceeded", confidence=0.9, article_id="1")
+        f2 = _make_finding("Άρθρο 99: delegation limits exceeded", confidence=0.7, article_id="1")
+        result = flow._dedup_findings([f1, f2])
+        assert len(result) == 1
+        assert result[0].confidence.score == 0.9
 
     def test_dedup_idempotent(self):
         flow = BillAnalysisFlow(dedup_threshold=0.5)
@@ -397,17 +454,20 @@ class TestDegradationEvent:
 
     def test_degradation_records_event(self):
         from leggie.domain.models import Event
+
         events: list[Event] = []
 
         def record(e: Event) -> None:
             events.append(e)
 
         flow = BillAnalysisFlow(on_degradation=record)
-        flow._on_degradation(Event(
-            event_type=EventType.DEGRADED,
-            aggregate_id="test:lens:article:1",
-            data={"lens": "constitutional", "error": "test error"},
-        ))
+        flow._on_degradation(
+            Event(
+                event_type=EventType.DEGRADED,
+                aggregate_id="test:lens:article:1",
+                data={"lens": "constitutional", "error": "test error"},
+            )
+        )
         assert len(events) == 1
         assert events[0].event_type == EventType.DEGRADED
         assert "test error" in events[0].data["error"]
@@ -415,11 +475,14 @@ class TestDegradationEvent:
     def test_default_degradation_uses_record_event(self):
         flow = BillAnalysisFlow()
         from leggie.domain.models import Event
-        flow._on_degradation(Event(
-            event_type=EventType.DEGRADED,
-            aggregate_id="test",
-            data={"test": True},
-        ))
+
+        flow._on_degradation(
+            Event(
+                event_type=EventType.DEGRADED,
+                aggregate_id="test",
+                data={"test": True},
+            )
+        )
         log = flow.get_event_log()
         assert len(log) == 1
         assert log[0].event_type == EventType.DEGRADED

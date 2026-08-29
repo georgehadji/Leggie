@@ -4,7 +4,7 @@
 >
 > Analyzes Greek bills through 5 independent legal perspectives, verifies every citation, and generates executive summaries and article-by-article reports — all on a Clean Architecture foundation with full auditability.
 
-[![Tests](https://img.shields.io/badge/tests-199%20passed-brightgreen)](https://github.com/)
+[![Tests](https://img.shields.io/badge/tests-546%20passed-brightgreen)](https://github.com/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](https://python.org)
 [![Lines](https://img.shields.io/badge/code-5,195%20lines-lightgrey)](https://github.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -18,9 +18,9 @@ flowchart LR
     A[Bill file<br/>PDF/DOCX/HTML/TXT] --> B[Ingest]
     B --> C[Parse<br/>Άρθρο tree]
     C --> D[5-Lens Parallel Analysis]
-    D --> E[Rerank]
-    E --> F[Skeptic Review]
-    F --> G[CoVe Citation Verification]
+    D --> E[Skeptic Review]
+    E --> F[CoVe Citation Verification]
+    F --> G[Rerank]
     G --> H[Improvement Suggestions]
     H --> I[Reports<br/>Exec Summary + Article-by-Article]
 ```
@@ -234,24 +234,66 @@ Gold labels follow an IRAC-grounded schema:
 
 ## Development
 
+> **Verification is local.** GitHub Actions has not executed a job for this
+> repository since 2026-07-15 — jobs die in under 10s with no runner assigned,
+> on every branch including `master`. The cause is account-level, not a code
+> regression ([docs/CI_OUTAGE_2026-07.md](docs/CI_OUTAGE_2026-07.md)). Treat a
+> red X on a PR as no signal at all, and a green tick as unavailable — the
+> gates below are the evidence.
+
+### Setup
+
 ```bash
-# Run all tests
-pytest tests/ -v
+pip install -e ".[dev,lint]"
+pre-commit install          # wires both pre-commit and pre-push hooks
+```
 
-# Lint
-ruff check leggie/
+### Running the gates
 
-# Type check
-mypy leggie/
+```bash
+# The full CI gate sequence (Windows and Linux)
+python scripts/run_gates.py
 
-# Run a single test file
-pytest tests/unit/application/test_constitutional_lens.py -v
+# ...or a subset
+python scripts/run_gates.py ruff mypy
+python scripts/run_gates.py --list
+```
+
+`scripts/run_gates.py` runs the same six gates as `.github/workflows/ci.yml`,
+in the same order — ruff format, ruff, mypy, import-linter, bandit, pytest with
+the 80% coverage floor — and exits non-zero if any fails.
+
+### What runs automatically
+
+`pre-commit install` wires both hook types, and every hook shells out to
+`scripts/run_gates.py`, so the hooks, the script and `ci.yml` cannot drift apart:
+
+| Stage | Gates | Why here |
+|---|---|---|
+| **pre-commit** | ruff autofix, ruff format, ruff, mypy, bandit | fast — sub-second to ~1s |
+| **pre-push** | + import-linter, pytest + coverage floor | ~10s; the last gate before code leaves the machine |
+
+Keep all three in lockstep: a gate changed in one must change in the others, in
+the same commit.
+
+The individual commands, if you want them one at a time:
+
+```bash
+pytest tests/ -v                    # tests
+ruff format --check leggie/ tests/ scripts/  # formatting
+ruff check leggie/ tests/ scripts/  # lint
+mypy leggie/ --ignore-missing-imports  # types
+lint-imports                        # architecture layer contract
+bandit -c pyproject.toml -r leggie/    # security scan
+
+pytest tests/unit/application/test_constitutional_lens.py -v  # a single file
 ```
 
 ### Testing
-- **199 unit tests**, 100% passing
-- 21 test files covering domain, application, and infrastructure layers
-- CI-compatible: `pytest`, `ruff`, `mypy`, `import-linter` configured in `pyproject.toml`
+- **546 tests passing**, 1 skipped (`master`: 539 passing) — line coverage 82.7%, floor 80%
+- 48 test files covering domain, application, and infrastructure layers
+- CI-compatible: `pytest`, `ruff`, `mypy`, `import-linter`, `bandit` configured in `pyproject.toml`
+
 
 ---
 

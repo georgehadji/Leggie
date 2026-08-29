@@ -245,8 +245,8 @@ graph LR
 ## 4. DATA FLOW — TOP 3 CRITICAL PATHS
 
 ### Path 1: Bill Analysis (primary user flow)
-- **Sequence:** `CLI: leggie analyze bill.pdf` → `interfaces/cli:entry_point()` → `_handle_analyze()` → `Mediator.send(AnalyzeBillCommand)` → `AnalyzeBillHandler.handle()` → `BillAnalysisFlow.run(bill.pdf)` → `Orchestrator.analyze_document()` → 5 parallel lens workers → `CompositeReranker.rerank()` → `CalibratedSkeptic.review()` → `CoVeVerifier.verify_batch()` → `ImprovementEngine.generate_suggestions()` → `ExecutiveSummaryRenderer.render()` + `ArticleByArticleRenderer.render()` → auto-save to `Outputs/`
-- **State Changes:** `Event` objects appended to `BillAnalysisFlow._events` at each of 10+ stage transitions. `self._findings` reassigned after rerank → skeptic → CoVe. Reports written to filesystem at `Outputs/{bill_name}_{type}.md`.
+- **Sequence:** `CLI: leggie analyze bill.pdf` → `interfaces/cli:entry_point()` → `_handle_analyze()` → `Mediator.send(AnalyzeBillCommand)` → `AnalyzeBillHandler.handle()` → `BillAnalysisFlow.run(bill.pdf)` → `Orchestrator.analyze_document()` → 5 parallel lens workers → `CalibratedSkeptic.review()` → `CoVeVerifier.verify_batch()` → `CompositeReranker.rerank()` → `ImprovementEngine.generate_suggestions()` → `ExecutiveSummaryRenderer.render()` + `ArticleByArticleRenderer.render()` → auto-save to `Outputs/`
+- **State Changes:** `Event` objects appended to `BillAnalysisFlow._events` at each of 10+ stage transitions. `self._findings` reassigned after dedup → skeptic → CoVe → rerank (rerank runs last so the published order reflects post-verification confidence). Reports written to filesystem at `Outputs/{bill_name}_{type}.md`.
 - **Failure Modes:**
   - Stage 1 (ingest): missing file → `IngestError` → FSM transitions to `FAILED`
   - Stage 4 (execute): lens exception → `Orchestrator._run_lens()` catches, logs warning, returns `[]` (FIX_PLAN G3)

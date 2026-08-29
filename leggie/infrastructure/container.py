@@ -99,6 +99,7 @@ class Container:
         """Wire all defaults for Leggie's core ports."""
         # Event bus
         from leggie.infrastructure.persistence import InMemoryEventBus
+
         self.register(EventBusPort, lambda: InMemoryEventBus())
 
         # LLM adapter (OpenRouter — single API key for all providers)
@@ -106,6 +107,7 @@ class Container:
             from leggie.config.settings import get_settings
             from leggie.infrastructure.llm import LLMAdapter
             from leggie.infrastructure.llm.decorators import BudgetGuardDecorator
+
             s = get_settings()
             adapter: LLMPort = LLMAdapter(
                 openrouter_key=s.llm.openrouter_api_key,
@@ -115,20 +117,24 @@ class Container:
             # Wrap with budget guard (EN2)
             if s.budget.max_cost_per_run > 0:
                 from leggie.infrastructure.budget_guard import BudgetGuard
+
                 guard = BudgetGuard(
                     max_tokens=s.budget.max_tokens_per_run,
                     max_cost=s.budget.max_cost_per_run,
                 )
                 adapter = BudgetGuardDecorator(adapter, guard)
             return adapter
+
         self.register(LLMPort, _create_llm)
 
         # Router
         from leggie.infrastructure.router import StaticRouter
+
         self.register(RouterPort, lambda: StaticRouter("config/routes.yaml"))
 
         # Citation parser with known-good resolution index (D7)
         from leggie.infrastructure.citation import GreekCitationParser
+
         resolution_index: set[str] = set()
         try:
             index_path = Path("data/citation_index.json")
@@ -144,16 +150,19 @@ class Container:
 
         # In-memory state store
         from leggie.infrastructure.persistence.state_store import InMemoryStateStore
+
         self.register(StatePort, lambda: InMemoryStateStore())
 
         # Ingest / Parse adapters
         from leggie.infrastructure.ingest_adapter import IngestAdapter
         from leggie.infrastructure.parse_adapter import ParseAdapter
+
         self.register(IngestPort, lambda: IngestAdapter())
         self.register(ParsePort, lambda: ParseAdapter())
 
         # Rate limiter for LLM calls
         from leggie.infrastructure.rate_limiter import RateLimiter
+
         self.register_instance("rate_limiter", RateLimiter(max_rate=5.0))
 
         # Checkpoint store for crash-resume (D10)
@@ -164,16 +173,19 @@ class Container:
         from leggie.infrastructure.blackboard_adapter import BlackboardAdapter
         from leggie.infrastructure.reranker import OpenRouterReranker
         from leggie.infrastructure.retrieval_adapter import SimpleRetrievalAdapter
+
         self.register(BlackboardPort, lambda: BlackboardAdapter())
         self.register(RetrievalPort, lambda: SimpleRetrievalAdapter())
 
         def _create_reranker() -> RerankerPort:
             from leggie.config.settings import get_settings
+
             s = get_settings()
             return OpenRouterReranker(
                 api_key=s.llm.openrouter_api_key,
                 base_url=s.llm.openrouter_base_url,
             )
+
         self.register(RerankerPort, _create_reranker)
 
         # Budget guard — the canonical BudgetGuard is created inside _create_llm()
@@ -186,16 +198,20 @@ class Container:
         def _create_reasoner() -> ReasonerPort:
             from leggie.config.settings import get_settings
             from leggie.infrastructure.reasoner.adapter import ReasonerAdapter
+
             s = get_settings()
             return ReasonerAdapter(
                 base_url=s.reasoner.base_url,
                 api_key=s.reasoner.api_key,
                 request_timeout=float(s.reasoner.request_timeout),
             )
+
         self.register(ReasonerPort, _create_reasoner)
 
         def _create_reasoner_server_manager() -> ReasonerServerManager:
             from leggie.config.settings import get_settings
             from leggie.infrastructure.reasoner.server_manager import ReasonerServerManager
+
             return ReasonerServerManager(get_settings().reasoner)
+
         self.register_instance("reasoner_server_manager", _create_reasoner_server_manager())

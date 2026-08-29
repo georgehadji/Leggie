@@ -11,7 +11,7 @@ from enum import Enum, StrEnum, auto
 from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -24,7 +24,7 @@ def is_greek(text: str, min_ratio: float = 0.50) -> bool:
     """
     if not text:
         return False
-    greek_chars = sum(1 for ch in text if '\u0370' <= ch <= '\u03ff' or '\u1f00' <= ch <= '\u1fff')
+    greek_chars = sum(1 for ch in text if "\u0370" <= ch <= "\u03ff" or "\u1f00" <= ch <= "\u1fff")
     return (greek_chars / max(len(text), 1)) >= min_ratio
 
 
@@ -154,6 +154,12 @@ class Citation(BaseModel):
     identifier: str = Field(description="Normalized ID within the scheme")
     original_text: str = Field(description="Raw citation text as found in source")
     resolved: bool = False
+    checked: bool = Field(
+        default=False,
+        description="True iff resolve() actually checked this citation against a "
+        "configured index. False means 'not checked' — resolved=False here must "
+        "never be read as 'disproven', only as 'unverified'.",
+    )
     resolution_evidence: str | None = None
 
     @field_validator("identifier")
@@ -162,6 +168,12 @@ class Citation(BaseModel):
         if not v.strip():
             raise ValueError("identifier must not be empty")
         return v.strip()
+
+    @model_validator(mode="after")
+    def _resolved_implies_checked(self) -> Citation:
+        if self.resolved and not self.checked:
+            raise ValueError("resolved=True requires checked=True (was it actually checked?)")
+        return self
 
 
 class Evidence(BaseModel):
@@ -286,6 +298,12 @@ class Finding(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     finding_type: FindingType = Field(description="Category of finding (U3 typed)")
     irac: IRAC = Field(description="IRAC legal reasoning structure")
+    article_id: str = Field(
+        default="",
+        description="Article this finding is about. Empty for legacy/pre-fix "
+        "findings — consumers fall back to parsing 'Άρθρο N' out of irac.issue "
+        "via article_number_of().",
+    )
     severity: Severity = Field(default=Severity.MEDIUM)
     confidence: Confidence = Field(description="Calibrated confidence score")
     evidence: list[Evidence] = Field(default_factory=list)

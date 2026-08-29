@@ -41,24 +41,30 @@ class TestJsonEventStore:
     @pytest.mark.asyncio
     async def test_replay_aggregate(self, tmp_path):
         store = JsonEventStore(str(tmp_path / "replay.jsonl"))
-        await store.append(Event(
-            event_type=EventType.ANALYSIS_STARTED,
-            aggregate_id="run-1",
-            data={},
-            timestamp=datetime(2025, 1, 1),
-        ))
-        await store.append(Event(
-            event_type=EventType.WORKFLOW_COMPLETED,
-            aggregate_id="run-1",
-            data={},
-            timestamp=datetime(2025, 1, 1),
-        ))
-        await store.append(Event(
-            event_type=EventType.ANALYSIS_STARTED,
-            aggregate_id="run-2",
-            data={},
-            timestamp=datetime(2025, 1, 1),
-        ))
+        await store.append(
+            Event(
+                event_type=EventType.ANALYSIS_STARTED,
+                aggregate_id="run-1",
+                data={},
+                timestamp=datetime(2025, 1, 1),
+            )
+        )
+        await store.append(
+            Event(
+                event_type=EventType.WORKFLOW_COMPLETED,
+                aggregate_id="run-1",
+                data={},
+                timestamp=datetime(2025, 1, 1),
+            )
+        )
+        await store.append(
+            Event(
+                event_type=EventType.ANALYSIS_STARTED,
+                aggregate_id="run-2",
+                data={},
+                timestamp=datetime(2025, 1, 1),
+            )
+        )
         run1_events = store.replay_aggregate("run-1")
         assert len(run1_events) == 2
         assert all(e.aggregate_id == "run-1" for e in run1_events)

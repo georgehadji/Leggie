@@ -86,6 +86,7 @@ class TestCitation:
             identifier="ΦΕΚ Α 137/2023",
             original_text="ΦΕΚ Α 137/2023",
             resolved=True,
+            checked=True,
             resolution_evidence="verified against gov-et-laws index",
         )
         assert cite.resolved is True
@@ -97,6 +98,38 @@ class TestCitation:
                 identifier="   ",
                 original_text="ΦΕΚ",
             )
+
+    def test_checked_defaults_false(self):
+        cite = Citation(
+            scheme=CitationScheme.FEK,
+            identifier="ΦΕΚ Α 137/2023",
+            original_text="ΦΕΚ Α 137/2023",
+        )
+        assert cite.checked is False
+
+    def test_resolved_without_checked_is_rejected(self):
+        """resolved=True must never be claimable without checked=True — a
+        citation that was never checked against an index cannot be 'verified',
+        only 'unverified' (see CoVeVerifier._check_citations)."""
+        with pytest.raises(Exception):
+            Citation(
+                scheme=CitationScheme.FEK,
+                identifier="ΦΕΚ Α 137/2023",
+                original_text="ΦΕΚ Α 137/2023",
+                resolved=True,
+                checked=False,
+            )
+
+    def test_resolved_with_checked_is_accepted(self):
+        cite = Citation(
+            scheme=CitationScheme.FEK,
+            identifier="ΦΕΚ Α 137/2023",
+            original_text="ΦΕΚ Α 137/2023",
+            resolved=True,
+            checked=True,
+        )
+        assert cite.resolved is True
+        assert cite.checked is True
 
 
 class TestIRAC:
@@ -155,6 +188,7 @@ class TestFinding:
                         identifier="32018L1972",
                         original_text="CELEX:32018L1972",
                         resolved=True,
+                        checked=True,
                     ),
                     text_excerpt="Directive 2018/1972 defines...",
                     verdict="supports",
@@ -174,6 +208,29 @@ class TestFinding:
         )
         with pytest.raises(Exception):
             finding.lens = "changed"
+
+    def test_article_id_defaults_empty(self):
+        """Legacy/pre-fix findings have no article_id — consumers fall back to
+        parsing 'Άρθρο N' out of irac.issue (see article_number_of)."""
+        finding = Finding(
+            finding_type=FindingType.CONSTITUTIONAL,
+            irac=IRAC(issue="x", rule="y", application="z", conclusion="w"),
+            confidence=Confidence.from_score(0.5),
+            lens="test",
+            model="test",
+        )
+        assert finding.article_id == ""
+
+    def test_article_id_can_be_set(self):
+        finding = Finding(
+            finding_type=FindingType.CONSTITUTIONAL,
+            irac=IRAC(issue="x", rule="y", application="z", conclusion="w"),
+            confidence=Confidence.from_score(0.5),
+            lens="test",
+            model="test",
+            article_id="15",
+        )
+        assert finding.article_id == "15"
 
 
 class TestArticle:

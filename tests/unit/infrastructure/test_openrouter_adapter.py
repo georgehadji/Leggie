@@ -60,10 +60,12 @@ class TestOpenRouterAPIMock:
         """Provider parses successful response correctly."""
         mock_response = self._make_mock_response(
             body={
-                "choices": [{
-                    "message": {"content": "Legal analysis result", "role": "assistant"},
-                    "finish_reason": "stop",
-                }],
+                "choices": [
+                    {
+                        "message": {"content": "Legal analysis result", "role": "assistant"},
+                        "finish_reason": "stop",
+                    }
+                ],
                 "usage": {"prompt_tokens": 200, "completion_tokens": 100},
                 "model": "openai/gpt-5.6-luna",
             }

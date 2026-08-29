@@ -21,7 +21,8 @@ def make_finding(finding_type=FindingType.CONSTITUTIONAL, severity="medium", con
         irac=IRAC(issue="test", rule="r", application="a", conclusion="c"),
         confidence=Confidence.from_score(confidence),
         severity=Severity(severity),
-        lens="test", model="test",
+        lens="test",
+        model="test",
     )
 
 
@@ -69,7 +70,8 @@ class TestScoreNovelty:
             finding_type=FindingType.ECONOMIC,
             irac=IRAC(issue="different", rule="r", application="a", conclusion="c"),
             confidence=Confidence.from_score(0.5),
-            lens="test", model="test",
+            lens="test",
+            model="test",
         )
         novelty = score_novelty(f2, [f1], exact_similarity)
         assert novelty == 1.0

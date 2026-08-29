@@ -22,6 +22,7 @@ class OpenRouterReranker(RerankerPort):
     ) -> None:
         if not api_key:
             from leggie.infrastructure.llm.base import LLMConfigurationError
+
             raise LLMConfigurationError("OpenRouter API key not configured")
         self._api_key = api_key
         self._base_url = base_url
@@ -39,6 +40,7 @@ class OpenRouterReranker(RerankerPort):
             import httpx
         except ImportError:
             from leggie.infrastructure.llm.base import LLMError
+
             raise LLMError("httpx not installed")
 
         model_id = model or self._default_model
@@ -65,9 +67,11 @@ class OpenRouterReranker(RerankerPort):
 
         if resp.status_code == 429:
             from leggie.infrastructure.llm.base import LLMRateLimitError
+
             raise LLMRateLimitError(f"OpenRouter rerank rate limited: {resp.text}")
         if resp.status_code != 200:
             from leggie.infrastructure.llm.base import LLMError
+
             raise LLMError(f"OpenRouter rerank error {resp.status_code}: {resp.text}")
 
         data = resp.json()
@@ -77,7 +81,9 @@ class OpenRouterReranker(RerankerPort):
             RerankResult(
                 index=r.get("index", i),
                 relevance_score=r.get("relevance_score", 0.0),
-                document=documents[r.get("index", i)] if r.get("index", i) < len(documents) else None,
+                document=documents[r.get("index", i)]
+                if r.get("index", i) < len(documents)
+                else None,
             )
             for i, r in enumerate(results)
         ]

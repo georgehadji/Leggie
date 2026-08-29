@@ -9,7 +9,8 @@ def make_finding(issue: str = "test") -> Finding:
         finding_type=FindingType.CONSTITUTIONAL,
         irac=IRAC(issue=issue, rule="r", application="a", conclusion="c"),
         confidence=Confidence.from_score(0.5),
-        lens="test", model="test",
+        lens="test",
+        model="test",
     )
 
 
@@ -54,8 +55,10 @@ class TestBlackboard:
     def test_observer_notified(self):
         bb = Blackboard()
         observed = []
+
         def observer(entry, board):
             observed.append(entry.finding.irac.issue)
+
         bb.subscribe(observer)
         bb.post(make_finding("observed"), agent_id="test")
         assert "observed" in observed
@@ -63,8 +66,10 @@ class TestBlackboard:
     def test_unsubscribe(self):
         bb = Blackboard()
         observed = []
+
         def observer(entry, board):
             observed.append("x")
+
         bb.subscribe(observer)
         bb.unsubscribe(observer)
         bb.post(make_finding(), agent_id="test")

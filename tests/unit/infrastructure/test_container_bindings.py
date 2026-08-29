@@ -36,11 +36,13 @@ class TestContainerBindings:
     def test_event_bus_port_resolves(self, container: Container):
         bus = container.get(EventBusPort)
         from leggie.infrastructure.persistence import InMemoryEventBus
+
         assert isinstance(bus, InMemoryEventBus)
 
     def test_state_port_resolves_and_supports_contract(self, container: Container):
         """StatePort must resolve to an object that satisfies all four methods."""
         import inspect
+
         store = container.get(StatePort)
         # Check the async methods exist
         assert hasattr(store, "get_state")
@@ -50,6 +52,7 @@ class TestContainerBindings:
 
         # Actually call them (in-memory, no side effects)
         import asyncio
+
         loop = asyncio.new_event_loop()
         try:
             loop.run_until_complete(store.set_state("test-run", WorkflowState.IDLE))
@@ -65,31 +68,37 @@ class TestContainerBindings:
     def test_ingest_port_resolves(self, container: Container):
         ingest = container.get(IngestPort)
         from leggie.infrastructure.ingest_adapter import IngestAdapter
+
         assert isinstance(ingest, IngestAdapter)
 
     def test_parse_port_resolves(self, container: Container):
         parse = container.get(ParsePort)
         from leggie.infrastructure.parse_adapter import ParseAdapter
+
         assert isinstance(parse, ParseAdapter)
 
     def test_citation_parser_port_resolves(self, container: Container):
         parser = container.get(CitationParserPort)
         from leggie.infrastructure.citation import GreekCitationParser
+
         assert isinstance(parser, GreekCitationParser)
 
     def test_blackboard_port_resolves(self, container: Container):
         board = container.get(BlackboardPort)
         from leggie.infrastructure.blackboard_adapter import BlackboardAdapter
+
         assert isinstance(board, BlackboardAdapter)
 
     def test_retrieval_port_resolves(self, container: Container):
         retrieval = container.get(RetrievalPort)
         from leggie.infrastructure.retrieval_adapter import SimpleRetrievalAdapter
+
         assert isinstance(retrieval, SimpleRetrievalAdapter)
 
     def test_router_port_resolves(self, container: Container):
         router = container.get(RouterPort)
         from leggie.infrastructure.router import StaticRouter
+
         assert isinstance(router, StaticRouter)
 
     def test_reranker_port_is_bound(self, container: Container):
@@ -106,6 +115,7 @@ class TestContainerBindings:
         Resolution requires an OpenRouter API key. Skip if not configured.
         """
         import os
+
         if not os.environ.get("LEGGIE_LLM__OPENROUTER_API_KEY"):
             pytest.skip("OpenRouter API key not configured")
         assert container.has_binding(LLMPort)
@@ -128,7 +138,8 @@ class TestBlackboardAdapterBehavior:
             finding_type=FindingType.CONSTITUTIONAL,
             irac=IRAC(issue="test issue", rule="r", application="a", conclusion="c"),
             confidence=Confidence.from_score(0.5),
-            lens="test", model="test",
+            lens="test",
+            model="test",
         )
         entry = BlackboardEntry(finding=finding, agent_id="lens-1", round=1)
         await board.post_finding(entry)
@@ -148,12 +159,16 @@ class TestBlackboardAdapterBehavior:
         f1 = Finding(
             finding_type=FindingType.CONSTITUTIONAL,
             irac=IRAC(issue="round 1", rule="r", application="a", conclusion="c"),
-            confidence=Confidence.from_score(0.5), lens="test", model="test",
+            confidence=Confidence.from_score(0.5),
+            lens="test",
+            model="test",
         )
         f2 = Finding(
             finding_type=FindingType.CONSTITUTIONAL,
             irac=IRAC(issue="round 2", rule="r", application="a", conclusion="c"),
-            confidence=Confidence.from_score(0.5), lens="test", model="test",
+            confidence=Confidence.from_score(0.5),
+            lens="test",
+            model="test",
         )
         svc.post(f1, agent_id="a")
         svc.next_round()
@@ -161,6 +176,7 @@ class TestBlackboardAdapterBehavior:
 
         # Create adapter wrapping this pre-populated service
         from leggie.infrastructure.blackboard_adapter import BlackboardAdapter
+
         adapter = BlackboardAdapter()
         adapter._service = svc
 
@@ -179,7 +195,9 @@ class TestBlackboardAdapterBehavior:
         finding = Finding(
             finding_type=FindingType.CONSTITUTIONAL,
             irac=IRAC(issue="to be cleared", rule="r", application="a", conclusion="c"),
-            confidence=Confidence.from_score(0.5), lens="test", model="test",
+            confidence=Confidence.from_score(0.5),
+            lens="test",
+            model="test",
         )
         entry = BlackboardEntry(finding=finding, agent_id="test", round=1)
         await board.post_finding(entry)

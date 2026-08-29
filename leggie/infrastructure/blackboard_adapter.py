@@ -19,7 +19,9 @@ class BlackboardAdapter(BlackboardPort):
     async def post_finding(self, entry: BlackboardEntry) -> None:
         self._service.post(entry.finding, agent_id=entry.agent_id, metadata=entry.metadata)
 
-    async def get_findings(self, round_min: int = 0, agent_id: str | None = None) -> list[BlackboardEntry]:
+    async def get_findings(
+        self, round_min: int = 0, agent_id: str | None = None
+    ) -> list[BlackboardEntry]:
         """Get findings from the blackboard, filtered by round and/or agent.
 
         Returns port-level BlackboardEntry objects constructed from the

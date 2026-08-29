@@ -107,7 +107,7 @@ The following table clarifies what is live versus what is scaffolding for future
 |---|---|---|
 | **BillAnalysisFlow** | ✅ Live | Explicit state-machine workflow controls the full pipeline. |
 | **CheckpointStore** | ✅ Live | File-based crash-resume checkpointing per run. |
-| **BlackboardAggregator** | ✅ Live | In-process blackboard aggregation (dedup → rerank → skeptic → CoVe). |
+| **BlackboardAggregator** | ✅ Live | In-process blackboard aggregation (dedup → skeptic → CoVe → rerank). |
 | **StatePort** | ✅ Live | Now correctly bound to `InMemoryStateStore`. Async state/checkpoint persistence via port abstraction. |
 | **EventBusPort** | ✅ Live | `InMemoryEventBus` handles publish/subscribe for in-process events. |
 | **LLMPort / RouterPort** | ✅ Live | Model-backed analysis and cascade routing; requires API key. Graceful fallback to `None` without key. |

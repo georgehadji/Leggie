@@ -61,7 +61,7 @@ bill file (PDF/DOCX/HTML/TXT)
     → Orchestrator.analyze_document()              # PARALLEL article fan-out (D3 closed 2026-07-11): asyncio.gather + semaphore, return_exceptions=True isolates per-article failures (D6 closed)
        → 5 lenses via asyncio.TaskGroup per article # agents/orchestrator.py, _DEFAULT_LENSES
     → BlackboardAggregator.aggregate()         # default path (use_blackboard=True)
-       → dedup → CompositeReranker → CalibratedSkeptic → CoVeVerifier
+       → dedup → CalibratedSkeptic → CoVeVerifier → CompositeReranker (rerank LAST: skeptic+CoVe rewrite Finding.confidence, which the composite score reads)
     → ImprovementEngine.generate_suggestions()
     → ExecutiveSummaryRenderer + ArticleByArticleRenderer
     → auto-save to Outputs/<stem>_{executive_summary.md,article_by_article.md,findings.json}

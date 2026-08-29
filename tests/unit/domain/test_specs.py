@@ -16,7 +16,9 @@ from leggie.domain.specs import (
 )
 
 
-def make_finding(finding_type=FindingType.OTHER, confidence_score=0.5, severity="medium", evidence=None):
+def make_finding(
+    finding_type=FindingType.OTHER, confidence_score=0.5, severity="medium", evidence=None
+):
     return Finding(
         finding_type=finding_type,
         irac=IRAC(issue="x", rule="y", application="z", conclusion="w"),
@@ -52,6 +54,7 @@ class TestCitationResolves:
             identifier="ΦΕΚ Α 137/2023",
             original_text="ΦΕΚ Α 137/2023",
             resolved=True,
+            checked=True,
         )
         spec = CitationResolves()
         assert spec.is_satisfied_by(cite) is True
