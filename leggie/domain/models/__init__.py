@@ -286,6 +286,12 @@ class Finding(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     finding_type: FindingType = Field(description="Category of finding (U3 typed)")
     irac: IRAC = Field(description="IRAC legal reasoning structure")
+    article_id: str = Field(
+        default="",
+        description="Article this finding is about. Empty for legacy/pre-fix "
+        "findings — consumers fall back to parsing 'Άρθρο N' out of irac.issue "
+        "via article_number_of().",
+    )
     severity: Severity = Field(default=Severity.MEDIUM)
     confidence: Confidence = Field(description="Calibrated confidence score")
     evidence: list[Evidence] = Field(default_factory=list)

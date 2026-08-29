@@ -175,6 +175,29 @@ class TestFinding:
         with pytest.raises(Exception):
             finding.lens = "changed"
 
+    def test_article_id_defaults_empty(self):
+        """Legacy/pre-fix findings have no article_id — consumers fall back to
+        parsing 'Άρθρο N' out of irac.issue (see article_number_of)."""
+        finding = Finding(
+            finding_type=FindingType.CONSTITUTIONAL,
+            irac=IRAC(issue="x", rule="y", application="z", conclusion="w"),
+            confidence=Confidence.from_score(0.5),
+            lens="test",
+            model="test",
+        )
+        assert finding.article_id == ""
+
+    def test_article_id_can_be_set(self):
+        finding = Finding(
+            finding_type=FindingType.CONSTITUTIONAL,
+            irac=IRAC(issue="x", rule="y", application="z", conclusion="w"),
+            confidence=Confidence.from_score(0.5),
+            lens="test",
+            model="test",
+            article_id="15",
+        )
+        assert finding.article_id == "15"
+
 
 class TestArticle:
     def test_create_article(self):

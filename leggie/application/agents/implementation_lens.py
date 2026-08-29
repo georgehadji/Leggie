@@ -81,6 +81,7 @@ class ImplementationLens(Lens):
             ]
         return Finding(
             finding_type=FindingType.IMPLEMENTATION,
+            article_id=article.id,
             irac=IRAC(
                 issue=c.issue, rule=c.rule, application=c.application, conclusion=c.conclusion
             ),
@@ -104,6 +105,7 @@ class ImplementationLens(Lens):
                 findings.append(
                     Finding(
                         finding_type=FindingType.IMPLEMENTATION,
+                        article_id=article.id,
                         irac=IRAC(
                             issue=f"Άρθρο {article.id}: Πιθανή μη ρεαλιστική προθεσμία",
                             rule="Οι προθεσμίες εφαρμογής πρέπει να είναι εύλογες και ρεαλιστικές",
@@ -124,6 +126,7 @@ class ImplementationLens(Lens):
                 findings.append(
                     Finding(
                         finding_type=FindingType.PROCEDURAL,
+                        article_id=article.id,
                         irac=IRAC(
                             issue=f"Άρθρο {article.id}: Μεταβατικές ρυθμίσεις",
                             rule="Οι μεταβατικές διατάξεις πρέπει να διασφαλίζουν ομαλή μετάβαση",

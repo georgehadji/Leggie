@@ -79,6 +79,7 @@ class EconomicLens(Lens):
             ]
         return Finding(
             finding_type=FindingType.ECONOMIC,
+            article_id=article.id,
             irac=IRAC(
                 issue=c.issue, rule=c.rule, application=c.application, conclusion=c.conclusion
             ),
@@ -102,6 +103,7 @@ class EconomicLens(Lens):
                 findings.append(
                     Finding(
                         finding_type=FindingType.ECONOMIC,
+                        article_id=article.id,
                         irac=IRAC(
                             issue=f"Άρθρο {article.id}: Οικονομική επιβάρυνση",
                             rule="Κάθε νομοσχέδιο πρέπει να συνοδεύεται από εκτίμηση δημοσιονομικών επιπτώσεων",

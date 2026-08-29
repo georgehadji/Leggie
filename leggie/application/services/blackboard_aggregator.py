@@ -14,7 +14,7 @@ from collections.abc import Callable
 from typing import Any
 
 from leggie.application.blackboard import Blackboard, BlackboardEntry
-from leggie.application.services.cove_verifier import CoVeVerifier
+from leggie.application.services.cove_verifier import CoVeVerifier, article_number_of
 from leggie.application.services.rerank import CompositeReranker, Reranker
 from leggie.application.agents.skeptic import CalibratedSkeptic
 from leggie.domain.clustering import deduplicate
@@ -25,18 +25,10 @@ log = logging.getLogger(__name__)
 
 def _finding_similarity_article_aware(a: Finding, b: Finding) -> float:
     """Score similarity between two findings by (article, type, lens) + issue overlap."""
-    import re
-
-    _article_re = re.compile(r"Άρθρο\s+(\d+)", re.IGNORECASE)
-
-    def _article_prefix(f: Finding) -> str:
-        m = _article_re.search(f.irac.issue)
-        return m.group(1) if m else ""
-
     if (
         a.finding_type != b.finding_type
         or a.lens != b.lens
-        or _article_prefix(a) != _article_prefix(b)
+        or article_number_of(a) != article_number_of(b)
     ):
         return 0.0
     a_tokens = set(a.irac.issue.lower().split())

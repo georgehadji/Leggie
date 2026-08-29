@@ -26,7 +26,11 @@ from leggie.application.ports.parse import ParsePort
 from leggie.application.ports.reranker import RerankerPort
 from leggie.application.ports.router import RouterPort
 from leggie.application.services.bill_overview import BillOverviewGenerator
-from leggie.application.services.cove_verifier import CoVeVerifier, article_number
+from leggie.application.services.cove_verifier import (
+    CoVeVerifier,
+    article_number,
+    article_number_of,
+)
 from leggie.application.services.reports import (
     ArticleByArticleRenderer,
     ExecutiveSummaryRenderer,
@@ -535,14 +539,6 @@ class BillAnalysisFlow:
 
     def _dedup_findings(self, findings: list[Finding]) -> list[Finding]:
         """Remove near-duplicate findings, keeping the best per cluster."""
-        import re
-
-        _article_re = re.compile(r"Άρθρο\s+(\d+)", re.IGNORECASE)
-
-        def _article_prefix(finding: Finding) -> str:
-            m = _article_re.search(finding.irac.issue)
-            return m.group(1) if m else ""
-
         if not findings:
             return []
 
@@ -550,7 +546,7 @@ class BillAnalysisFlow:
             if (
                 a.finding_type != b.finding_type
                 or a.lens != b.lens
-                or _article_prefix(a) != _article_prefix(b)
+                or article_number_of(a) != article_number_of(b)
             ):
                 return 0.0
             a_tokens = set(a.irac.issue.lower().split())

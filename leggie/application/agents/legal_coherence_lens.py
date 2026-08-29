@@ -81,6 +81,7 @@ class LegalCoherenceLens(Lens):
             ]
         return Finding(
             finding_type=FindingType.FACTUAL,
+            article_id=article.id,
             irac=IRAC(
                 issue=c.issue, rule=c.rule, application=c.application, conclusion=c.conclusion
             ),
@@ -104,6 +105,7 @@ class LegalCoherenceLens(Lens):
                 findings.append(
                     Finding(
                         finding_type=FindingType.FACTUAL,
+                        article_id=article.id,
                         irac=IRAC(
                             issue=f"Άρθρο {article.id}: Ασαφής ή αόριστη διατύπωση",
                             rule="Η νομοθεσία πρέπει να είναι σαφής και ορισμένη (αρχή της ασφάλειας δικαίου)",
@@ -124,6 +126,7 @@ class LegalCoherenceLens(Lens):
                 findings.append(
                     Finding(
                         finding_type=FindingType.FACTUAL,
+                        article_id=article.id,
                         irac=IRAC(
                             issue=f"Άρθρο {article.id}: Πιθανή εσωτερική αντίφαση",
                             rule="Οι διατάξεις του ίδιου νόμου πρέπει να είναι συνεπείς μεταξύ τους",

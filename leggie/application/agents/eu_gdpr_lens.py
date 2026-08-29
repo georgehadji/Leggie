@@ -79,6 +79,7 @@ class EUGDPRLens(Lens):
             ]
         return Finding(
             finding_type=FindingType.EU_COMPLIANCE,
+            article_id=article.id,
             irac=IRAC(
                 issue=c.issue, rule=c.rule, application=c.application, conclusion=c.conclusion
             ),
@@ -102,6 +103,7 @@ class EUGDPRLens(Lens):
                 findings.append(
                     Finding(
                         finding_type=FindingType.EU_COMPLIANCE,
+                        article_id=article.id,
                         irac=IRAC(
                             issue=f"Άρθρο {article.id}: Επεξεργασία προσωπικών δεδομένων",
                             rule="Ο ΓΚΠΔ (Κανονισμός 2016/679) απαιτεί νομική βάση για κάθε επεξεργασία",
@@ -122,6 +124,7 @@ class EUGDPRLens(Lens):
                 findings.append(
                     Finding(
                         finding_type=FindingType.EU_COMPLIANCE,
+                        article_id=article.id,
                         irac=IRAC(
                             issue=f"Άρθρο {article.id}: Διαβίβαση δεδομένων εκτός ΕΕ",
                             rule="Η διαβίβαση προσωπικών δεδομένων εκτός ΕΕ απαιτεί επαρκείς διασφαλίσεις",

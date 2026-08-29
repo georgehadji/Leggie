@@ -52,6 +52,12 @@ def article_number(text: str) -> str:
     return m.group(1) if m else ""
 
 
+def article_number_of(finding: Finding) -> str:
+    """The article a finding is about: its own article_id, or a best-effort
+    regex fallback for findings that predate that field."""
+    return finding.article_id or article_number(finding.irac.issue)
+
+
 @dataclass
 class VerificationQuestion:
     """A single verification question and its factored answer."""
@@ -148,7 +154,7 @@ class CoVeVerifier:
         index = article_index or {}
         results: list[CoVeResult] = []
         for f in findings:
-            source = index.get(article_number(f.irac.issue), "")
+            source = index.get(article_number_of(f), "")
             results.append(await self.verify(f, source))
         return results
 

@@ -3,7 +3,7 @@
 import pytest
 
 from leggie.application.ports.llm import LLMResponse
-from leggie.application.services.cove_verifier import CoVeVerifier
+from leggie.application.services.cove_verifier import CoVeVerifier, article_number_of
 from leggie.domain.models import (
     IRAC,
     Citation,
@@ -176,6 +176,36 @@ class TestCoVeVerifier:
         assert llm.calls == []  # quote gate short-circuits
 
     @pytest.mark.asyncio
+    async def test_f3_gate_fires_without_article_prefix_in_issue(self):
+        """The F3 quote gate must fire even when the LLM-authored irac.issue
+        never literally says 'Άρθρο N' — source-text resolution must use
+        article_id, not just regex-parse free text (see article_number_of)."""
+        real_article_text = "Η άδεια χορηγείται εντός δέκα (10) εργάσιμων ημερών."
+        fabricated_quote = "Η άδεια χορηγείται αυτοδικαίως χωρίς καμία προθεσμία."
+
+        finding = Finding(
+            finding_type=FindingType.CONSTITUTIONAL,
+            irac=IRAC(
+                issue="Υπάρχει ασάφεια ως προς την προθεσμία χορήγησης της άδειας",
+                rule="Άρθρο 25 Συντάγματος",
+                application="Η διάταξη δεν ορίζει σαφή προθεσμία",
+                conclusion="Πιθανή αοριστία στη διάταξη",
+            ),
+            confidence=Confidence.from_score(0.8),
+            lens="constitutional",
+            model="test-model",
+            article_id="15",
+            evidence=[Evidence(text_excerpt=fabricated_quote, verdict="supports")],
+        )
+
+        llm = FakeLLM({})  # must not be called — F3 gate short-circuits first
+        verifier = CoVeVerifier(llm=llm)
+        results = await verifier.verify_batch([finding], article_index={"15": real_article_text})
+
+        assert results[0].dropped is True
+        assert llm.calls == []
+
+    @pytest.mark.asyncio
     async def test_llm_partially_consistent_revises(self):
         llm = FakeLLM(
             {
@@ -280,3 +310,45 @@ class TestCoVeVerifier:
         )
         result = await verifier.verify(finding)
         assert len(result.questions) >= 1
+
+
+class TestArticleNumberOf:
+    """article_number_of() must prefer the structured field over free-text
+    regex parsing — the whole point of D1's fix."""
+
+    def test_prefers_article_id_over_regex(self):
+        # issue text says "Άρθρο 99" but article_id says "15" — article_id wins.
+        finding = make_finding(conclusion="conc")
+        finding = finding.model_copy(
+            update={
+                "article_id": "15",
+                "irac": IRAC(
+                    issue="Άρθρο 99: unrelated text",
+                    rule="r",
+                    application="a",
+                    conclusion="c",
+                ),
+            }
+        )
+        assert article_number_of(finding) == "15"
+
+    def test_falls_back_to_regex_for_legacy_findings(self):
+        finding = make_finding()
+        finding = finding.model_copy(
+            update={
+                "irac": IRAC(issue="Άρθρο 7: something", rule="r", application="a", conclusion="c")
+            }
+        )
+        assert finding.article_id == ""
+        assert article_number_of(finding) == "7"
+
+    def test_empty_when_neither_is_available(self):
+        finding = make_finding()
+        finding = finding.model_copy(
+            update={
+                "irac": IRAC(
+                    issue="no article marker here", rule="r", application="a", conclusion="c"
+                )
+            }
+        )
+        assert article_number_of(finding) == ""

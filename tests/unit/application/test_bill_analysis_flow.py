@@ -66,6 +66,26 @@ class TestBillAnalysisFlow:
         assert isinstance(flow._reranker, ModelBasedReranker)
 
     @pytest.mark.asyncio
+    async def test_reranker_degradation_reaches_flow_event_log(self):
+        """ModelBasedReranker's on_degradation must be the flow's own callback,
+        so a reranker-port failure lands in the flow's event log exactly like a
+        lens degradation does (FX5)."""
+        from leggie.application.ports.reranker import RerankerPort
+
+        class FailingReranker(RerankerPort):
+            async def rerank(self, query, documents, model="", top_k=None):
+                raise RuntimeError("rerank service unavailable")
+
+        flow = BillAnalysisFlow(reranker_name="model", reranker_port=FailingReranker())
+        await flow._reranker.rerank([_make_finding("Άρθρο 1: test")])
+
+        events = flow.get_event_log()
+        assert any(
+            e.event_type == EventType.DEGRADED and e.data.get("component") == "ModelBasedReranker"
+            for e in events
+        )
+
+    @pytest.mark.asyncio
     async def test_run_returns_findings(self, sample_bill_file, tmp_path):
         flow = BillAnalysisFlow()
         findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
@@ -258,6 +278,7 @@ def _make_finding(
     finding_type=None,
     lens: str = "test",
     severity: str = "medium",
+    article_id: str = "",
 ) -> Finding:
     return Finding(
         finding_type=finding_type or FindingType.CONSTITUTIONAL,
@@ -266,6 +287,7 @@ def _make_finding(
         severity=Severity(severity),
         lens=lens,
         model="test",
+        article_id=article_id,
     )
 
 
@@ -323,6 +345,18 @@ class TestDedupInFlow:
     def test_dedup_empty_list(self):
         flow = BillAnalysisFlow()
         assert flow._dedup_findings([]) == []
+
+    def test_dedup_groups_by_article_id_not_regex(self):
+        """Two findings with the same article_id but issue text that would
+        extract different (or no) article numbers under the old regex must
+        still be grouped correctly — the whole point of consolidating on
+        article_number_of()."""
+        flow = BillAnalysisFlow(dedup_threshold=0.5)
+        f1 = _make_finding("delegation limits exceeded", confidence=0.9, article_id="1")
+        f2 = _make_finding("Άρθρο 99: delegation limits exceeded", confidence=0.7, article_id="1")
+        result = flow._dedup_findings([f1, f2])
+        assert len(result) == 1
+        assert result[0].confidence.score == 0.9
 
     def test_dedup_idempotent(self):
         flow = BillAnalysisFlow(dedup_threshold=0.5)

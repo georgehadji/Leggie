@@ -104,6 +104,7 @@ class ConstitutionalLens(Lens):
             ]
         return Finding(
             finding_type=FindingType.CONSTITUTIONAL,
+            article_id=article.id,
             irac=IRAC(
                 issue=c.issue, rule=c.rule, application=c.application, conclusion=c.conclusion
             ),
@@ -124,6 +125,7 @@ class ConstitutionalLens(Lens):
                 findings.append(
                     Finding(
                         finding_type=FindingType.CONSTITUTIONAL,
+                        article_id=article.id,
                         irac=IRAC(
                             issue=f"Άρθρο {article.id}: Πιθανή υπέρβαση ορίων νομοθετικής εξουσιοδότησης",
                             rule="Το Άρθρο 43 του Συντάγματος ορίζει τα όρια της νομοθετικής εξουσιοδότησης",
@@ -143,6 +145,7 @@ class ConstitutionalLens(Lens):
                 findings.append(
                     Finding(
                         finding_type=FindingType.CONSTITUTIONAL,
+                        article_id=article.id,
                         irac=IRAC(
                             issue=f"Άρθρο {article.id}: Πιθανή αναδρομική ισχύς",
                             rule="Η αναδρομική ισχύς επιτρέπεται μόνο κατ' εξαίρεση (Άρθρο 77 Συντάγματος)",
@@ -162,6 +165,7 @@ class ConstitutionalLens(Lens):
                 findings.append(
                     Finding(
                         finding_type=FindingType.CONSTITUTIONAL,
+                        article_id=article.id,
                         irac=IRAC(
                             issue=f"Άρθρο {article.id}: Πιθανή επιρροή σε θεμελιώδη δικαιώματα",
                             rule="Τα θεμελιώδη δικαιώματα προστατεύονται από τα Άρθρα 5-25 του Συντάγματος",
