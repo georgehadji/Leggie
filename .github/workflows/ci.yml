@@ -36,7 +36,7 @@ jobs:
           pip install -e ".[dev,lint]"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v7
 
       - name: Verify requirements.txt matches pyproject.toml
         # Drift check (IMPL-5): fails the build if someone edits
