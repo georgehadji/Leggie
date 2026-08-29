@@ -272,7 +272,7 @@ class BillAnalysisFlow:
             self._findings = raw_findings
             self._transition(WorkflowState.AGGREGATING, "execution_completed")
 
-        # 5-7. Aggregate & Verify
+        # 5-8. Aggregate (dedup) & Verify (skeptic → CoVe → rerank)
         # Source index lets CoVe answer verification questions against the real
         # article text (factored), keyed by article number.
         if self._state == WorkflowState.AGGREGATING:
@@ -283,7 +283,7 @@ class BillAnalysisFlow:
             if self._use_blackboard:
                 self._findings = await self._aggregate_via_blackboard(self._findings, article_index)
             else:
-                self._findings = await self._aggregate_inline_dedup_rerank(self._findings)
+                self._findings = await self._aggregate_inline_dedup(self._findings)
             self._transition(WorkflowState.VERIFYING, "aggregation_completed")
 
         if self._state == WorkflowState.VERIFYING:
@@ -383,10 +383,14 @@ class BillAnalysisFlow:
         self._events.extend(aggregator.events)
         return results
 
-    async def _aggregate_inline_dedup_rerank(
+    async def _aggregate_inline_dedup(
         self, raw_findings: list[Finding]
     ) -> list[Finding]:
-        """Inline aggregation part 1: dedup + rerank."""
+        """Inline aggregation part 1: dedup only.
+
+        Reranking deliberately does NOT happen here — it runs at the end of
+        the verification chain, in `_aggregate_inline_verify`.
+        """
         findings = raw_findings
 
         # 5. Dedup
@@ -400,18 +404,19 @@ class BillAnalysisFlow:
                 })
             findings = deduped
 
-        # 6. Rerank
-        if findings:
-            scored = await self._reranker.rerank(findings)
-            findings = [s.finding for s in scored]
-
         return findings
 
     async def _aggregate_inline_verify(
         self, findings: list[Finding], article_index: dict[str, str] | None = None
     ) -> list[Finding]:
-        """Inline aggregation part 2: skeptic + CoVe."""
-        # 7. Skeptic review
+        """Inline aggregation part 2: skeptic → CoVe → rerank.
+
+        Rerank closes the chain rather than opening it: the skeptic and CoVe
+        both rewrite ``Finding.confidence``, which is an input to the composite
+        score, and both drop findings, which changes every novelty score. An
+        order computed before them describes a population that no longer exists.
+        """
+        # 6. Skeptic review
         survivors, _ = await self._skeptic.review(findings)
         refuted_count = len(findings) - len(survivors)
         findings = survivors
@@ -421,7 +426,7 @@ class BillAnalysisFlow:
                 "survivors": len(survivors),
             })
 
-        # 8. CoVe Chain-of-Verification (factored) — revise or drop
+        # 7. CoVe Chain-of-Verification (factored) — revise or drop
         if findings:
             cove_results = await self._cove.verify_batch(findings, article_index)
             kept = [r.finding for r in cove_results if not r.dropped]
@@ -442,6 +447,11 @@ class BillAnalysisFlow:
                 self._record_event(EventType.CITATION_VERIFIED, {
                     "verified": len(kept),
                 })
+
+        # 8. Rerank the verified survivors into the published order
+        if findings:
+            scored = await self._reranker.rerank(findings)
+            findings = [s.finding for s in scored]
 
         return findings
 

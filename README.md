@@ -18,9 +18,9 @@ flowchart LR
     A[Bill file<br/>PDF/DOCX/HTML/TXT] --> B[Ingest]
     B --> C[Parse<br/>Άρθρο tree]
     C --> D[5-Lens Parallel Analysis]
-    D --> E[Rerank]
-    E --> F[Skeptic Review]
-    F --> G[CoVe Citation Verification]
+    D --> E[Skeptic Review]
+    E --> F[CoVe Citation Verification]
+    F --> G[Rerank]
     G --> H[Improvement Suggestions]
     H --> I[Reports<br/>Exec Summary + Article-by-Article]
 ```
