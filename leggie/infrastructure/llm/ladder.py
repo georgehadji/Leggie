@@ -81,9 +81,7 @@ class StructuredOutputDecorator(LLMPort):
             return parser.parse(response.content, schema), response
         except (LLMError, ValueError) as exc:
             if isinstance(exc, LLMError) and ("400" in str(exc) or "Bad Request" in str(exc)):
-                logger.warning(
-                    "json_schema rejected, falling back to json_object: %s", exc
-                )
+                logger.warning("json_schema rejected, falling back to json_object: %s", exc)
                 schema_format = None
 
         # ── Attempt 2: json_object mode (fallback) ────────────────
@@ -129,10 +127,7 @@ class StructuredOutputDecorator(LLMPort):
                 )
                 repair_req = LLMRequest(
                     prompt=repair_prompt,
-                    system_prompt=(
-                        "You are a JSON repair assistant. "
-                        "Return ONLY valid JSON."
-                    ),
+                    system_prompt=("You are a JSON repair assistant. Return ONLY valid JSON."),
                     max_tokens=min(
                         request.max_tokens * 2,
                         _MAX_TRUNCATION_RETRY_TOKENS,
@@ -148,8 +143,7 @@ class StructuredOutputDecorator(LLMPort):
             pass
 
         raise LLMError(
-            f"Failed to parse structured response after all retries "
-            f"for schema {schema.__name__}"
+            f"Failed to parse structured response after all retries for schema {schema.__name__}"
         )
 
     async def count_tokens(self, text: str, model: str | None = None) -> int:

@@ -18,7 +18,7 @@ def _strip_heading(article_text: str) -> str:
     opening of the first paragraph.
     """
     heading = ARTICLE_HEADING_SINGLE_LINE.match(article_text)
-    body = article_text[heading.end():] if heading else article_text
+    body = article_text[heading.end() :] if heading else article_text
     return body.strip()
 
 
@@ -38,19 +38,23 @@ def extract_paragraphs(article_text: str) -> list[Paragraph]:
     paragraphs: list[Paragraph] = []
     for match in PARAGRAPH_PATTERN.finditer(body):
         para_text = match.group(2).strip()
-        paragraphs.append(Paragraph(
-            number=match.group(1).strip(),
-            text=para_text,
-            subparagraphs=extract_subparagraphs(para_text),
-        ))
+        paragraphs.append(
+            Paragraph(
+                number=match.group(1).strip(),
+                text=para_text,
+                subparagraphs=extract_subparagraphs(para_text),
+            )
+        )
     if paragraphs:
         return paragraphs
 
-    return [Paragraph(
-        number="1",
-        text=body,
-        subparagraphs=extract_subparagraphs(body),
-    )]
+    return [
+        Paragraph(
+            number="1",
+            text=body,
+            subparagraphs=extract_subparagraphs(body),
+        )
+    ]
 
 
 def extract_subparagraphs(paragraph_text: str) -> list[SubParagraph]:

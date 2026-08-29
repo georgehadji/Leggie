@@ -29,22 +29,31 @@ class TestSqliteEventStore:
 
     @pytest.mark.asyncio
     async def test_separate_runs_independent(self, store):
-        await store.publish(Event(event_type=EventType.FINDING_CREATED, aggregate_id="run-a", data={"x": 1}))
-        await store.publish(Event(event_type=EventType.FINDING_CREATED, aggregate_id="run-b", data={"x": 2}))
+        await store.publish(
+            Event(event_type=EventType.FINDING_CREATED, aggregate_id="run-a", data={"x": 1})
+        )
+        await store.publish(
+            Event(event_type=EventType.FINDING_CREATED, aggregate_id="run-b", data={"x": 2})
+        )
         assert len(store.replay("run-a")) == 1
         assert len(store.replay("run-b")) == 1
 
     @pytest.mark.asyncio
     async def test_sequence_monotonic(self, store):
         """Concurrent appends maintain monotonic seq per run."""
+
         async def publish_n(n: int):
-            await store.publish(Event(event_type=EventType.FINDING_CREATED, aggregate_id="run-seq", data={"n": n}))
+            await store.publish(
+                Event(event_type=EventType.FINDING_CREATED, aggregate_id="run-seq", data={"n": n})
+            )
 
         await asyncio.gather(*(publish_n(i) for i in range(20)))
         events = store.replay("run-seq")
         seqs = []
         if store._conn:
-            rows = store._conn.execute("SELECT seq FROM events WHERE run_id = 'run-seq' ORDER BY seq").fetchall()
+            rows = store._conn.execute(
+                "SELECT seq FROM events WHERE run_id = 'run-seq' ORDER BY seq"
+            ).fetchall()
             seqs = [r["seq"] for r in rows]
         assert seqs == list(range(1, 21))
         assert len(events) == 20
@@ -52,6 +61,7 @@ class TestSqliteEventStore:
     @pytest.mark.asyncio
     async def test_subscriber_dispatch(self, store):
         hits: list[str] = []
+
         def handler(ev: Event):
             hits.append(str(ev.event_type))
 

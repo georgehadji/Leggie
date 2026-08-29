@@ -29,11 +29,7 @@ _LEGGIE_ROOT = _REPO_ROOT / "leggie"
 
 
 def _source_file_count() -> int:
-    return sum(
-        1
-        for p in _LEGGIE_ROOT.rglob("*.py")
-        if "__pycache__" not in p.parts
-    )
+    return sum(1 for p in _LEGGIE_ROOT.rglob("*.py") if "__pycache__" not in p.parts)
 
 
 def test_grimp_graph_sees_every_source_file() -> None:

@@ -60,9 +60,14 @@ class SqliteStateStore(StatePort):
     # ── Workflow state ────────────────────────────────────────────
 
     async def get_state(self, run_id: str) -> WorkflowState | None:
-        row = self._conn_or_raise().execute(
-            "SELECT state_value FROM workflow_state WHERE run_id = ?", (run_id,),
-        ).fetchone()
+        row = (
+            self._conn_or_raise()
+            .execute(
+                "SELECT state_value FROM workflow_state WHERE run_id = ?",
+                (run_id,),
+            )
+            .fetchone()
+        )
         if row is None:
             return None
         return WorkflowState(row["state_value"])  # StrEnum accepts value directly
@@ -76,10 +81,14 @@ class SqliteStateStore(StatePort):
     # ── Stage checkpoints ─────────────────────────────────────────
 
     async def get_checkpoint(self, run_id: str, stage: str) -> dict[str, Any] | None:
-        row = self._conn_or_raise().execute(
-            "SELECT data_json FROM stage_checkpoint WHERE run_id = ? AND stage = ?",
-            (run_id, stage),
-        ).fetchone()
+        row = (
+            self._conn_or_raise()
+            .execute(
+                "SELECT data_json FROM stage_checkpoint WHERE run_id = ? AND stage = ?",
+                (run_id, stage),
+            )
+            .fetchone()
+        )
         if row is None:
             return None
         # json.loads is typed -> Any; save_checkpoint only ever writes a dict,

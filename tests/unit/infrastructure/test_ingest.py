@@ -1,4 +1,5 @@
 """Tests for the ingest module — Factory pattern."""
+
 from pathlib import Path
 
 import pytest
@@ -32,6 +33,7 @@ class TestIngestorFactory:
         ingestor = IngestorFactory.get_ingestor("file.txt")
         # Factory wraps all ingestors in BoundedIngestor (PROD-16a)
         from leggie.infrastructure.ingest.bounded import BoundedIngestor
+
         assert isinstance(ingestor, BoundedIngestor)
 
     def test_get_unsupported_format(self):
@@ -42,6 +44,7 @@ class TestIngestorFactory:
         IngestorFactory.register_format(".custom", TextIngestor)
         ingestor = IngestorFactory.get_ingestor("file.custom")
         from leggie.infrastructure.ingest.bounded import BoundedIngestor
+
         # Wrapped ingestors still expose the underlying ingestor behavior
         assert isinstance(ingestor, BoundedIngestor)
         assert isinstance(ingestor._wrapped, TextIngestor)
@@ -61,6 +64,7 @@ class TestBoundedIngestor:
         big_file.write_text("x" * (2 * 1024 * 1024), encoding="utf-8")
 
         degraded: list[str] = []
+
         def on_degradation(ev):
             degraded.append(str(ev.event_type))
 

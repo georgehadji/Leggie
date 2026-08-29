@@ -225,10 +225,7 @@ class TestAmendingTitles:
 
     def test_still_rejects_bare_cross_reference_heading(self, parser):
         """A heading that is *only* a reference has no substantive title."""
-        text = (
-            "Άρθρο 1 Σκοπός\n1. Κείμενο του άρθρου για τον έλεγχο.\n"
-            "Άρθρο 552 του ΚΠολΔ\n"
-        )
+        text = "Άρθρο 1 Σκοπός\n1. Κείμενο του άρθρου για τον έλεγχο.\nΆρθρο 552 του ΚΠολΔ\n"
         doc = parser.parse(text)
         assert "552" not in [a.id for a in doc.articles]
 
@@ -243,10 +240,7 @@ class TestUnnumberedProse:
     """
 
     def test_prose_article_keeps_its_text(self, parser):
-        text = (
-            "Άρθρο 1\nΣκοπός\n"
-            "Σκοπός του παρόντος Μέρους είναι η προστασία των προσώπων.\n"
-        )
+        text = "Άρθρο 1\nΣκοπός\nΣκοπός του παρόντος Μέρους είναι η προστασία των προσώπων.\n"
         doc = parser.parse(text)
         assert doc.articles[0].paragraphs
         assert "προστασία των προσώπων" in doc.articles[0].paragraphs[0].text
@@ -369,11 +363,7 @@ class TestParseIntegrity:
 
     def test_parse_with_integrity_reports_rejected(self, parser):
         """A text with cross-ref headings should show rejected candidates."""
-        text = (
-            "Άρθρο 1 Σκοπός\n1. Κείμενο.\n"
-            "Άρθρο 552 του ΚΠολΔ\n"
-            "Άρθρο 2 Ορισμοί\n1. Κείμενο.\n"
-        )
+        text = "Άρθρο 1 Σκοπός\n1. Κείμενο.\nΆρθρο 552 του ΚΠολΔ\nΆρθρο 2 Ορισμοί\n1. Κείμενο.\n"
         doc, report = parser.parse_with_integrity(text)
         assert len(report.rejected) > 0, "Should have rejected candidates"
         rejected_nums = [r.number for r in report.rejected]

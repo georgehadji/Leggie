@@ -45,7 +45,9 @@ class BudgetGuard:
     def __init__(self, max_tokens: int = 500_000, max_cost: float = 5.0) -> None:
         self._state = BudgetState(max_tokens=max_tokens, max_cost=max_cost)
 
-    def check(self, prompt_tokens: int = 0, completion_tokens: int = 0, model: str = "") -> BudgetAction:
+    def check(
+        self, prompt_tokens: int = 0, completion_tokens: int = 0, model: str = ""
+    ) -> BudgetAction:
         """Check if a proposed call is within budget."""
         total_tokens = self._state.tokens_used + prompt_tokens + completion_tokens
         estimated_cost = estimate_cost(model, prompt_tokens, completion_tokens)
@@ -62,7 +64,9 @@ class BudgetGuard:
 
         return BudgetAction.ALLOW
 
-    def record_usage(self, prompt_tokens: int, completion_tokens: int, model: str = "", cached_tokens: int = 0) -> None:
+    def record_usage(
+        self, prompt_tokens: int, completion_tokens: int, model: str = "", cached_tokens: int = 0
+    ) -> None:
         """Record actual usage after a call completes.
 
         Args:
@@ -72,7 +76,9 @@ class BudgetGuard:
             cached_tokens: Number of cached input tokens.
         """
         self._state.tokens_used += prompt_tokens + completion_tokens
-        self._state.cost_used += estimate_cost(model, prompt_tokens, completion_tokens, cached_tokens)
+        self._state.cost_used += estimate_cost(
+            model, prompt_tokens, completion_tokens, cached_tokens
+        )
 
     def apply_degrade(self) -> None:
         """Apply the degrade strategy."""
@@ -96,7 +102,9 @@ class BudgetGuard:
 
     @property
     def usage_ratio(self) -> float:
-        token_ratio = self._state.tokens_used / self._state.max_tokens if self._state.max_tokens > 0 else 0
+        token_ratio = (
+            self._state.tokens_used / self._state.max_tokens if self._state.max_tokens > 0 else 0
+        )
         cost_ratio = self._state.cost_used / self._state.max_cost if self._state.max_cost > 0 else 0
         return max(token_ratio, cost_ratio)
 
@@ -121,6 +129,7 @@ class BudgetGuard:
     def to_file(self, path: str) -> None:
         """Persist budget state to a JSON file."""
         import json
+
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.save_state(), f, indent=2)
 
@@ -129,6 +138,7 @@ class BudgetGuard:
         """Load budget state from a JSON file. Returns None if file missing."""
         import json
         from pathlib import Path
+
         p = Path(path)
         if not p.exists():
             return None

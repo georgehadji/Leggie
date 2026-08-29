@@ -42,10 +42,14 @@ class OpenRouterProvider(BaseLLMProvider):
       - Retry-After honouring on 429 (PROD-14)
     """
 
-    def __init__(self, api_key: str, base_url: str = "https://openrouter.ai/api/v1",
-                 default_model: str = "google/gemini-2.5-flash",
-                 rate_limiter: RateLimiter | None = None,
-                 http_client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://openrouter.ai/api/v1",
+        default_model: str = "google/gemini-2.5-flash",
+        rate_limiter: RateLimiter | None = None,
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
         if not api_key:
             raise LLMConfigurationError("OpenRouter API key not configured")
         self._api_key = api_key
@@ -106,9 +110,7 @@ class OpenRouterProvider(BaseLLMProvider):
             )
         if resp.status_code != 200:
             body_text = resp.text[:_MAX_ERROR_BODY_CHARS]
-            raise LLMError(
-                f"OpenRouter API error {resp.status_code}: {body_text}"
-            )
+            raise LLMError(f"OpenRouter API error {resp.status_code}: {body_text}")
 
         data = resp.json()
         choice = data.get("choices", [{}])[0]
@@ -125,6 +127,7 @@ class OpenRouterProvider(BaseLLMProvider):
 
         # Estimate cost
         from leggie.domain.pricing import estimate_cost
+
         estimated_cost = estimate_cost(model, prompt_tokens, completion_tokens, cached_tokens)
 
         # Structured log line — structlog keyword form so fields render
@@ -161,7 +164,9 @@ class OpenRouterProvider(BaseLLMProvider):
             usage_out["reasoning_tokens"] = reasoning_tokens
 
         return LLMResponse(
-            content=content, model=model, tier_used=request.tier,
+            content=content,
+            model=model,
+            tier_used=request.tier,
             usage=usage_out,
             finish_reason=finish_reason,
             latency_ms=elapsed,

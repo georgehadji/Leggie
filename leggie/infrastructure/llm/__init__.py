@@ -74,6 +74,7 @@ async def validate_model_ids(
     if use_live and api_key:
         with contextlib.suppress(Exception):
             import httpx
+
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "HTTP-Referer": "https://github.com/georgehadji/Leggie",
@@ -143,7 +144,9 @@ class LLMAdapter(LLMPort):
         response: LLMResponse = await self._provider.generate(request)
         return response
 
-    async def generate_structured(self, request: LLMRequest, schema: type) -> tuple[Any, LLMResponse]:
+    async def generate_structured(
+        self, request: LLMRequest, schema: type
+    ) -> tuple[Any, LLMResponse]:
         """Generate a structured response — delegates to StructuredOutputDecorator.
 
         The decorator handles the 4-attempt ladder. Each attempt traverses
@@ -155,12 +158,17 @@ class LLMAdapter(LLMPort):
         count: int = await self._provider.count_tokens(text, model)
         return count
 
+
 __all__ = [
     "BaseLLMProvider",
     "LLMAdapter",
     "StructuredOutputDecorator",
-    "LLMError", "LLMConfigurationError", "LLMTimeoutError", "LLMRateLimitError",
-    "LLMRateLimitError", "BudgetExceededError",
+    "LLMError",
+    "LLMConfigurationError",
+    "LLMTimeoutError",
+    "LLMRateLimitError",
+    "LLMRateLimitError",
+    "BudgetExceededError",
     "OpenRouterProvider",
     "StructuredResponseParser",
     "pydantic_to_json_schema",

@@ -1,6 +1,6 @@
 """BlackboardAggregator — event-sourced aggregation via Blackboard + Observer pipeline.
 
-Bridges the current step-based aggregation pipeline (dedup → rerank → skeptic → CoVe)
+Bridges the step-based aggregation pipeline (dedup → skeptic → CoVe → rerank)
 onto the Blackboard substrate. Each step is an Observer that reacts to findings posted
 to the board. A Mediator drives rounds until convergence.
 
@@ -13,7 +13,7 @@ from typing import Any
 
 from leggie.application.agents.skeptic import CalibratedSkeptic
 from leggie.application.blackboard import Blackboard, BlackboardEntry
-from leggie.application.services.cove_verifier import CoVeVerifier
+from leggie.application.services.cove_verifier import CoVeVerifier, article_number_of
 from leggie.application.services.rerank import CompositeReranker, Reranker
 from leggie.domain.clustering import deduplicate
 from leggie.domain.models import Event, EventType, Finding
@@ -24,16 +24,11 @@ log = get_logger(__name__)
 
 def _finding_similarity_article_aware(a: Finding, b: Finding) -> float:
     """Score similarity between two findings by (article, type, lens) + issue overlap."""
-    import re
-    _article_re = re.compile(r"Άρθρο\s+(\d+)", re.IGNORECASE)
-
-    def _article_prefix(f: Finding) -> str:
-        m = _article_re.search(f.irac.issue)
-        return m.group(1) if m else ""
-
-    if (a.finding_type != b.finding_type or
-        a.lens != b.lens or
-        _article_prefix(a) != _article_prefix(b)):
+    if (
+        a.finding_type != b.finding_type
+        or a.lens != b.lens
+        or article_number_of(a) != article_number_of(b)
+    ):
         return 0.0
     a_tokens = set(a.irac.issue.lower().split())
     b_tokens = set(b.irac.issue.lower().split())
@@ -45,8 +40,13 @@ def _finding_similarity_article_aware(a: Finding, b: Finding) -> float:
 class BlackboardAggregator:
     """Aggregates findings using Blackboard + Observer pipeline.
 
-    The pipeline: post → dedup → rerank → skeptic → CoVe.
+    The pipeline: post → dedup → skeptic → CoVe → rerank.
     Each observer transforms findings and posts results to the next round.
+
+    Rerank runs LAST, after the verification gauntlet, because both the
+    skeptic and CoVe rewrite ``Finding.confidence`` — the very field the
+    composite score is built from. Ranking before them published an order
+    derived from scores the surviving findings no longer carried.
     """
 
     def __init__(
@@ -78,9 +78,12 @@ class BlackboardAggregator:
         """Run the full aggregation pipeline via Blackboard rounds.
 
         Round 1: Post all findings → dedup observer collapses duplicates
-        Round 2: Rerank observer scores survivors
-        Round 3: Skeptic observer filters refuted
-        Round 4: CoVe Chain-of-Verification revises or drops findings
+        Round 2: Skeptic observer filters refuted and recalibrates confidence
+        Round 3: CoVe Chain-of-Verification revises or drops findings
+        Round 4: Rerank observer orders the verified survivors
+
+        Rerank is last so the published order reflects post-verification
+        confidence and novelty measured against the surviving population.
         """
         if not findings:
             return []
@@ -92,51 +95,50 @@ class BlackboardAggregator:
 
         for f in findings:
             board.post(f, agent_id="orchestrator")
-            self._record_event(EventType.FINDING_CREATED, {
-                "finding_id": str(f.id),
-                "lens": f.lens,
-                "type": f.finding_type.value,
-            })
+            self._record_event(
+                EventType.FINDING_CREATED,
+                {
+                    "finding_id": str(f.id),
+                    "lens": f.lens,
+                    "type": f.finding_type.value,
+                },
+            )
 
         dedup_survivors = dedup_observer.get_survivors()
         dedup_count = len(findings) - len(dedup_survivors)
         if dedup_count:
-            self._record_event(EventType.DEDUP_REMOVED, {
-                "removed": dedup_count,
-                "survivors": len(dedup_survivors),
-            })
+            self._record_event(
+                EventType.DEDUP_REMOVED,
+                {
+                    "removed": dedup_count,
+                    "survivors": len(dedup_survivors),
+                },
+            )
         board.unsubscribe(dedup_observer.handle)
 
         # If dedup removed everything, stop early
         if not dedup_survivors:
-            return []
+            return self._complete([])
 
-        # Round 2 — Rerank survivors
+        # Round 2 — Skeptic review
         board.next_round()
         for f in dedup_survivors:
-            board.post(f, agent_id="reranker-dedup")
+            board.post(f, agent_id="dedup")
 
-        scored = await self._reranker.rerank(dedup_survivors)
-        reranked = [s.finding for s in scored]
-        if not reranked:
-            return []
-
-        # Round 3 — Skeptic review
-        board.next_round()
-        for f in reranked:
-            board.post(f, agent_id="reranker")
-
-        survivors, _ = await self._skeptic.review(reranked)
-        refuted_count = len(reranked) - len(survivors)
+        survivors, _ = await self._skeptic.review(dedup_survivors)
+        refuted_count = len(dedup_survivors) - len(survivors)
         if refuted_count:
-            self._record_event(EventType.FINDING_REFUTED, {
-                "refuted": refuted_count,
-                "survivors": len(survivors),
-            })
+            self._record_event(
+                EventType.FINDING_REFUTED,
+                {
+                    "refuted": refuted_count,
+                    "survivors": len(survivors),
+                },
+            )
         if not survivors:
-            return []
+            return self._complete([])
 
-        # Round 4 — CoVe citation verification
+        # Round 3 — CoVe citation verification
         board.next_round()
         for f in survivors:
             board.post(f, agent_id="skeptic")
@@ -146,35 +148,60 @@ class BlackboardAggregator:
         dropped = sum(1 for r in cove_results if r.dropped)
         unverified = sum(1 for r in cove_results if not r.all_verified)
         if dropped:
-            self._record_event(EventType.FINDING_REFUTED, {
-                "refuted": dropped,
-                "survivors": len(verified),
-                "stage": "cove",
-            })
+            self._record_event(
+                EventType.FINDING_REFUTED,
+                {
+                    "refuted": dropped,
+                    "survivors": len(verified),
+                    "stage": "cove",
+                },
+            )
         if unverified:
-            self._record_event(EventType.CITATION_FAILED, {
-                "unverified": unverified,
-            })
+            self._record_event(
+                EventType.CITATION_FAILED,
+                {
+                    "unverified": unverified,
+                },
+            )
         else:
-            self._record_event(EventType.CITATION_VERIFIED, {
-                "verified": len(verified),
-            })
+            self._record_event(
+                EventType.CITATION_VERIFIED,
+                {
+                    "verified": len(verified),
+                },
+            )
         if not verified:
-            self._record_event(EventType.AGGREGATION_COMPLETED, {
-                "rounds": board.round_count,
-                "final_findings": 0,
-            })
-            return []
+            return self._complete([])
 
+        # Round 4 — Rerank the verified survivors into the published order
         board.next_round()
         for f in verified:
             board.post(f, agent_id="cove")
 
-        self._record_event(EventType.AGGREGATION_COMPLETED, {
-            "rounds": board.round_count,
-            "final_findings": len(verified),
-        })
-        return verified
+        scored = await self._reranker.rerank(verified)
+        reranked = [s.finding for s in scored]
+
+        board.next_round()
+        for f in reranked:
+            board.post(f, agent_id="reranker")
+
+        return self._complete(reranked)
+
+    def _complete(self, findings: list[Finding]) -> list[Finding]:
+        """Record the terminal aggregation event and return the final findings.
+
+        Every terminal path records AGGREGATION_COMPLETED — including the ones
+        that end with zero findings, which previously returned silently and
+        left the event log without a completion record (event-spine invariant).
+        """
+        self._record_event(
+            EventType.AGGREGATION_COMPLETED,
+            {
+                "rounds": self._board.round_count,
+                "final_findings": len(findings),
+            },
+        )
+        return findings
 
     def _record_event(self, event_type: EventType, data: dict[str, Any]) -> None:
         self._events.append(

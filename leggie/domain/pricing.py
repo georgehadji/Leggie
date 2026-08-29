@@ -29,112 +29,138 @@ class ModelPrice:
 MODEL_PRICES: dict[str, ModelPrice] = {
     # ── Google ───────────────────────────────────────────────────────
     "google/gemini-2.5-flash-lite": ModelPrice(
-        input_per_1m=0.10, output_per_1m=0.40,
+        input_per_1m=0.10,
+        output_per_1m=0.40,
         cached_input_per_1m=0.01,
     ),
     "google/gemini-2.5-flash": ModelPrice(
-        input_per_1m=0.30, output_per_1m=2.50,
+        input_per_1m=0.30,
+        output_per_1m=2.50,
         cached_input_per_1m=0.03,
     ),
     "google/gemini-2.5-pro": ModelPrice(
-        input_per_1m=1.25, output_per_1m=10.00,
+        input_per_1m=1.25,
+        output_per_1m=10.00,
         cached_input_per_1m=0.125,
     ),
     "google/gemini-3-flash-preview": ModelPrice(
-        input_per_1m=0.50, output_per_1m=3.00,
+        input_per_1m=0.50,
+        output_per_1m=3.00,
         cached_input_per_1m=0.05,
     ),
     "google/gemini-3.1-pro-preview": ModelPrice(
-        input_per_1m=2.00, output_per_1m=12.00,
+        input_per_1m=2.00,
+        output_per_1m=12.00,
         cached_input_per_1m=0.20,
     ),
     "google/gemini-3.5-flash-lite": ModelPrice(
-        input_per_1m=0.30, output_per_1m=2.50,
+        input_per_1m=0.30,
+        output_per_1m=2.50,
         cached_input_per_1m=0.03,
     ),
     "google/gemini-3.6-flash": ModelPrice(
-        input_per_1m=1.50, output_per_1m=7.50,
+        input_per_1m=1.50,
+        output_per_1m=7.50,
         cached_input_per_1m=0.15,
     ),
     # ── Anthropic ────────────────────────────────────────────────────
     "anthropic/claude-haiku-4.5": ModelPrice(
-        input_per_1m=1.00, output_per_1m=5.00,
+        input_per_1m=1.00,
+        output_per_1m=5.00,
         cached_input_per_1m=0.10,
     ),
     "anthropic/claude-sonnet-4": ModelPrice(
-        input_per_1m=3.00, output_per_1m=15.00,
+        input_per_1m=3.00,
+        output_per_1m=15.00,
         cached_input_per_1m=0.30,
     ),
     "anthropic/claude-sonnet-4.6": ModelPrice(
-        input_per_1m=3.00, output_per_1m=15.00,
+        input_per_1m=3.00,
+        output_per_1m=15.00,
         cached_input_per_1m=0.30,
     ),
     "anthropic/claude-sonnet-5": ModelPrice(
-        input_per_1m=2.00, output_per_1m=10.00,
+        input_per_1m=2.00,
+        output_per_1m=10.00,
         cached_input_per_1m=0.20,
     ),
     "anthropic/claude-opus-4": ModelPrice(
-        input_per_1m=15.00, output_per_1m=75.00,
+        input_per_1m=15.00,
+        output_per_1m=75.00,
         cached_input_per_1m=1.50,
     ),
     "anthropic/claude-opus-4.8": ModelPrice(
-        input_per_1m=5.00, output_per_1m=25.00,
+        input_per_1m=5.00,
+        output_per_1m=25.00,
         cached_input_per_1m=0.50,
     ),
     "anthropic/claude-opus-5": ModelPrice(
-        input_per_1m=5.00, output_per_1m=25.00,
+        input_per_1m=5.00,
+        output_per_1m=25.00,
         cached_input_per_1m=0.50,
     ),
     # ── OpenAI ───────────────────────────────────────────────────────
     "openai/gpt-4o": ModelPrice(
-        input_per_1m=2.50, output_per_1m=10.00,
+        input_per_1m=2.50,
+        output_per_1m=10.00,
         cached_input_per_1m=1.25,
     ),
     "openai/gpt-4o-mini": ModelPrice(
-        input_per_1m=0.15, output_per_1m=0.60,
+        input_per_1m=0.15,
+        output_per_1m=0.60,
         cached_input_per_1m=0.075,
     ),
     "openai/gpt-5-mini": ModelPrice(
-        input_per_1m=0.25, output_per_1m=2.00,
+        input_per_1m=0.25,
+        output_per_1m=2.00,
         cached_input_per_1m=0.025,
     ),
     "openai/gpt-5.4": ModelPrice(
-        input_per_1m=2.50, output_per_1m=15.00,
+        input_per_1m=2.50,
+        output_per_1m=15.00,
         cached_input_per_1m=0.25,
     ),
     "openai/gpt-5.6-luna": ModelPrice(
-        input_per_1m=0.10, output_per_1m=0.60,
+        input_per_1m=0.10,
+        output_per_1m=0.60,
         cached_input_per_1m=0.01,
     ),
     "openai/gpt-5.6-terra": ModelPrice(
-        input_per_1m=1.00, output_per_1m=6.00,
+        input_per_1m=1.00,
+        output_per_1m=6.00,
         cached_input_per_1m=0.10,
     ),
     # ── DeepSeek ─────────────────────────────────────────────────────
     "deepseek/deepseek-v3.2": ModelPrice(
-        input_per_1m=0.269, output_per_1m=0.40,
+        input_per_1m=0.269,
+        output_per_1m=0.40,
         cached_input_per_1m=0.134,
     ),
     "deepseek/deepseek-v4-flash-0731": ModelPrice(
-        input_per_1m=0.14, output_per_1m=0.28,
+        input_per_1m=0.14,
+        output_per_1m=0.28,
         cached_input_per_1m=0.003,
     ),
     # ── MoonshotAI ───────────────────────────────────────────────────
     "moonshotai/kimi-k3": ModelPrice(
-        input_per_1m=3.00, output_per_1m=15.00,
+        input_per_1m=3.00,
+        output_per_1m=15.00,
         cached_input_per_1m=0.30,
     ),
     # ── xAI ──────────────────────────────────────────────────────────
     "x-ai/grok-4.5": ModelPrice(
-        input_per_1m=2.00, output_per_1m=6.00,
+        input_per_1m=2.00,
+        output_per_1m=6.00,
         cached_input_per_1m=0.30,
     ),
     # ── Meta / Mistral ───────────────────────────────────────────────
     "meta-llama/llama-3.3-70b-instruct": ModelPrice(
-        input_per_1m=0.13, output_per_1m=0.40,
+        input_per_1m=0.13,
+        output_per_1m=0.40,
     ),
     "mistralai/mistral-large-2512": ModelPrice(
-        input_per_1m=0.50, output_per_1m=1.50,
+        input_per_1m=0.50,
+        output_per_1m=1.50,
         cached_input_per_1m=0.05,
     ),
 }
@@ -178,7 +204,12 @@ def estimate_cost(
 
     prompt_cost = (
         uncached_prompt * price.input_per_1m
-        + cached_tokens * (price.cached_input_per_1m if price.cached_input_per_1m is not None else price.input_per_1m)
+        + cached_tokens
+        * (
+            price.cached_input_per_1m
+            if price.cached_input_per_1m is not None
+            else price.input_per_1m
+        )
     ) / 1_000_000
 
     completion_cost = completion_tokens * price.output_per_1m / 1_000_000

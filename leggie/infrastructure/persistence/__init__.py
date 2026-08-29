@@ -33,7 +33,9 @@ class InMemoryEventBus(EventBusPort):
 
     def unsubscribe(self, event_type: EventType, handler: EventHandler) -> None:
         if event_type in self._subscribers:
-            self._subscribers[event_type] = [h for h in self._subscribers[event_type] if h != handler]
+            self._subscribers[event_type] = [
+                h for h in self._subscribers[event_type] if h != handler
+            ]
 
     @property
     def events(self) -> list[Event]:

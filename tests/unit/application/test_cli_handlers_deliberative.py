@@ -115,11 +115,13 @@ class TestDeterministicPipelineUnchanged:
         async def fake_deterministic(_self, _command):
             called["deterministic"] = True
             from leggie.application.cqrs.base import CommandResult
+
             return CommandResult(success=True, data="ok")
 
         async def fake_deliberative(_self, _command):
             called["deliberative"] = True
             from leggie.application.cqrs.base import CommandResult
+
             return CommandResult(success=True, data="ok")
 
         monkeypatch.setattr(
@@ -142,12 +144,11 @@ class TestDeliberativeRoutingDisabled:
     async def test_refuses_when_reasoner_disabled(self, monkeypatch, tmp_path):
         settings = _settings_with_reasoner(enabled=False)
         import leggie.config.settings as settings_module
+
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
         handler = cli_handlers.AnalyzeBillHandler(container=Container())
-        command = AnalyzeBillCommand(
-            file_path=str(tmp_path / "bill.txt"), pipeline="deliberative"
-        )
+        command = AnalyzeBillCommand(file_path=str(tmp_path / "bill.txt"), pipeline="deliberative")
         result = await handler.handle(command)
 
         assert result.success is False
@@ -168,6 +169,7 @@ class TestDeliberativeRoutingEnabled:
             perspective="neutral",
         )
         import leggie.config.settings as settings_module
+
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
         handler = cli_handlers.AnalyzeBillHandler(container=patch_deliberative_collaborators)
@@ -195,6 +197,7 @@ class TestDeliberativeRoutingEnabled:
     ):
         settings = _settings_with_reasoner(enabled=True, perspective="neutral")
         import leggie.config.settings as settings_module
+
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
         handler = cli_handlers.AnalyzeBillHandler(container=patch_deliberative_collaborators)
@@ -217,16 +220,16 @@ class TestDeliberativeRoutingEnabled:
                 raise ReasonerUnavailableError("backend down")
 
         import leggie.application.workflow.deliberative_flow as deliberative_flow_module
+
         monkeypatch.setattr(deliberative_flow_module, "DeliberativeFlow", RaisingFlow)
 
         settings = _settings_with_reasoner(enabled=True)
         import leggie.config.settings as settings_module
+
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
         handler = cli_handlers.AnalyzeBillHandler(container=patch_deliberative_collaborators)
-        command = AnalyzeBillCommand(
-            file_path=str(tmp_path / "bill.txt"), pipeline="deliberative"
-        )
+        command = AnalyzeBillCommand(file_path=str(tmp_path / "bill.txt"), pipeline="deliberative")
         result = await handler.handle(command)
 
         assert result.success is False
@@ -246,16 +249,16 @@ class TestDeliberativeRoutingEnabled:
                 raise DeliberativeBudgetExceededError("estimated tokens exceed budget")
 
         import leggie.application.workflow.deliberative_flow as deliberative_flow_module
+
         monkeypatch.setattr(deliberative_flow_module, "DeliberativeFlow", BudgetRaisingFlow)
 
         settings = _settings_with_reasoner(enabled=True)
         import leggie.config.settings as settings_module
+
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
         handler = cli_handlers.AnalyzeBillHandler(container=patch_deliberative_collaborators)
-        command = AnalyzeBillCommand(
-            file_path=str(tmp_path / "bill.txt"), pipeline="deliberative"
-        )
+        command = AnalyzeBillCommand(file_path=str(tmp_path / "bill.txt"), pipeline="deliberative")
         result = await handler.handle(command)
 
         assert result.success is False
@@ -275,10 +278,12 @@ class TestDeliberativeFallback:
                 raise ReasonerUnavailableError("backend down")
 
         import leggie.application.workflow.deliberative_flow as deliberative_flow_module
+
         monkeypatch.setattr(deliberative_flow_module, "DeliberativeFlow", RaisingFlow)
 
         settings = _settings_with_reasoner(enabled=True)
         import leggie.config.settings as settings_module
+
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
         handler = cli_handlers.AnalyzeBillHandler(container=patch_deliberative_collaborators)
@@ -302,10 +307,12 @@ class TestDeliberativeFallback:
                 raise ReasonerUnavailableError("backend down")
 
         import leggie.application.workflow.deliberative_flow as deliberative_flow_module
+
         monkeypatch.setattr(deliberative_flow_module, "DeliberativeFlow", RaisingFlow)
 
         settings = _settings_with_reasoner(enabled=True)
         import leggie.config.settings as settings_module
+
         monkeypatch.setattr(settings_module, "get_settings", lambda: settings)
 
         deterministic_called = {"v": False}
@@ -313,6 +320,7 @@ class TestDeliberativeFallback:
         async def fake_deterministic(_self, _command):
             deterministic_called["v"] = True
             from leggie.application.cqrs.base import CommandResult
+
             return CommandResult(success=True, data="deterministic ran")
 
         monkeypatch.setattr(

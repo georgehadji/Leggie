@@ -34,7 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the configured log level for this run",
     )
     parser.add_argument(
-        "--quiet", "-q",
+        "--quiet",
+        "-q",
         action="store_true",
         help="Suppress informational output (only errors and results shown)",
     )
@@ -59,18 +60,29 @@ def build_parser() -> argparse.ArgumentParser:
     # analyze
     analyze = subparsers.add_parser("analyze", help="Analyze a legal bill")
     analyze.add_argument("file", type=Path, help="Path to the bill file (PDF/DOCX/HTML/TXT)")
-    analyze.add_argument("--output", "-o", type=Path, default=None, help="Output directory for reports")
-    analyze.add_argument("--lenses", "-l", nargs="+", default=None, help="Lenses to apply (default: all 5)")
     analyze.add_argument(
-        "--articles", "-a", type=str, default=None,
+        "--output", "-o", type=Path, default=None, help="Output directory for reports"
+    )
+    analyze.add_argument(
+        "--lenses", "-l", nargs="+", default=None, help="Lenses to apply (default: all 5)"
+    )
+    analyze.add_argument(
+        "--articles",
+        "-a",
+        type=str,
+        default=None,
         help="Articles to analyze, e.g. '1-5,7,10' or '1,2,3' (default: all)",
     )
     analyze.add_argument(
-        "--verbalized-sampling", action="store_true",
+        "--verbalized-sampling",
+        action="store_true",
         help="Enable verbalized sampling (experimental, increases cost)",
     )
     analyze.add_argument(
-        "--checkpoint", "-c", type=Path, default=None,
+        "--checkpoint",
+        "-c",
+        type=Path,
+        default=None,
         help="Path to persist/restore budget spend across runs (survives a crash mid-run)",
     )
     analyze.add_argument(
@@ -100,7 +112,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # eval
     eval_cmd = subparsers.add_parser("eval", help="Run evaluation against gold set")
-    eval_cmd.add_argument("--gold-set", "-g", type=Path, required=True, help="Path to gold-set JSON")
+    eval_cmd.add_argument(
+        "--gold-set", "-g", type=Path, required=True, help="Path to gold-set JSON"
+    )
     eval_cmd.add_argument("--results", "-r", type=Path, default=None, help="Path to save results")
 
     # parse
@@ -143,7 +157,9 @@ def _build_mediator() -> Mediator:
     container.configure_defaults()
 
     mediator = Mediator()
-    mediator.register_command_handler(ParseDocumentCommand, ParseDocumentHandler(container=container))
+    mediator.register_command_handler(
+        ParseDocumentCommand, ParseDocumentHandler(container=container)
+    )
     mediator.register_command_handler(PreviewBillCommand, PreviewBillHandler(container=container))
     mediator.register_command_handler(AnalyzeBillCommand, AnalyzeBillHandler(container=container))
     mediator.register_command_handler(EvalGoldSetCommand, EvalGoldSetHandler(container=container))
@@ -158,6 +174,7 @@ async def main() -> int:
 
     # Configure structured logging once at startup (W6), honouring --log-level
     from leggie.observability import configure_logging
+
     configure_logging(args.log_level)
 
     # Configure the output presenter from CLI flags (PROD-33)
@@ -168,6 +185,7 @@ async def main() -> int:
         import json as _json
 
         from leggie import __version__
+
         if args.json:
             print(_json.dumps({"version": __version__}))
         else:
@@ -253,7 +271,9 @@ async def _handle_preview(args: argparse.Namespace, mediator: Mediator) -> int:
     presenter.result(json.dumps(result.data, ensure_ascii=False, indent=2))
     if args.output:
         presenter.info(f"Preview written to {args.output}")
-    presenter.info("\nRun `leggie analyze <file> --articles <id> ...` to analyze only selected Άρθρα.")
+    presenter.info(
+        "\nRun `leggie analyze <file> --articles <id> ...` to analyze only selected Άρθρα."
+    )
     return 0
 
 
@@ -282,11 +302,13 @@ async def _handle_analyze(args: argparse.Namespace, mediator: Mediator) -> int:
 
         # Always emit an envelope, including the no-findings case: an agent
         # parsing stdout must never receive an empty document on success.
-        presenter.result(_json.dumps(
-            {"ok": True, "report": result.data, "disclaimer": DISCLAIMER},
-            ensure_ascii=False,
-            indent=2,
-        ))
+        presenter.result(
+            _json.dumps(
+                {"ok": True, "report": result.data, "disclaimer": DISCLAIMER},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return 0
 
     if result.data:
@@ -316,11 +338,13 @@ async def _handle_eval(args: argparse.Namespace, mediator: Mediator) -> int:
     results_path = args.results or Path("eval_results.json")
 
     if presenter.json_mode:
-        presenter.result(_json.dumps(
-            {"ok": True, "results": result.data or [], "results_path": str(results_path)},
-            ensure_ascii=False,
-            indent=2,
-        ))
+        presenter.result(
+            _json.dumps(
+                {"ok": True, "results": result.data or [], "results_path": str(results_path)},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return 0
 
     for bill_result in result.data or []:
@@ -423,15 +447,17 @@ def _fail(result: object) -> int:
     if presenter.json_mode:
         import json as _json
 
-        presenter.result(_json.dumps(
-            {
-                "ok": False,
-                "error": error,
-                "error_type": getattr(result, "error_type", None),
-                "exit_code": code,
-            },
-            ensure_ascii=False,
-        ))
+        presenter.result(
+            _json.dumps(
+                {
+                    "ok": False,
+                    "error": error,
+                    "error_type": getattr(result, "error_type", None),
+                    "exit_code": code,
+                },
+                ensure_ascii=False,
+            )
+        )
     else:
         presenter.error(f"Error: {error}")
     return code

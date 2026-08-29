@@ -63,6 +63,7 @@ class TestGroundTruth:
     def test_article_selection_1_10_returns_10(self, parser, real_bill_text):
         """--articles 1-10 must select exactly 10 articles."""
         from leggie.application.workflow.bill_analysis_flow import _parse_article_selection
+
         doc = parser.parse(real_bill_text)
         ids = [a.id for a in doc.articles]
         selected = _parse_article_selection("1-10", ids)
@@ -102,19 +103,13 @@ class TestP1StopList:
 
     def test_bare_cross_ref_still_rejected(self, parser):
         """A heading that is ONLY a cross-ref should still be rejected."""
-        text = (
-            "Άρθρο 1 Σκοπός\n1. Κείμενο.\n"
-            "Άρθρο 552 του ΚΠολΔ\n"
-        )
+        text = "Άρθρο 1 Σκοπός\n1. Κείμενο.\nΆρθρο 552 του ΚΠολΔ\n"
         doc = parser.parse(text)
         assert "552" not in [a.id for a in doc.articles]
 
     def test_short_title_with_stop_phrase_rejected(self, parser):
         """A short title where the stop phrase IS the title must be rejected."""
-        text = (
-            "Άρθρο 1 Σκοπός\n1. Κείμενο.\n"
-            "Άρθρο 14 της Οδηγίας\n"
-        )
+        text = "Άρθρο 1 Σκοπός\n1. Κείμενο.\nΆρθρο 14 της Οδηγίας\n"
         doc = parser.parse(text)
         assert "14" not in [a.id for a in doc.articles]
 
@@ -131,11 +126,7 @@ class TestP2HeadingNewline:
 
     def test_heading_does_not_absorb_next_line(self, parser):
         """'Άρθρο 5\\n(άρθρα 6, 7 …)' — title must be '' not the parenthetical."""
-        text = (
-            "Άρθρο 5\n"
-            "(άρθρα 6, 7 της Οδηγίας (ΕΕ) 2024/1069)\n"
-            "1. Περιεχόμενο του άρθρου.\n"
-        )
+        text = "Άρθρο 5\n(άρθρα 6, 7 της Οδηγίας (ΕΕ) 2024/1069)\n1. Περιεχόμενο του άρθρου.\n"
         doc = parser.parse(text)
         art5 = next((a for a in doc.articles if a.id == "5"), None)
         assert art5 is not None, "Article 5 not found"
@@ -143,11 +134,7 @@ class TestP2HeadingNewline:
 
     def test_multiline_heading_body_starts_correctly(self, parser):
         """Parenthetical after Άρθρο 5 should be in body, not title."""
-        text = (
-            "Άρθρο 5\n"
-            "(άρθρα 6, 7 της Οδηγίας (ΕΕ) 2024/1069)\n"
-            "1. Περιεχόμενο του άρθρου.\n"
-        )
+        text = "Άρθρο 5\n(άρθρα 6, 7 της Οδηγίας (ΕΕ) 2024/1069)\n1. Περιεχόμενο του άρθρου.\n"
         doc = parser.parse(text)
         art5 = next((a for a in doc.articles if a.id == "5"), None)
         assert art5 is not None

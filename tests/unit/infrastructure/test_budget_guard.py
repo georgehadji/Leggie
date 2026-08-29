@@ -18,25 +18,35 @@ class TestBudgetGuard:
 
     def test_allow_within_budget(self):
         guard = BudgetGuard(max_tokens=100_000, max_cost=5.0)
-        action = guard.check(prompt_tokens=1_000, completion_tokens=500, model="claude-sonnet-4-20250514")
+        action = guard.check(
+            prompt_tokens=1_000, completion_tokens=500, model="claude-sonnet-4-20250514"
+        )
         assert action == BudgetAction.ALLOW
 
     def test_block_when_exceeded(self):
         guard = BudgetGuard(max_tokens=1_000, max_cost=1.0)
         # Budget exceeded: BLOCK immediately (hard ceiling)
-        action = guard.check(prompt_tokens=2_000, completion_tokens=500, model="claude-sonnet-4-20250514")
+        action = guard.check(
+            prompt_tokens=2_000, completion_tokens=500, model="claude-sonnet-4-20250514"
+        )
         assert action == BudgetAction.BLOCK
 
     def test_degrade_at_80_percent(self):
         guard = BudgetGuard(max_tokens=1_000, max_cost=1.0)
         # Use enough to trigger 80% threshold
-        guard.record_usage(prompt_tokens=450, completion_tokens=400, model="claude-sonnet-4-20250514")
-        action = guard.check(prompt_tokens=50, completion_tokens=50, model="claude-sonnet-4-20250514")
+        guard.record_usage(
+            prompt_tokens=450, completion_tokens=400, model="claude-sonnet-4-20250514"
+        )
+        action = guard.check(
+            prompt_tokens=50, completion_tokens=50, model="claude-sonnet-4-20250514"
+        )
         assert action == BudgetAction.DEGRADE
 
     def test_record_usage_tracks_correctly(self):
         guard = BudgetGuard(max_tokens=100_000, max_cost=5.0)
-        guard.record_usage(prompt_tokens=5_000, completion_tokens=3_000, model="claude-sonnet-4-20250514")
+        guard.record_usage(
+            prompt_tokens=5_000, completion_tokens=3_000, model="claude-sonnet-4-20250514"
+        )
         assert guard.remaining_tokens == 92_000
         assert guard.usage_ratio > 0.0
 
@@ -55,7 +65,9 @@ class TestBudgetGuard:
         guard = BudgetGuard(max_tokens=100_000, max_cost=1.0)
         guard._state.degrade_strategy = "fewer_paths"
         # At exactly 100% of token budget (not exceeding): 80% threshold triggers DEGRADE
-        action = guard.check(prompt_tokens=90_000, completion_tokens=10_000, model="claude-sonnet-4-20250514")
+        action = guard.check(
+            prompt_tokens=90_000, completion_tokens=10_000, model="claude-sonnet-4-20250514"
+        )
         assert action == BudgetAction.DEGRADE
 
     def test_reset(self):
@@ -71,6 +83,7 @@ class TestBudgetGuard:
     def test_price_matches_domain(self):
         """Cost estimation uses domain.pricing.estimate_cost, not a private method."""
         from leggie.domain.pricing import estimate_cost as domain_estimate
+
         guard = BudgetGuard(max_tokens=100_000, max_cost=5.0)
         # "anthropic/claude-sonnet-4" = $3/M input, $15/M output
         expected = 500 * 3.00 / 1_000_000 + 500 * 15.00 / 1_000_000  # $0.009
@@ -124,6 +137,7 @@ class TestBudgetGuard:
 
 # ── PROD-08 concurrency tests ───────────────────────────────────────────
 
+
 class TestBudgetReservation:
     """Verify the reserve→settle pattern prevents the PROD-08 race."""
 
@@ -140,7 +154,8 @@ class TestBudgetReservation:
         # Set ceiling to $0.04: exactly 1 call fits, 2 do not.
         guard = BudgetGuard(max_tokens=50_000, max_cost=0.04)
         decorated = BudgetGuardDecorator(
-            _FakeLLM(call_delay_s=0.05), guard,
+            _FakeLLM(call_delay_s=0.05),
+            guard,
         )
 
         async def call_n(_n: int) -> str:
@@ -153,6 +168,7 @@ class TestBudgetReservation:
                 import sys
 
                 from leggie.application.ports.llm import BudgetExceededError
+
                 if isinstance(sys.exc_info()[1], BudgetExceededError):
                     return "blocked"
                 raise
@@ -160,7 +176,9 @@ class TestBudgetReservation:
         results = await asyncio.gather(*(call_n(i) for i in range(10)))
         oks = results.count("ok")
         blocked = results.count("blocked")
-        assert oks == 1, f"Expected 1 admitted, got {oks} (cost used: ${guard._state.cost_used:.4f})"
+        assert oks == 1, (
+            f"Expected 1 admitted, got {oks} (cost used: ${guard._state.cost_used:.4f})"
+        )
         assert blocked == 9, f"Expected 9 blocked, got {blocked}"
 
     @pytest.mark.asyncio
@@ -171,10 +189,13 @@ class TestBudgetReservation:
 
         class FailingLLM:
             _default_model = "test"
+
             async def generate(self, _req):
                 raise RuntimeError("simulated failure")
+
             async def generate_structured(self, _req, _schema):
                 raise RuntimeError("simulated failure")
+
             async def count_tokens(self, _text, _model=None):
                 return 0
 
@@ -225,17 +246,20 @@ class TestBudgetReservation:
         # After settle, cost must reflect actuals (100 prompt + 50 completion),
         # not the estimate (501 prompt + 2048 completion).
         from leggie.domain.pricing import estimate_cost as ec
+
         actual_cost = ec("anthropic/claude-sonnet-4", 100, 50)
         assert guard._state.cost_used == pytest.approx(actual_cost, abs=1e-5)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
 
+
 def _fake_request(*, prompt: str = "test", model: str = "test-model") -> Any:
     class FakeReq:
         prompt = "test"
         model = "test-model"
         max_tokens = 4096
+
     r = FakeReq()
     r.prompt = prompt
     r.model = model

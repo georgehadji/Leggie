@@ -51,8 +51,6 @@ class DeliberativePromptRenderer:
     def _resolve_perspective(self, perspective: str) -> dict[str, str]:
         resolved = PERSPECTIVES.get(perspective)
         if resolved is None:
-            logger.warning(
-                "deliberative.unknown_perspective", perspective=perspective
-            )
+            logger.warning("deliberative.unknown_perspective", perspective=perspective)
             return PERSPECTIVES[DEFAULT_PERSPECTIVE]
         return resolved

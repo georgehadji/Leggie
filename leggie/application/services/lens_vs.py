@@ -54,9 +54,7 @@ class LensVerbalizedSampling:
 
     def _build_prompt(self, article: Article) -> str:
         """Build a prompt requesting k candidates with probabilities."""
-        base = self._user_template.format(
-            article_id=article.id, article_text=article.raw_text
-        )
+        base = self._user_template.format(article_id=article.id, article_text=article.raw_text)
         vs_instruction = (
             f"\n\nIMPORTANT: Generate exactly {self._k} candidate findings. "
             f"For each candidate, assign a self-reported probability (0.0-1.0) "
@@ -83,7 +81,9 @@ class LensVerbalizedSampling:
             log.warning("vs_llm_failed: lens=%s error=%s", self._lens_name, e)
             return None
 
-    def _parse_distribution(self, result: LensFindings, lens: Lens, article: Article) -> list[VSSample]:
+    def _parse_distribution(
+        self, result: LensFindings, lens: Lens, article: Article
+    ) -> list[VSSample]:
         """Parse LensFindings into VSSamples with probabilities."""
         if not result.findings:
             return []
@@ -100,5 +100,5 @@ class LensVerbalizedSampling:
             return []
         sorted_samples = sorted(samples, key=lambda s: s.probability)
         # Take at most k from the tail (lowest probability = most surprising)
-        tail = sorted_samples[:min(self._k, len(sorted_samples))]
+        tail = sorted_samples[: min(self._k, len(sorted_samples))]
         return [s.finding for s in tail]

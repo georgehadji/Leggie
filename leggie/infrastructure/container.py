@@ -98,13 +98,16 @@ class Container:
         # Event bus — durable (SQLite) when persistence URL is configured,
         # otherwise in-memory for tests and development (PROD-06a/c).
         from leggie.config.settings import get_settings
+
         s = get_settings()
         if s.persistence.url:
             from leggie.infrastructure.persistence.sqlite_event_store import SqliteEventStore
+
             db_path = s.persistence.url.replace("sqlite:///", "")
             self.register(EventBusPort, lambda: SqliteEventStore(db_path))
         else:
             from leggie.infrastructure.persistence import InMemoryEventBus
+
             self.register(EventBusPort, lambda: InMemoryEventBus())
 
         # LLM adapter (OpenRouter — single API key for all providers)
@@ -116,6 +119,7 @@ class Container:
             from leggie.config.settings import get_settings
             from leggie.infrastructure.llm import LLMAdapter, StructuredOutputDecorator
             from leggie.infrastructure.llm.decorators import BudgetGuardDecorator
+
             s = get_settings()
             rate_limiter = self.get("rate_limiter")
             adapter: LLMPort = LLMAdapter(
@@ -127,6 +131,7 @@ class Container:
             # Wrap with budget guard (EN2)
             if s.budget.max_cost_per_run > 0:
                 from leggie.infrastructure.budget_guard import BudgetGuard
+
                 guard = BudgetGuard(
                     max_tokens=s.budget.max_tokens_per_run,
                     max_cost=s.budget.max_cost_per_run,
@@ -134,24 +139,34 @@ class Container:
                 adapter = BudgetGuardDecorator(adapter, guard)
             # Wrap with prompt-injection hardening (PROD-13)
             from leggie.infrastructure.llm.prompt_safety import PromptHardeningDecorator
+
             adapter = PromptHardeningDecorator(adapter)
             # Wrap with structured-output ladder (TOK-1)
             # Placed OUTSIDE the budget guard so each ladder attempt
             # traverses the guard and is billed independently.
             return StructuredOutputDecorator(adapter)
+
         self.register(LLMPort, _create_llm)
 
         # Router
         from leggie.config.settings import get_settings
         from leggie.infrastructure.resources import ResourceLocator
         from leggie.infrastructure.router import StaticRouter
-        routes_override = get_settings().cascade.rules_path if get_settings().cascade.rules_path != "config/routes.yaml" else None
+
+        routes_override = (
+            get_settings().cascade.rules_path
+            if get_settings().cascade.rules_path != "config/routes.yaml"
+            else None
+        )
         locator = ResourceLocator()
-        self.register(RouterPort, lambda: StaticRouter(str(locator.routes_path(override=routes_override))))
+        self.register(
+            RouterPort, lambda: StaticRouter(str(locator.routes_path(override=routes_override)))
+        )
 
         # Citation parser with known-good resolution index (D7)
         from leggie.infrastructure.citation import GreekCitationParser
         from leggie.infrastructure.resources import ResourceLocator
+
         locator = ResourceLocator()
         resolution_index: set[str] = set()
         try:
@@ -170,25 +185,30 @@ class Container:
         # otherwise in-memory (PROD-06b/c).
         if s.persistence.url:
             from leggie.infrastructure.persistence.sqlite_state_store import SqliteStateStore
+
             self.register(StatePort, lambda: SqliteStateStore(db_path))
         else:
             from leggie.infrastructure.persistence.state_store import InMemoryStateStore
+
             self.register(StatePort, lambda: InMemoryStateStore())
 
         # Ingest / Parse adapters
         from leggie.infrastructure.ingest_adapter import IngestAdapter
         from leggie.infrastructure.parse_adapter import ParseAdapter
+
         self.register(IngestPort, lambda: IngestAdapter())
         self.register(ParsePort, lambda: ParseAdapter())
 
         # Rate limiter for LLM calls
         from leggie.config.settings import get_settings
         from leggie.infrastructure.rate_limiter import RateLimiter
+
         rate = get_settings().llm.max_rate_per_second
         self.register_instance("rate_limiter", RateLimiter(max_rate=rate))
 
         # Checkpoint store for crash-resume (D10)
         from leggie.infrastructure.resources import ResourceLocator
+
         locator = ResourceLocator()
         self.register(CheckpointStore, lambda: CheckpointStore(str(locator.checkpoint_path())))
 
@@ -196,15 +216,18 @@ class Container:
         from leggie.application.ports.reranker import RerankerPort
         from leggie.infrastructure.blackboard_adapter import BlackboardAdapter
         from leggie.infrastructure.reranker import OpenRouterReranker
+
         self.register(BlackboardPort, lambda: BlackboardAdapter())
 
         def _create_reranker() -> RerankerPort:
             from leggie.config.settings import get_settings
+
             s = get_settings()
             return OpenRouterReranker(
                 api_key=s.llm.openrouter_api_key,
                 base_url=s.llm.openrouter_base_url,
             )
+
         self.register(RerankerPort, _create_reranker)
 
         # Budget guard — the canonical BudgetGuard is created inside _create_llm()
@@ -217,17 +240,20 @@ class Container:
         def _create_reasoner() -> ReasonerPort:
             from leggie.config.settings import get_settings
             from leggie.infrastructure.reasoner.adapter import ReasonerAdapter
+
             s = get_settings()
             return ReasonerAdapter(
                 base_url=s.reasoner.base_url,
                 api_key=s.reasoner.api_key,
                 request_timeout=float(s.reasoner.request_timeout),
             )
+
         self.register(ReasonerPort, _create_reasoner)
 
         def _create_reasoner_server_manager() -> ReasonerServerManager:
             from leggie.config.settings import get_settings
             from leggie.infrastructure.reasoner.server_manager import ReasonerServerManager
+
             return ReasonerServerManager(get_settings().reasoner)
 
         # Register lazily — ReasonerServerManager is only needed when the
@@ -237,8 +263,7 @@ class Container:
         from leggie.infrastructure.reasoner.server_manager import (
             ReasonerServerManager as _ReasonerServerManager,
         )
+
         self.register(_ReasonerServerManager, _create_reasoner_server_manager)
 
         # ── End configure_defaults() ──────────────────────────────────
-
-

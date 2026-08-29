@@ -37,22 +37,42 @@ class StructuredResponseParser:
     # these aliases let us accept responses that would otherwise be rejected.
     _IRAC_ALIASES: dict[str, list[str]] = {
         "issue": [
-            "issue", "title", "finding", "summary", "concern",
-            "constitutional_concern", "analysis", "legal_issue", "problem",
+            "issue",
+            "title",
+            "finding",
+            "summary",
+            "concern",
+            "constitutional_concern",
+            "analysis",
+            "legal_issue",
+            "problem",
             "finding_text",
         ],
         "rule": [
-            "rule", "constitutional_provision", "rule_id", "legal_basis",
-            "provision", "article",
+            "rule",
+            "constitutional_provision",
+            "rule_id",
+            "legal_basis",
+            "provision",
+            "article",
         ],
         "application": [
-            "application", "analysis", "reasoning", "constitutional_concern",
+            "application",
+            "analysis",
+            "reasoning",
+            "constitutional_concern",
         ],
         "conclusion": [
-            "conclusion", "verdict", "constitutional_concern", "analysis",
+            "conclusion",
+            "verdict",
+            "constitutional_concern",
+            "analysis",
         ],
         "verbatim_quote": [
-            "verbatim_quote", "excerpt", "quote", "text_excerpt",
+            "verbatim_quote",
+            "excerpt",
+            "quote",
+            "text_excerpt",
         ],
     }
 
@@ -104,7 +124,9 @@ class StructuredResponseParser:
             raise ValueError(f"Schema validation failed: {exc}") from exc
 
     def try_repair(
-        self, content: str, schema: type[SchemaT],
+        self,
+        content: str,
+        schema: type[SchemaT],
     ) -> SchemaT | None:
         """Last-resort: feed malformed content back for re-generation.
 
@@ -122,7 +144,9 @@ class StructuredResponseParser:
     def _strip_fences(content: str) -> str:
         """Remove markdown code fences and surrounding whitespace."""
         fence = re.search(
-            r"```(?:json)?\s*(.*?)```", content, re.DOTALL,
+            r"```(?:json)?\s*(.*?)```",
+            content,
+            re.DOTALL,
         )
         return fence.group(1).strip() if fence else content
 
@@ -131,9 +155,12 @@ class StructuredResponseParser:
         """Wrap a bare JSON array into the schema's first list-typed field."""
         fields = getattr(schema, "model_fields", {})
         list_field = next(
-            (name for name, f in fields.items()
-             if getattr(f.annotation, "__origin__", None) is list or
-             str(f.annotation).startswith("list[")),
+            (
+                name
+                for name, f in fields.items()
+                if getattr(f.annotation, "__origin__", None) is list
+                or str(f.annotation).startswith("list[")
+            ),
             None,
         )
         if list_field:
@@ -155,13 +182,13 @@ class StructuredResponseParser:
         return data
 
     def _normalize_findings(
-        self, data: dict[str, Any],
+        self,
+        data: dict[str, Any],
     ) -> dict[str, Any]:
         """Normalize IRAC field aliases in every finding item."""
         findings = data.get("findings")
         if isinstance(findings, list):
-            data["findings"] = [self._normalize_irac_item(item)
-                                for item in findings]
+            data["findings"] = [self._normalize_irac_item(item) for item in findings]
         return data
 
     @classmethod

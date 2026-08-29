@@ -74,14 +74,14 @@ class TestLadderScenarios:
     @pytest.mark.asyncio
     async def test_json_schema_rejection_falls_back_to_json_object(self):
         """400 (unsupported json_schema) → falls back to json_object mode."""
-        inner = _FakeInner([
-            ("api_error", "model does not support json_schema"),
-            ("success", {"content": '{"verdict": "supports", "confidence": 0.8}'}),
-        ])
-        decorator = StructuredOutputDecorator(inner)
-        obj, resp = await decorator.generate_structured(
-            LLMRequest(prompt="p"), _VerdictSchema
+        inner = _FakeInner(
+            [
+                ("api_error", "model does not support json_schema"),
+                ("success", {"content": '{"verdict": "supports", "confidence": 0.8}'}),
+            ]
         )
+        decorator = StructuredOutputDecorator(inner)
+        obj, resp = await decorator.generate_structured(LLMRequest(prompt="p"), _VerdictSchema)
         assert obj.verdict == "supports"
         # Second request (fallback) used json_object
         assert inner.requests[1].response_format == {"type": "json_object"}
@@ -91,11 +91,13 @@ class TestLadderScenarios:
         """finish_reason=length → retry with doubled max_tokens."""
         # Attempt 1 (json_schema) truncated; attempt 2 (json_object) truncated
         # too; attempt 3 (truncation retry) uses doubled max_tokens + json_object.
-        inner = _FakeInner([
-            ("success", {"content": "partia", "finish_reason": "length"}),
-            ("success", {"content": "truncated too", "finish_reason": "length"}),
-            ("success", {"content": '{"verdict": "refutes", "confidence": 0.7}'}),
-        ])
+        inner = _FakeInner(
+            [
+                ("success", {"content": "partia", "finish_reason": "length"}),
+                ("success", {"content": "truncated too", "finish_reason": "length"}),
+                ("success", {"content": '{"verdict": "refutes", "confidence": 0.7}'}),
+            ]
+        )
         decorator = StructuredOutputDecorator(inner)
         obj, _ = await decorator.generate_structured(
             LLMRequest(prompt="p", max_tokens=1024), _VerdictSchema
@@ -109,16 +111,28 @@ class TestLadderScenarios:
         """Malformed JSON with a skeleton → repair round recovers."""
         # Attempt 1 (json_schema) returns malformed JSON with a `{`.
         # Attempt 2 (json_object) also malformed. Repair round fixes it.
-        inner = _FakeInner([
-            ("success", {"content": '{"verdict": "supports", "confidence": "not-a-num"}', "finish_reason": "stop"}),
-            ("success", {"content": '{"verdict": "supports", "confidence": "still-bad"}', "finish_reason": "stop"}),
-            ("success", {"content": '{"verdict": "neutral", "confidence": 0.5}'}),
-        ])
+        inner = _FakeInner(
+            [
+                (
+                    "success",
+                    {
+                        "content": '{"verdict": "supports", "confidence": "not-a-num"}',
+                        "finish_reason": "stop",
+                    },
+                ),
+                (
+                    "success",
+                    {
+                        "content": '{"verdict": "supports", "confidence": "still-bad"}',
+                        "finish_reason": "stop",
+                    },
+                ),
+                ("success", {"content": '{"verdict": "neutral", "confidence": 0.5}'}),
+            ]
+        )
         decorator = StructuredOutputDecorator(inner)
         # Attempt 1+2 fail Pydantic validation, repair round recovers.
-        obj, _ = await decorator.generate_structured(
-            LLMRequest(prompt="p"), _VerdictSchema
-        )
+        obj, _ = await decorator.generate_structured(LLMRequest(prompt="p"), _VerdictSchema)
         assert obj.verdict == "neutral"
         assert len(inner.requests) >= 3
 
@@ -127,10 +141,12 @@ class TestLadderScenarios:
         """Exhausted ladder → LLMError."""
         # Attempt 1 (json_schema) + attempt 2 (json_object) both return
         # prose-without-JSON-skeleton, so the repair round skips and raises LLMError.
-        inner = _FakeInner([
-            ("success", {"content": "no json skeleton here"}),
-            ("success", {"content": "still no json skeleton"}),
-        ])
+        inner = _FakeInner(
+            [
+                ("success", {"content": "no json skeleton here"}),
+                ("success", {"content": "still no json skeleton"}),
+            ]
+        )
         decorator = StructuredOutputDecorator(inner)
         with pytest.raises(LLMError):
             await decorator.generate_structured(LLMRequest(prompt="p"), _VerdictSchema)
@@ -142,6 +158,7 @@ class TestBudgetBlock:
     @pytest.mark.asyncio
     async def test_over_budget_raises_budget_exceeded(self):
         from leggie.application.ports.llm import BudgetExceededError
+
         # A guard too small for even one call.
         guard = BudgetGuard(max_tokens=10, max_cost=0.000001)
         inner = _FakeInner([("success", {"content": "{}"})])

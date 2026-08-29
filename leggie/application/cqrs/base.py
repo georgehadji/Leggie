@@ -26,6 +26,7 @@ class CommandResult[TResult]:
     handled failure would collapse to a generic "exit 1", which makes the
     tool unusable for an external agent driving it headlessly.
     """
+
     success: bool
     data: TResult | None = None
     error: str | None = None
@@ -40,6 +41,7 @@ class CommandResult[TResult]:
 @dataclass(frozen=True)
 class QueryResult[TResult]:
     """Result of executing a query."""
+
     success: bool
     data: TResult | None = None
     error: str | None = None

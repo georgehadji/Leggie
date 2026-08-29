@@ -8,9 +8,12 @@ on:
   schedule:
     - cron: "0 6 * * 1"  # Weekly audit Monday 06:00
 
+# Supersede in-flight runs for the same ref so a rapid series of pushes bills
+# one run, not one per push. Master is exempt: its runs always finish, so the
+# default branch never loses a result.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   lint:
@@ -45,8 +48,11 @@ jobs:
           uv pip compile pyproject.toml --generate-hashes --python 3.12 --output-file /tmp/requirements.txt
           diff -u requirements.txt /tmp/requirements.txt
 
+      - name: Check formatting with ruff
+        run: ruff format --check leggie/ tests/ scripts/
+
       - name: Lint with ruff
-        run: ruff check leggie/ tests/
+        run: ruff check leggie/ tests/ scripts/
 
       - name: Type check with mypy
         # tests/ is checked too (v1.0 exit criterion). It was held out while it

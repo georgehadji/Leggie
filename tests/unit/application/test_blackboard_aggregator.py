@@ -9,8 +9,14 @@ from leggie.application.services.blackboard_aggregator import (
 from leggie.domain.models import IRAC, Confidence, Finding, FindingType, Severity
 
 
-def _make(issue: str, confidence: float = 0.8, finding_type=None,
-           lens: str = "test", severity: str = "medium") -> Finding:
+def _make(
+    issue: str,
+    confidence: float = 0.8,
+    finding_type=None,
+    lens: str = "test",
+    severity: str = "medium",
+    article_id: str = "",
+) -> Finding:
     return Finding(
         finding_type=finding_type or FindingType.CONSTITUTIONAL,
         irac=IRAC(issue=issue, rule="r", application="a", conclusion="c"),
@@ -18,6 +24,7 @@ def _make(issue: str, confidence: float = 0.8, finding_type=None,
         severity=Severity(severity),
         lens=lens,
         model="test",
+        article_id=article_id,
     )
 
 
@@ -85,3 +92,12 @@ class TestSimilarityFunction:
         a = _make("alpha beta", finding_type=FindingType.CONSTITUTIONAL)
         b = _make("alpha beta", finding_type=FindingType.ECONOMIC)
         assert _finding_similarity_article_aware(a, b) == 0.0
+
+    def test_article_id_overrides_issue_text_regex(self):
+        """Grouping must key off article_id when present, not the regex — two
+        findings whose issue text would extract different (or no) article
+        numbers under the old regex must still be grouped when their
+        article_id agrees."""
+        a = _make("delegation limits exceeded", article_id="1")  # no "Άρθρο" word at all
+        b = _make("Άρθρο 5: delegation limits exceeded", article_id="1")  # regex would say "5"
+        assert _finding_similarity_article_aware(a, b) > 0.5

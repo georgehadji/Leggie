@@ -35,7 +35,9 @@ class StaticRouter(RouterPort):
         rule = self._rules.get("routes", {}).get(task_type, {})
         if not rule:
             # Default fallback
-            return RouteResult(model="google/gemini-2.5-flash", tier=ModelTier.BUDGET, max_tokens=4096)
+            return RouteResult(
+                model="google/gemini-2.5-flash", tier=ModelTier.BUDGET, max_tokens=4096
+            )
 
         tier_str = rule.get("tier", "budget")
         tier = ModelTier(tier_str)
@@ -49,13 +51,17 @@ class StaticRouter(RouterPort):
         self, task_type: str, current_tier: ModelTier, failure_reason: str | None = None
     ) -> RouteResult | None:
         """Escalate to the next tier in the cascade."""
-        current_idx = self.CASCADE_ORDER.index(current_tier) if current_tier in self.CASCADE_ORDER else -1
+        current_idx = (
+            self.CASCADE_ORDER.index(current_tier) if current_tier in self.CASCADE_ORDER else -1
+        )
         if current_idx >= len(self.CASCADE_ORDER) - 1:
             return None  # Already at highest tier
 
         next_tier = self.CASCADE_ORDER[current_idx + 1]
         rule = self._rules.get("routes", {}).get(task_type, {})
-        model = rule.get("cascade_models", {}).get(next_tier.value, self._default_for_tier(next_tier))
+        model = rule.get("cascade_models", {}).get(
+            next_tier.value, self._default_for_tier(next_tier)
+        )
         max_tokens = rule.get("cascade_models", {}).get(f"{next_tier.value}_max_tokens", 8192)
 
         return RouteResult(model=model, tier=next_tier, max_tokens=max_tokens)

@@ -72,8 +72,6 @@ SUB_PARAGRAPH_PATTERN: Pattern[str] = re.compile(
 )
 
 # Citation patterns
-FEK_CITATION: Pattern[str] = re.compile(
-    r"ΦΕΚ\s+(?:[ΑαΒβΓγΔδΕεΣΤστ]’?)\s*(\d+)/(\d{4})", re.UNICODE
-)
+FEK_CITATION: Pattern[str] = re.compile(r"ΦΕΚ\s+(?:[ΑαΒβΓγΔδΕεΣΤστ]’?)\s*(\d+)/(\d{4})", re.UNICODE)
 CELEX_CITATION: Pattern[str] = re.compile(r"CELEX[:/\s]*([A-Za-z0-9]+)", re.UNICODE)
 ECLI_CITATION: Pattern[str] = re.compile(r"ECLI[:/\s]*([A-Za-z0-9:]+)", re.UNICODE)

@@ -1,4 +1,5 @@
 """Tests for Token Optimization Plan — TOK-1, TOK-4, TOK-12 regression coverage."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -27,7 +28,9 @@ class RecordingLLM(LLMPort):
             finish_reason="stop",
         )
 
-    async def generate_structured(self, request: LLMRequest, schema: type) -> tuple[object, LLMResponse]:
+    async def generate_structured(
+        self, request: LLMRequest, schema: type
+    ) -> tuple[object, LLMResponse]:
         self.generate_structured_count += 1
         resp = await self.generate(request)
         return {}, resp
@@ -47,7 +50,9 @@ class RecordingBudgetGuard(LLMPort):
         self.record_calls += 1
         return await self._inner.generate(request)
 
-    async def generate_structured(self, request: LLMRequest, schema: type) -> tuple[object, LLMResponse]:
+    async def generate_structured(
+        self, request: LLMRequest, schema: type
+    ) -> tuple[object, LLMResponse]:
         self.record_calls += 1
         return await self._inner.generate_structured(request, schema)
 
@@ -78,9 +83,12 @@ class TestTOK1DecoratorStack:
                 pass  # Parse failure is expected; we test call counts
 
         import asyncio
+
         asyncio.run(run())
         # The guard's inner transport.generate() must have been called by the ladder
-        assert transport.generate_count >= 1, f"Transport generate should be called, got {transport.generate_count}"
+        assert transport.generate_count >= 1, (
+            f"Transport generate should be called, got {transport.generate_count}"
+        )
 
     def test_multi_attempt_ladder_traverses_inner(self):
         """The structured ladder must delegate to self._inner.generate(), not bypass it."""
@@ -102,6 +110,7 @@ class TestTOK1DecoratorStack:
                 pass
 
         import asyncio
+
         asyncio.run(run())
         # The ladder MUST call inner.generate() — proof: transport.generate was called
         assert transport.generate_count >= 1, "Structured ladder must call inner.generate()"

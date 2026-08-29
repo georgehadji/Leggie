@@ -75,9 +75,11 @@ class TestRerankerRerank:
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"results": [{"index": 0, "relevance_score": 0.5}]}
         captured: dict[str, Any] = {}
+
         async def _post(body):
             captured.update(body)
             return mock_resp
+
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(r, "_post", _post)
             results = await r.rerank("query", ["doc"], model="custom/model", top_k=5)

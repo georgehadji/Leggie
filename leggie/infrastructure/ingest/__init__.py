@@ -80,6 +80,7 @@ class DOCXIngestor(Ingestor):
             # DEFLATE decompression-bomb guard (PROD-16c): a DOCX is a ZIP;
             # check total uncompressed size and entry count before parsing.
             import zipfile
+
             try:
                 with zipfile.ZipFile(str(path)) as zf:
                     infos = zf.infolist()

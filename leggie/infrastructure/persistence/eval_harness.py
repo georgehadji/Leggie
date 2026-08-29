@@ -89,7 +89,11 @@ class EvalResult:
             "f1": round(self.f1, 4),
             "risk_direction_index": round(self.risk_direction_index, 4),
             "type_metrics": {
-                k: {"precision": round(v.precision, 4), "recall": round(v.recall, 4), "f1": round(v.f1, 4)}
+                k: {
+                    "precision": round(v.precision, 4),
+                    "recall": round(v.recall, 4),
+                    "f1": round(v.f1, 4),
+                }
                 for k, v in self.type_metrics.items()
             },
         }

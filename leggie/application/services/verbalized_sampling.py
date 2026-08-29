@@ -18,6 +18,7 @@ from leggie.domain.models import Article, Finding
 @dataclass
 class VSSample:
     """A single sampled finding with its probability."""
+
     finding: Finding
     probability: float = 0.0
 
@@ -56,7 +57,7 @@ class VerbalizedSampling(ABC):
         # Sort by probability ascending (tail first)
         sorted_samples = sorted(samples, key=lambda s: s.probability)
         # Take at most k from the tail
-        tail = sorted_samples[:min(k, len(sorted_samples))]
+        tail = sorted_samples[: min(k, len(sorted_samples))]
         return [s.finding for s in tail]
 
     async def generate(self, lens_name: str, article: Article, k: int = 5) -> list[Finding]:

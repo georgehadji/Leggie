@@ -86,7 +86,9 @@ class OpenRouterReranker(RerankerPort):
             RerankResult(
                 index=r.get("index", i),
                 relevance_score=r.get("relevance_score", 0.0),
-                document=documents[r.get("index", i)] if r.get("index", i) < len(documents) else None,
+                document=documents[r.get("index", i)]
+                if r.get("index", i) < len(documents)
+                else None,
             )
             for i, r in enumerate(results)
         ]

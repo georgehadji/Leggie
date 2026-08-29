@@ -26,6 +26,7 @@ _CRITIC_TASK = "adversarial_critic"
 @dataclass
 class SkepticVerdict:
     """Result of a skeptical review of a finding."""
+
     finding_id: str
     gate: str
     verdict: str  # supports, refutes, neutral
@@ -44,14 +45,18 @@ class NumericGate(SkepticGate):
     async def examine(self, finding: Finding) -> SkepticVerdict:
         if finding.finding_type != FindingType.NUMERIC:
             return SkepticVerdict(str(finding.id), "numeric", "neutral", "Not a numeric finding")
-        return SkepticVerdict(str(finding.id), "numeric", "neutral", "Numeric verification deferred")
+        return SkepticVerdict(
+            str(finding.id), "numeric", "neutral", "Numeric verification deferred"
+        )
 
 
 class TemporalGate(SkepticGate):
     async def examine(self, finding: Finding) -> SkepticVerdict:
         if finding.finding_type != FindingType.TEMPORAL:
             return SkepticVerdict(str(finding.id), "temporal", "neutral", "Not a temporal finding")
-        return SkepticVerdict(str(finding.id), "temporal", "neutral", "Temporal verification deferred")
+        return SkepticVerdict(
+            str(finding.id), "temporal", "neutral", "Temporal verification deferred"
+        )
 
 
 class FactualGate(SkepticGate):
@@ -61,16 +66,25 @@ class FactualGate(SkepticGate):
         # F4: Check rule cites a real source
         rule = (finding.irac.rule or "").lower()
         if "σύνταγμα" in rule or "άρθρο" in rule or "constitution" in rule.lower():
-            return SkepticVerdict(str(finding.id), "factual", "supports",
-                                  "Rule references constitutional provisions", 0.05)
+            return SkepticVerdict(
+                str(finding.id),
+                "factual",
+                "supports",
+                "Rule references constitutional provisions",
+                0.05,
+            )
         return SkepticVerdict(str(finding.id), "factual", "neutral", "Cannot verify offline")
 
 
 class ObligationGate(SkepticGate):
     async def examine(self, finding: Finding) -> SkepticVerdict:
         if finding.finding_type != FindingType.OBLIGATION_ENTITLEMENT:
-            return SkepticVerdict(str(finding.id), "obligation", "neutral", "Not an obligation finding")
-        return SkepticVerdict(str(finding.id), "obligation", "neutral", "Obligation verification deferred")
+            return SkepticVerdict(
+                str(finding.id), "obligation", "neutral", "Not an obligation finding"
+            )
+        return SkepticVerdict(
+            str(finding.id), "obligation", "neutral", "Obligation verification deferred"
+        )
 
 
 class LLMAdversarialGate(SkepticGate):
@@ -112,15 +126,19 @@ class LLMAdversarialGate(SkepticGate):
         )
         try:
             request = LLMRequest(
-                prompt=prompt, system_prompt=system, model=model,
-                max_tokens=critic_max_tokens, temperature=0.0,
+                prompt=prompt,
+                system_prompt=system,
+                model=model,
+                max_tokens=critic_max_tokens,
+                temperature=0.0,
                 response_format={"type": "json_object"},
             )
             obj, _ = await self._llm.generate_structured(request, SkepticVerdictResponse)
         except Exception as e:  # noqa: BLE001 — skeptic must never crash the run
             log.warning("skeptic_llm_error: finding=%s error=%s", finding.id, str(e)[:200])
-            return SkepticVerdict(str(finding.id), "adversarial", "neutral",
-                                  f"Critic error: {str(e)[:120]}")
+            return SkepticVerdict(
+                str(finding.id), "adversarial", "neutral", f"Critic error: {str(e)[:120]}"
+            )
 
         if not isinstance(obj, SkepticVerdictResponse):
             return SkepticVerdict(str(finding.id), "adversarial", "neutral", "No verdict")
@@ -130,11 +148,16 @@ class LLMAdversarialGate(SkepticGate):
             verdict = "neutral"
         log.info(
             "skeptic_verdict: finding=%s gate=adversarial verdict=%s adjustment=%.2f reason=%s",
-            finding.id, verdict, obj.confidence_adjustment or 0.0,
+            finding.id,
+            verdict,
+            obj.confidence_adjustment or 0.0,
             (obj.reason or "")[:120],
         )
         return SkepticVerdict(
-            str(finding.id), "adversarial", verdict, obj.reason,
+            str(finding.id),
+            "adversarial",
+            verdict,
+            obj.reason,
             obj.confidence_adjustment,
         )
 
@@ -200,18 +223,24 @@ class CalibratedSkeptic:
                     adjustment = sum(v.confidence_adjustment for v in verdicts)
                     if adjustment != 0:
                         new_score = min(1.0, max(0.0, finding.confidence.score + adjustment))
-                        finding = finding.model_copy(update={
-                            "confidence": Confidence.from_score(new_score, provenance="skeptic-calibrated"),
-                            "version": finding.version + 1,
-                        })
+                        finding = finding.model_copy(
+                            update={
+                                "confidence": Confidence.from_score(
+                                    new_score, provenance="skeptic-calibrated"
+                                ),
+                                "version": finding.version + 1,
+                            }
+                        )
                     return verdicts, finding
                 except Exception:
                     log.exception("skeptic_review_failed: finding=%s", finding.id)
-                    return [SkepticVerdict(str(finding.id), "adversarial", "neutral",
-                                            "Review error")], finding
+                    return [
+                        SkepticVerdict(str(finding.id), "adversarial", "neutral", "Review error")
+                    ], finding
 
         results = await asyncio.gather(
-            *(_review_one(f) for f in findings), return_exceptions=True,
+            *(_review_one(f) for f in findings),
+            return_exceptions=True,
         )
 
         all_verdicts: list[SkepticVerdict] = []

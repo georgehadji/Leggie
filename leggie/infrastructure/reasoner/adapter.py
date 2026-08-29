@@ -149,7 +149,11 @@ class ReasonerAdapter(ReasonerPort):
                     scheme=scheme,
                     identifier=identifier,
                     original_text=raw.get("original_text", identifier),
-                    resolved=bool(raw.get("resolved", False)),
+                    # Deliberative pipeline skips CoVe/Skeptic entirely (architecture
+                    # contract §3) — nothing here was checked against a configured
+                    # index, whatever the Reasoner backend's own "resolved" claims.
+                    resolved=False,
+                    checked=False,
                     resolution_evidence=raw.get("resolution_evidence"),
                 )
             )

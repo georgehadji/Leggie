@@ -76,8 +76,4 @@ class ParseIntegrityReport(BaseModel):
 
         This is the gate predicate for safe analysis.
         """
-        return (
-            not self.duplicate_ids
-            and not self.missing_numbers
-            and not self.rejected
-        )
+        return not self.duplicate_ids and not self.missing_numbers and not self.rejected

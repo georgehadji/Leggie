@@ -39,7 +39,8 @@ def configure_logging(level: str | None = None) -> None:
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
-            structlog.dev.ConsoleRenderer() if settings.debug
+            structlog.dev.ConsoleRenderer()
+            if settings.debug
             else structlog.processors.JSONRenderer(),
         ],
         context_class=dict,
@@ -48,7 +49,11 @@ def configure_logging(level: str | None = None) -> None:
         cache_logger_on_first_use=True,
     )
 
-    logging.basicConfig(format="%(message)s", stream=sys.stdout, level=getattr(logging, log_level.upper(), logging.INFO))
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stdout,
+        level=getattr(logging, log_level.upper(), logging.INFO),
+    )
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
@@ -75,6 +80,7 @@ class NullObjectLogger:
     def exception(self, *args: Any, **kwargs: Any) -> None: ...
     def bind(self, *args: Any, **kwargs: Any) -> NullObjectLogger:
         return self
+
     # Context-manager style binding used by structlog
     def new(self, *args: Any, **kwargs: Any) -> NullObjectLogger:
         return self
@@ -112,7 +118,9 @@ def bind_trace_id(logger: structlog.stdlib.BoundLogger) -> structlog.stdlib.Boun
 class Timer:
     """Simple context manager for timing operations."""
 
-    def __init__(self, logger: structlog.stdlib.BoundLogger, operation: str, **context: Any) -> None:
+    def __init__(
+        self, logger: structlog.stdlib.BoundLogger, operation: str, **context: Any
+    ) -> None:
         self._logger = logger
         self._operation = operation
         self._context = context
@@ -120,13 +128,20 @@ class Timer:
 
     async def __aenter__(self) -> Timer:
         import time
+
         self._start = time.monotonic()
         return self
 
     async def __aexit__(self, *args: Any) -> None:
         import time
+
         elapsed = time.monotonic() - (self._start or time.monotonic())
-        self._logger.info("timing.completed", operation=self._operation, elapsed_ms=round(elapsed * 1000, 2), **self._context)
+        self._logger.info(
+            "timing.completed",
+            operation=self._operation,
+            elapsed_ms=round(elapsed * 1000, 2),
+            **self._context,
+        )
 
 
 class StageTimer:
@@ -144,6 +159,7 @@ class StageTimer:
     def start(self, stage: str) -> None:
         """Start timing a stage. If a stage is already running, finalise it."""
         import time
+
         self.finish()
         self._current = stage
         self._current_start = time.monotonic()
@@ -151,6 +167,7 @@ class StageTimer:
     def finish(self) -> None:
         """Finalise the current stage (if any) and record its elapsed time."""
         import time
+
         if self._current is not None and self._current_start is not None:
             elapsed = time.monotonic() - self._current_start
             self._stages[self._current] = round(elapsed, 3)

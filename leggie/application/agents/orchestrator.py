@@ -168,7 +168,8 @@ class Orchestrator:
                 # Empty findings from LLM lens: cascade on low confidence
                 if attempt < max_retries - 1 and self._router:
                     next_result = await self._router.cascade(
-                        "lens_analysis", tier, "empty_findings")
+                        "lens_analysis", tier, "empty_findings"
+                    )
                     if next_result:
                         model = next_result.model
                         tier = next_result.tier
@@ -177,20 +178,26 @@ class Orchestrator:
                         continue
                 return findings
             except Exception as e:
-                log.error("lens_crash: %s article=%s error=%s", name, article.id, str(e),
-                          exc_info=True)
+                log.error(
+                    "lens_crash: %s article=%s error=%s", name, article.id, str(e), exc_info=True
+                )
                 if self._on_degradation:
                     with contextlib.suppress(Exception):
-                        self._on_degradation(Event(
-                            event_type=EventType.DEGRADED,
-                            aggregate_id=f"orchestrator:lens:{name}:article:{article.id}",
-                            data={"lens": name, "article_id": article.id,
-                                  "error": str(e)[:500], "model": model},
-                        ))
+                        self._on_degradation(
+                            Event(
+                                event_type=EventType.DEGRADED,
+                                aggregate_id=f"orchestrator:lens:{name}:article:{article.id}",
+                                data={
+                                    "lens": name,
+                                    "article_id": article.id,
+                                    "error": str(e)[:500],
+                                    "model": model,
+                                },
+                            )
+                        )
                 # Cascade to next tier on failure
                 if attempt < max_retries - 1 and self._router:
-                    next_result = await self._router.cascade(
-                        "lens_analysis", tier, str(e)[:200])
+                    next_result = await self._router.cascade("lens_analysis", tier, str(e)[:200])
                     if next_result:
                         model = next_result.model
                         tier = next_result.tier
@@ -224,19 +231,23 @@ class Orchestrator:
                 except Exception as e:
                     log.error(
                         "article_analysis_failed: article=%s error=%s",
-                        article.id, str(e), exc_info=True,
+                        article.id,
+                        str(e),
+                        exc_info=True,
                     )
                     if self._on_degradation:
                         with contextlib.suppress(Exception):
-                            self._on_degradation(Event(
-                                event_type=EventType.DEGRADED,
-                                aggregate_id=f"orchestrator:article:{article.id}",
-                                data={
-                                    "article_id": article.id,
-                                    "error": str(e)[:500],
-                                    "stage": "analyze_document",
-                                },
-                            ))
+                            self._on_degradation(
+                                Event(
+                                    event_type=EventType.DEGRADED,
+                                    aggregate_id=f"orchestrator:article:{article.id}",
+                                    data={
+                                        "article_id": article.id,
+                                        "error": str(e)[:500],
+                                        "stage": "analyze_document",
+                                    },
+                                )
+                            )
                     return []
 
         results = await asyncio.gather(

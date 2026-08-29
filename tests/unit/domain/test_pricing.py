@@ -1,4 +1,5 @@
 """Tests for domain pricing module — ModelPrice, estimate_cost, get_model_price."""
+
 from __future__ import annotations
 
 from leggie.domain.pricing import MODEL_PRICES, estimate_cost, get_model_price

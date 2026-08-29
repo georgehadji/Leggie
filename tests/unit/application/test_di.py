@@ -15,9 +15,7 @@ class FakeLLM(LLMPort):
     async def generate(self, request: LLMRequest) -> LLMResponse:
         # tier_used is a ModelTier, not optional — this fake used to pass None,
         # building an LLMResponse the type never permitted.
-        return LLMResponse(
-            content="fake", model="fake", tier_used=ModelTier.FREE, usage={}
-        )
+        return LLMResponse(content="fake", model="fake", tier_used=ModelTier.FREE, usage={})
 
     async def generate_structured(self, request, schema):
         return (None, await self.generate(request))
@@ -113,6 +111,7 @@ class TestMigrationShim:
             import importlib
 
             import leggie.application.di  # noqa: F811
+
             importlib.reload(leggie.application.di)
         msg = str(exc_info.value)
         assert "leggie.infrastructure.container" in msg

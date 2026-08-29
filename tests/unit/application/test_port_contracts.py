@@ -31,24 +31,32 @@ from leggie.domain.models import (
 
 # ── Fakes ────────────────────────────────────────────────────────────────────
 
+
 class FakeLLM(LLMPort):
     async def generate(self, request: LLMRequest) -> LLMResponse:
-        return LLMResponse(content="fake", model="fake", tier_used=ModelTier.FREE, usage={"prompt_tokens": 1, "completion_tokens": 1})
+        return LLMResponse(
+            content="fake",
+            model="fake",
+            tier_used=ModelTier.FREE,
+            usage={"prompt_tokens": 1, "completion_tokens": 1},
+        )
+
     async def generate_structured(self, request, schema):
         return (None, await self.generate(request))
+
     async def count_tokens(self, text, model=None):
         return len(text) // 4
 
 
 class FakeRouter(RouterPort):
-    async def route(
-        self, task_type: str, budget_remaining: float | None = None
-    ) -> RouteResult:
+    async def route(self, task_type: str, budget_remaining: float | None = None) -> RouteResult:
         return RouteResult(model="fake-model", tier=ModelTier.BUDGET, max_tokens=4096)
+
     async def cascade(
         self, task_type: str, current_tier: ModelTier, failure_reason: str | None = None
     ) -> RouteResult | None:
         return None
+
     def supported_models(self) -> list[str]:
         return ["fake-model"]
 
@@ -56,8 +64,10 @@ class FakeRouter(RouterPort):
 class FakeCitationParser(CitationParserPort):
     def parse(self, text):
         return []
+
     async def resolve(self, citation):
         return citation
+
     def supported_schemes(self):
         return [CitationScheme.FEK]
 
@@ -65,8 +75,10 @@ class FakeCitationParser(CitationParserPort):
 class FakeEventBus(EventBusPort):
     async def publish(self, event: Event) -> None:
         pass
+
     def subscribe(self, event_type: EventType, handler: EventHandler) -> None:
         pass
+
     def unsubscribe(self, event_type: EventType, handler: EventHandler) -> None:
         pass
 
@@ -74,23 +86,27 @@ class FakeEventBus(EventBusPort):
 class FakeState(StatePort):
     async def get_state(self, run_id: str) -> WorkflowState | None:
         return WorkflowState.IDLE
+
     async def set_state(self, run_id: str, state: WorkflowState) -> None:
         pass
+
     async def get_checkpoint(self, run_id: str, stage: str) -> dict[str, Any] | None:
         return None
-    async def save_checkpoint(
-        self, run_id: str, stage: str, data: dict[str, Any]
-    ) -> None:
+
+    async def save_checkpoint(self, run_id: str, stage: str, data: dict[str, Any]) -> None:
         pass
 
 
 class FakeBlackboard(BlackboardPort):
     async def post_finding(self, entry):
         pass
+
     async def get_findings(self, round_min=0, agent_id=None):
         return []
+
     async def get_all_findings(self):
         return []
+
     async def clear_round(self, round_number):
         pass
 

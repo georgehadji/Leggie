@@ -12,6 +12,7 @@ class ParseAdapter(ParsePort):
 
     def parse(self, text: str, title: str = "", source_format: str = "txt") -> Document:
         from leggie.infrastructure.parse import DocumentParser
+
         parser = DocumentParser()
         return parser.parse(text, title=title, source_format=source_format)
 
@@ -19,5 +20,6 @@ class ParseAdapter(ParsePort):
         self, text: str, title: str = "", source_format: str = "txt"
     ) -> tuple[Document, ParseIntegrityReport]:
         from leggie.infrastructure.parse import DocumentParser
+
         parser = DocumentParser()
         return parser.parse_with_integrity(text, title=title, source_format=source_format)

@@ -42,11 +42,13 @@ class BoundedIngestor(Ingestor):
         self._on_degradation = on_degradation or (lambda _ev: None)
 
     def _refuse(self, reason: str) -> None:
-        self._on_degradation(Event(
-            event_type=EventType.DEGRADED,
-            aggregate_id="ingest",
-            data={"reason": reason},
-        ))
+        self._on_degradation(
+            Event(
+                event_type=EventType.DEGRADED,
+                aggregate_id="ingest",
+                data={"reason": reason},
+            )
+        )
 
     async def ingest(self, source: Path | str) -> str:
         path = Path(source)
@@ -57,7 +59,9 @@ class BoundedIngestor(Ingestor):
         except OSError as e:
             raise InputNotFoundError(f"Cannot stat {path}: {e}") from e
         if size_mb > self._max_file_size_mb:
-            self._refuse(f"file exceeds max_file_size_mb ({size_mb:.1f} > {self._max_file_size_mb:.1f})")
+            self._refuse(
+                f"file exceeds max_file_size_mb ({size_mb:.1f} > {self._max_file_size_mb:.1f})"
+            )
             raise IngestError(
                 f"Refusing to ingest {path.name}: {size_mb:.1f} MB exceeds "
                 f"the {self._max_file_size_mb:.1f} MB cap."
@@ -67,16 +71,13 @@ class BoundedIngestor(Ingestor):
         # apply a page cap for PDFs by pre-scanning if supported.
         try:
             if self._timeout_s > 0:
-                result = await asyncio.wait_for(
-                    self._wrapped.ingest(path), timeout=self._timeout_s
-                )
+                result = await asyncio.wait_for(self._wrapped.ingest(path), timeout=self._timeout_s)
             else:
                 result = await self._wrapped.ingest(path)
         except TimeoutError as e:
             self._refuse(f"ingest timeout after {self._timeout_s}s")
             raise IngestError(
-                f"Refusing to complete ingest of {path.name}: timed out after "
-                f"{self._timeout_s}s."
+                f"Refusing to complete ingest of {path.name}: timed out after {self._timeout_s}s."
             ) from e
 
         # Element cap: naive paragraph count after extraction is not reliable;
@@ -84,8 +85,7 @@ class BoundedIngestor(Ingestor):
         if len(result) > self._max_elements:
             self._refuse(f"document exceeds max_elements ({len(result)} > {self._max_elements})")
             raise IngestError(
-                f"Refusing to ingest {path.name}: document text exceeds "
-                f"{self._max_elements} chars."
+                f"Refusing to ingest {path.name}: document text exceeds {self._max_elements} chars."
             )
 
         return result

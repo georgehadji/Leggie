@@ -58,23 +58,38 @@ class LegalCoherenceLens(Lens):
         return [self._candidate_to_finding(c, article) for c in result.findings]
 
     def _candidate_to_finding(self, c: IRACCandidate, article: Article) -> Finding:
-        prompt_hash = hashlib.sha256(f"legal_coherence:{article.id}:{c.issue}".encode()).hexdigest()[:12]
+        prompt_hash = hashlib.sha256(
+            f"legal_coherence:{article.id}:{c.issue}".encode()
+        ).hexdigest()[:12]
         sev_map = {s.value: s for s in Severity}
         valid_quote = False
         evidence_list = []
         if c.verbatim_quote:
             from leggie.application.services.cove_verifier import _normalize
+
             valid_quote = _normalize(c.verbatim_quote) in _normalize(article.raw_text)
-            evidence_list = [Evidence(text_excerpt=c.verbatim_quote, verdict="supports", citation=None)]
+            evidence_list = [
+                Evidence(text_excerpt=c.verbatim_quote, verdict="supports", citation=None)
+            ]
         if not valid_quote and c.verbatim_quote:
-            evidence_list = [Evidence(text_excerpt=c.verbatim_quote, verdict="neutral",
-                                      source_document="quote-not-verified-as-substring")]
+            evidence_list = [
+                Evidence(
+                    text_excerpt=c.verbatim_quote,
+                    verdict="neutral",
+                    source_document="quote-not-verified-as-substring",
+                )
+            ]
         return Finding(
             finding_type=FindingType.FACTUAL,
-            irac=IRAC(issue=c.issue, rule=c.rule, application=c.application, conclusion=c.conclusion),
+            article_id=article.id,
+            irac=IRAC(
+                issue=c.issue, rule=c.rule, application=c.application, conclusion=c.conclusion
+            ),
             severity=sev_map.get(c.severity, Severity.MEDIUM),
             confidence=Confidence.from_score(c.probability, provenance="llm-legal-coherence"),
-            lens=self.name(), model=self._model, prompt_hash=prompt_hash,
+            lens=self.name(),
+            model=self._model,
+            prompt_hash=prompt_hash,
             evidence=evidence_list,
         )
 
@@ -87,36 +102,44 @@ class LegalCoherenceLens(Lens):
         for pattern in _VAGUE_PATTERNS:
             match = pattern.search(text)
             if match:
-                findings.append(Finding(
-                    finding_type=FindingType.FACTUAL,
-                    irac=IRAC(
-                        issue=f"Άρθρο {article.id}: Ασαφής ή αόριστη διατύπωση",
-                        rule="Η νομοθεσία πρέπει να είναι σαφής και ορισμένη (αρχή της ασφάλειας δικαίου)",
-                        application=f"Το Άρθρο {article.id} χρησιμοποιεί τη φράση '{match.group(0)}' που είναι ασαφής",
-                        conclusion=f"Το Άρθρο {article.id} χρήζει σαφέστερης διατύπωσης",
-                    ),
-                    severity=Severity.MEDIUM,
-                    confidence=Confidence.from_score(0.55, provenance="pattern-match"),
-                    lens=self.name(), model="rule-based-phase2",
-                    evidence=[Evidence(text_excerpt=match.group(0), verdict="supports")],
-                ))
+                findings.append(
+                    Finding(
+                        finding_type=FindingType.FACTUAL,
+                        article_id=article.id,
+                        irac=IRAC(
+                            issue=f"Άρθρο {article.id}: Ασαφής ή αόριστη διατύπωση",
+                            rule="Η νομοθεσία πρέπει να είναι σαφής και ορισμένη (αρχή της ασφάλειας δικαίου)",
+                            application=f"Το Άρθρο {article.id} χρησιμοποιεί τη φράση '{match.group(0)}' που είναι ασαφής",
+                            conclusion=f"Το Άρθρο {article.id} χρήζει σαφέστερης διατύπωσης",
+                        ),
+                        severity=Severity.MEDIUM,
+                        confidence=Confidence.from_score(0.55, provenance="pattern-match"),
+                        lens=self.name(),
+                        model="rule-based-phase2",
+                        evidence=[Evidence(text_excerpt=match.group(0), verdict="supports")],
+                    )
+                )
 
         for pattern in _CONTRADICTION_PATTERNS:
             match = pattern.search(text)
             if match:
-                findings.append(Finding(
-                    finding_type=FindingType.FACTUAL,
-                    irac=IRAC(
-                        issue=f"Άρθρο {article.id}: Πιθανή εσωτερική αντίφαση",
-                        rule="Οι διατάξεις του ίδιου νόμου πρέπει να είναι συνεπείς μεταξύ τους",
-                        application=f"Το Άρθρο {article.id} περιέχει τη φράση '{match.group(0)}'",
-                        conclusion=f"Το Άρθρο {article.id} χρήζει ελέγχου συνέπειας",
-                    ),
-                    severity=Severity.LOW,
-                    confidence=Confidence.from_score(0.4, provenance="pattern-match"),
-                    lens=self.name(), model="rule-based-phase2",
-                    evidence=[Evidence(text_excerpt=match.group(0), verdict="supports")],
-                ))
+                findings.append(
+                    Finding(
+                        finding_type=FindingType.FACTUAL,
+                        article_id=article.id,
+                        irac=IRAC(
+                            issue=f"Άρθρο {article.id}: Πιθανή εσωτερική αντίφαση",
+                            rule="Οι διατάξεις του ίδιου νόμου πρέπει να είναι συνεπείς μεταξύ τους",
+                            application=f"Το Άρθρο {article.id} περιέχει τη φράση '{match.group(0)}'",
+                            conclusion=f"Το Άρθρο {article.id} χρήζει ελέγχου συνέπειας",
+                        ),
+                        severity=Severity.LOW,
+                        confidence=Confidence.from_score(0.4, provenance="pattern-match"),
+                        lens=self.name(),
+                        model="rule-based-phase2",
+                        evidence=[Evidence(text_excerpt=match.group(0), verdict="supports")],
+                    )
+                )
 
         return findings
 
@@ -125,8 +148,13 @@ class LegalCoherenceLens(Lens):
 
 _VAGUE_PATTERNS = [
     re.compile(r"(?:κατάλληλ[οςηο]|ενδεδειγμέν[οςηο]|σχετικ[όςήό])", re.UNICODE | re.IGNORECASE),
-    re.compile(r"(?:με\s+απόφαση\s+του|όπως\s+ορίζεται|εφόσον\s+προβλέπεται)", re.UNICODE | re.IGNORECASE),
-    re.compile(r"(?:εξαιρετικές\s+περιπτώσεις|ειδικές\s+συνθήκες|κατά\s+περίπτωση)", re.UNICODE | re.IGNORECASE),
+    re.compile(
+        r"(?:με\s+απόφαση\s+του|όπως\s+ορίζεται|εφόσον\s+προβλέπεται)", re.UNICODE | re.IGNORECASE
+    ),
+    re.compile(
+        r"(?:εξαιρετικές\s+περιπτώσεις|ειδικές\s+συνθήκες|κατά\s+περίπτωση)",
+        re.UNICODE | re.IGNORECASE,
+    ),
 ]
 
 _CONTRADICTION_PATTERNS = [

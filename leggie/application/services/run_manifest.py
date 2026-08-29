@@ -92,7 +92,10 @@ class RunManifestBuilder:
             self._status = "failed"
             if isinstance(event.data, dict):
                 self._final_error = str(event.data.get("error", ""))
-        elif event.event_type == EventType.FINDING_CREATED or event.event_type == EventType.FINDING_CONFIRMED:
+        elif (
+            event.event_type == EventType.FINDING_CREATED
+            or event.event_type == EventType.FINDING_CONFIRMED
+        ):
             self._finding_count += 1
 
         # Cost/token telemetry from llm.call events carried as event data
@@ -142,6 +145,7 @@ class RunManifestBuilder:
     def emit(self, dest: Path | None = None) -> Path | None:
         """Freeze and write to the sink (if configured). Returns the path."""
         import contextlib
+
         manifest = self.freeze()
         if self._sink is not None:
             with contextlib.suppress(Exception):

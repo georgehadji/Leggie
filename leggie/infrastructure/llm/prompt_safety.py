@@ -104,7 +104,9 @@ class PromptHardeningDecorator(LLMPort):
     async def generate(self, request: LLMRequest) -> LLMResponse:
         return await self._wrapped.generate(self._harden(request))
 
-    async def generate_structured(self, request: LLMRequest, schema: type) -> tuple[Any, LLMResponse]:
+    async def generate_structured(
+        self, request: LLMRequest, schema: type
+    ) -> tuple[Any, LLMResponse]:
         return await self._wrapped.generate_structured(self._harden(request), schema)
 
     async def count_tokens(self, text: str, model: str | None = None) -> int:

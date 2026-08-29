@@ -21,10 +21,9 @@ from leggie.application.ports.llm import (
 AsyncFn = TypeVar("AsyncFn", bound=Callable[..., Any])
 
 
-def with_retry(
-    max_retries: int = 3, base_delay: float = 1.0
-) -> Callable[[AsyncFn], AsyncFn]:
+def with_retry(max_retries: int = 3, base_delay: float = 1.0) -> Callable[[AsyncFn], AsyncFn]:
     """Decorator: retry LLM calls on transient failures with exponential backoff."""
+
     def decorator(func: AsyncFn) -> AsyncFn:
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -35,10 +34,12 @@ def with_retry(
                 except (LLMRateLimitError, LLMTimeoutError) as e:
                     last_exc = e
                     if attempt < max_retries - 1:
-                        delay = base_delay * (2 ** attempt)
+                        delay = base_delay * (2**attempt)
                         await asyncio.sleep(delay)
             raise last_exc  # type: ignore[misc]
+
         return cast(AsyncFn, wrapper)
+
     return decorator
 
 
@@ -65,9 +66,7 @@ class BudgetGuardDecorator(LLMPort):
         self._on_degrade = on_degrade or (lambda _action, _ratio: None)
         self._reserve_lock = asyncio.Lock()
 
-    async def _reserve(
-        self, model: str, prompt_tokens: int, completion_estimate: int
-    ) -> None:
+    async def _reserve(self, model: str, prompt_tokens: int, completion_estimate: int) -> None:
         """Reserve estimated cost under lock. Raises BudgetExceededError if over budget."""
         async with self._reserve_lock:
             action = self._guard.check(prompt_tokens, completion_estimate, model)
@@ -124,8 +123,12 @@ class BudgetGuardDecorator(LLMPort):
         actual_completion = response.usage.get("completion_tokens", completion_estimate)
         actual_cached = response.usage.get("cached_tokens", 0)
         await self._settle(
-            model, actual_prompt, actual_completion, actual_cached,
-            prompt_estimate, completion_estimate,
+            model,
+            actual_prompt,
+            actual_completion,
+            actual_cached,
+            prompt_estimate,
+            completion_estimate,
         )
 
         return response
@@ -149,8 +152,12 @@ class BudgetGuardDecorator(LLMPort):
         actual_completion = response.usage.get("completion_tokens", completion_estimate)
         actual_cached = response.usage.get("cached_tokens", 0)
         await self._settle(
-            model, actual_prompt, actual_completion, actual_cached,
-            prompt_estimate, completion_estimate,
+            model,
+            actual_prompt,
+            actual_completion,
+            actual_cached,
+            prompt_estimate,
+            completion_estimate,
         )
 
         return obj, response

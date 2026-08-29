@@ -52,8 +52,10 @@ def _provider_with_response(
     # and slept for a real second on every run. An explicit dict keeps
     # Retry-After under the test's control.
     resp.headers = {} if headers is None else headers
-    with patch.object(provider._http_client, "post", new_callable=AsyncMock) as post, \
-         patch.object(provider._rate_limiter, "acquire", new_callable=AsyncMock):
+    with (
+        patch.object(provider._http_client, "post", new_callable=AsyncMock) as post,
+        patch.object(provider._rate_limiter, "acquire", new_callable=AsyncMock),
+    ):
         post.return_value = resp
         yield provider, post
 
@@ -105,10 +107,12 @@ class TestOpenRouterAPIMock:
     async def test_generate_success(self):
         """Provider parses a successful response into an LLMResponse."""
         body = {
-            "choices": [{
-                "message": {"content": "Legal analysis result", "role": "assistant"},
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "message": {"content": "Legal analysis result", "role": "assistant"},
+                    "finish_reason": "stop",
+                }
+            ],
             "usage": {"prompt_tokens": 200, "completion_tokens": 100},
             "model": "openai/gpt-5.6-luna",
         }
@@ -130,16 +134,20 @@ class TestOpenRouterAPIMock:
     @pytest.mark.parametrize("status", [400, 401, 500, 503])
     async def test_non_200_raises_llm_error(self, status: int):
         """Any non-200, non-429 status surfaces as LLMError naming the code."""
-        with _provider_with_response(status=status, text="upstream detail") as (provider, _), \
-             pytest.raises(LLMError) as exc:
+        with (
+            _provider_with_response(status=status, text="upstream detail") as (provider, _),
+            pytest.raises(LLMError) as exc,
+        ):
             await provider.generate(LLMRequest(prompt="x"))
         assert str(status) in str(exc.value)
 
     @pytest.mark.asyncio
     async def test_429_raises_rate_limit_error(self):
         """429 is distinguished from other errors by its own exception type."""
-        with _provider_with_response(status=429, text="") as (provider, _), \
-             pytest.raises(LLMRateLimitError):
+        with (
+            _provider_with_response(status=429, text="") as (provider, _),
+            pytest.raises(LLMRateLimitError),
+        ):
             await provider.generate(LLMRequest(prompt="x"))
 
     @pytest.mark.asyncio
@@ -200,9 +208,7 @@ class TestOpenRouterAPIMock:
     async def test_thinking_model_adds_reasoning(self):
         """Thinking models get include_reasoning: true."""
         with _provider_with_response() as (provider, post):
-            await provider.generate(
-                LLMRequest(prompt="Test", model="openai/gpt-5.6-luna:thinking")
-            )
+            await provider.generate(LLMRequest(prompt="Test", model="openai/gpt-5.6-luna:thinking"))
 
         assert _sent_body(post)["include_reasoning"] is True
 
@@ -217,6 +223,7 @@ class TestOpenRouterAPIMock:
 
 # ── PROD-14 transport tests ──────────────────────────────────────────────
 
+
 class TestErrorBodyTruncation:
     """Verify upstream error bodies are truncated before reaching exceptions."""
 
@@ -226,20 +233,25 @@ class TestErrorBodyTruncation:
         from leggie.infrastructure.llm.adapters.openrouter import _MAX_ERROR_BODY_CHARS
 
         big_body = "x" * (_MAX_ERROR_BODY_CHARS + 500)
-        with _provider_with_response(status=500, text=big_body) as (provider, _), \
-             pytest.raises(LLMError) as exc:
+        with (
+            _provider_with_response(status=500, text=big_body) as (provider, _),
+            pytest.raises(LLMError) as exc,
+        ):
             await provider.generate(LLMRequest(prompt="test"))
 
         body_in_exc = str(exc.value)
-        assert len(body_in_exc) < len(big_body), \
+        assert len(body_in_exc) < len(big_body), (
             f"Error body was not truncated: {len(body_in_exc)} chars"
+        )
         assert big_body not in body_in_exc
 
     @pytest.mark.asyncio
     async def test_429_empty_body_does_not_include_text(self):
         """A 429 with no sensitive body does not leak."""
-        with _provider_with_response(status=429, text="") as (provider, _), \
-             pytest.raises(LLMRateLimitError) as exc:
+        with (
+            _provider_with_response(status=429, text="") as (provider, _),
+            pytest.raises(LLMRateLimitError) as exc,
+        ):
             await provider.generate(LLMRequest(prompt="test"))
 
         assert "OpenRouter rate limited" in str(exc.value)
@@ -252,24 +264,28 @@ class TestRetryAfter:
 
     def test_parse_retry_after_integer(self):
         from leggie.infrastructure.llm.adapters.openrouter import _parse_retry_after
+
         mock_resp = MagicMock()
         mock_resp.headers = {"retry-after": "42"}
         assert _parse_retry_after(mock_resp) == 42.0
 
     def test_parse_retry_after_float(self):
         from leggie.infrastructure.llm.adapters.openrouter import _parse_retry_after
+
         mock_resp = MagicMock()
         mock_resp.headers = {"retry-after": "3.14"}
         assert _parse_retry_after(mock_resp) == 3.14
 
     def test_parse_retry_after_missing(self):
         from leggie.infrastructure.llm.adapters.openrouter import _parse_retry_after
+
         mock_resp = MagicMock()
         mock_resp.headers = {}
         assert _parse_retry_after(mock_resp) is None
 
     def test_parse_retry_after_http_date_fallback(self):
         from leggie.infrastructure.llm.adapters.openrouter import _parse_retry_after
+
         mock_resp = MagicMock()
         mock_resp.headers = {"retry-after": "Wed, 21 Oct 2015 07:28:00 GMT"}
         assert _parse_retry_after(mock_resp) == 5.0  # fallback default
@@ -292,38 +308,56 @@ class TestReasoningTokenVisibility:
     @staticmethod
     def _body(finish_reason: str, usage: dict[str, Any]) -> dict[str, Any]:
         return {
-            "choices": [{
-                "message": {"content": "{}", "role": "assistant"},
-                "finish_reason": finish_reason,
-            }],
+            "choices": [
+                {
+                    "message": {"content": "{}", "role": "assistant"},
+                    "finish_reason": finish_reason,
+                }
+            ],
             "usage": usage,
             "model": "google/gemini-2.5-pro",
         }
 
     @pytest.mark.asyncio
     async def test_reasoning_tokens_surfaced_when_present(self):
-        usage = await self._generate_with(self._body("length", {
-            "prompt_tokens": 200,
-            "completion_tokens": 100,
-            "completion_tokens_details": {"reasoning_tokens": 4096},
-        }))
+        usage = await self._generate_with(
+            self._body(
+                "length",
+                {
+                    "prompt_tokens": 200,
+                    "completion_tokens": 100,
+                    "completion_tokens_details": {"reasoning_tokens": 4096},
+                },
+            )
+        )
         assert usage["prompt_tokens"] == 200
         assert usage["completion_tokens"] == 100
         assert usage["reasoning_tokens"] == 4096
 
     @pytest.mark.asyncio
     async def test_reasoning_tokens_absent_when_not_reported(self):
-        usage = await self._generate_with(self._body("stop", {
-            "prompt_tokens": 200, "completion_tokens": 100,
-        }))
+        usage = await self._generate_with(
+            self._body(
+                "stop",
+                {
+                    "prompt_tokens": 200,
+                    "completion_tokens": 100,
+                },
+            )
+        )
         # Additive only — no phantom key, no zero-fill.
         assert "reasoning_tokens" not in usage
 
     @pytest.mark.asyncio
     async def test_zero_reasoning_tokens_not_surfaced(self):
-        usage = await self._generate_with(self._body("stop", {
-            "prompt_tokens": 200,
-            "completion_tokens": 100,
-            "completion_tokens_details": {"reasoning_tokens": 0},
-        }))
+        usage = await self._generate_with(
+            self._body(
+                "stop",
+                {
+                    "prompt_tokens": 200,
+                    "completion_tokens": 100,
+                    "completion_tokens_details": {"reasoning_tokens": 0},
+                },
+            )
+        )
         assert "reasoning_tokens" not in usage

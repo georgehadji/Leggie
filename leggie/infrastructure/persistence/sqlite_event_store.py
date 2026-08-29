@@ -87,7 +87,16 @@ class SqliteEventStore(EventBusPort):
             self._conn.execute(
                 "INSERT OR IGNORE INTO events(id, run_id, seq, event_type, aggregate_id, payload_json, ts, version) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (str(event.id), run_id, seq, str(event.event_type), run_id, payload, ts, event.version),
+                (
+                    str(event.id),
+                    run_id,
+                    seq,
+                    str(event.event_type),
+                    run_id,
+                    payload,
+                    ts,
+                    event.version,
+                ),
             )
 
         # Dispatch to subscribers outside the write lock
@@ -99,8 +108,11 @@ class SqliteEventStore(EventBusPort):
             try:
                 handler(event)
             except Exception:
-                log.exception("sqlite_event_store: subscriber error event=%s handler=%s",
-                              str(event.event_type), handler)
+                log.exception(
+                    "sqlite_event_store: subscriber error event=%s handler=%s",
+                    str(event.event_type),
+                    handler,
+                )
 
     # ── Replay ─────────────────────────────────────────────────────
 
@@ -140,7 +152,9 @@ class SqliteEventStore(EventBusPort):
 
     def unsubscribe(self, event_type: EventType, handler: EventHandler) -> None:
         if event_type in self._subscribers:
-            self._subscribers[event_type] = [h for h in self._subscribers[event_type] if h != handler]
+            self._subscribers[event_type] = [
+                h for h in self._subscribers[event_type] if h != handler
+            ]
 
     def clear(self) -> None:
         """Reset subscriber list, seq, and drop rows (test helper)."""

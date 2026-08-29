@@ -29,7 +29,7 @@ def is_cross_reference(title: str) -> bool:
     stop = _STOP_PATTERN.search(title)
     if not stop:
         return False
-    return len(title[:stop.start()].strip()) < CROSS_REF_TITLE_PREFIX_MIN
+    return len(title[: stop.start()].strip()) < CROSS_REF_TITLE_PREFIX_MIN
 
 
 def extract_articles(text: str) -> tuple[list[Article], list[dict[str, Any]]]:
@@ -58,19 +58,23 @@ def extract_articles(text: str) -> tuple[list[Article], list[dict[str, Any]]]:
 
         # F0.3: Reject headings that are nothing but a cross-reference.
         if is_cross_reference(article_title):
-            rejected.append({
-                "num": article_num,
-                "reason": "cross_reference",
-                "offset": line_start,
-            })
+            rejected.append(
+                {
+                    "num": article_num,
+                    "reason": "cross_reference",
+                    "offset": line_start,
+                }
+            )
             continue
 
         # F0.4: Extract the content from this heading to the next heading
-        candidates.append({
-            "num": article_num,
-            "title": article_title,
-            "start": line_start,
-        })
+        candidates.append(
+            {
+                "num": article_num,
+                "title": article_title,
+                "start": line_start,
+            }
+        )
 
     # Convert candidates to articles
     articles: list[Article] = []
@@ -88,26 +92,30 @@ def extract_articles(text: str) -> tuple[list[Article], list[dict[str, Any]]]:
         if last_num > 0:
             delta = num_int - last_num
             if delta > 50 or (delta < 0 and abs(delta) > 50):
-                rejected.append({
-                    "num": num_str,
-                    "reason": "monotonic_jump",
-                    "offset": cand["start"],
-                })
+                rejected.append(
+                    {
+                        "num": num_str,
+                        "reason": "monotonic_jump",
+                        "offset": cand["start"],
+                    }
+                )
                 continue
 
         last_num = num_int
 
         # Content: from this heading start to next heading start (or end)
         content_end = candidates[i + 1]["start"] if i + 1 < len(candidates) else len(text)
-        raw = text[cand["start"]:content_end].strip()
+        raw = text[cand["start"] : content_end].strip()
 
         paragraphs = extract_paragraphs(raw)
 
-        articles.append(Article(
-            id=num_str,
-            title=cand["title"],
-            paragraphs=paragraphs,
-            raw_text=raw,
-        ))
+        articles.append(
+            Article(
+                id=num_str,
+                title=cand["title"],
+                paragraphs=paragraphs,
+                raw_text=raw,
+            )
+        )
 
     return articles, rejected

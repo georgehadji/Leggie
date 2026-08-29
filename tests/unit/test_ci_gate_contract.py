@@ -44,9 +44,7 @@ def test_workflow_directory_is_present() -> None:
 def test_no_workflow_overrides_a_pyproject_threshold(flag: str) -> None:
     offenders = []
     for path in _workflow_files():
-        for lineno, line in enumerate(
-            path.read_text(encoding="utf-8").splitlines(), start=1
-        ):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             # Skip comments — this file's own rationale mentions the flag by
             # name, and so does the comment above each corrected pytest line.
             if line.lstrip().startswith("#"):
@@ -64,9 +62,7 @@ def test_no_workflow_overrides_a_pyproject_threshold(flag: str) -> None:
 
 def test_coverage_gate_is_declared_in_pyproject() -> None:
     """The single source of truth must actually exist and be enforcing."""
-    config = tomllib.loads(
-        (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    )
+    config = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     fail_under = config["tool"]["coverage"]["report"]["fail_under"]
     assert isinstance(fail_under, (int, float))
     assert fail_under > 0, "coverage gate is declared but set to zero — not a gate"

@@ -95,15 +95,14 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]])
             parse_port = self._container.get(ParsePort)
 
             text = await ingest_port.ingest(Path(command.file_path))
-            doc, report = parse_port.parse_with_integrity(
-                text, title=Path(command.file_path).stem
-            )
+            doc, report = parse_port.parse_with_integrity(text, title=Path(command.file_path).stem)
             # extract_citations is a DocumentParser-only method, not on ParsePort —
             # it duplicates GreekCitationParser's regexes with different coverage
             # (no URL scheme) and a different FEK identifier format. Left as a
             # direct infra import pending a decision on which parser is canonical
             # (see ARCHITECTURE_IMPLEMENTATION_PLAN_2026-08-10.md §2.1 Group A).
             from leggie.infrastructure.parse import DocumentParser
+
             citations = DocumentParser().extract_citations(text)
 
             output = {
@@ -112,10 +111,7 @@ class ParseDocumentHandler(CommandHandler[ParseDocumentCommand, dict[str, Any]])
                     {
                         "id": a.id,
                         "title": a.title,
-                        "paragraphs": [
-                            {"number": p.number, "text": p.text}
-                            for p in a.paragraphs
-                        ],
+                        "paragraphs": [{"number": p.number, "text": p.text} for p in a.paragraphs],
                     }
                     for a in doc.articles
                 ],
@@ -176,7 +172,8 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 router=router,
                 cove=cove,
                 checkpoint_store=checkpoint_store,
-                use_verbalized_sampling=command.use_verbalized_sampling or settings.analysis.use_verbalized_sampling,
+                use_verbalized_sampling=command.use_verbalized_sampling
+                or settings.analysis.use_verbalized_sampling,
                 reranker_name=settings.analysis.reranker,
                 reranker_port=reranker_port,
                 allow_degraded_parse=command.allow_degraded_parse,
@@ -339,8 +336,10 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
                 scorer = EvalScorer(gold_set)
                 result = scorer.score(bill_id, findings)
                 results.append(result.to_dict())
-                print(f"  {bill_id}: {result.total_gold} gold, {len(findings)} findings, "
-                      f"P={result.precision:.2f} R={result.recall:.2f}")
+                print(
+                    f"  {bill_id}: {result.total_gold} gold, {len(findings)} findings, "
+                    f"P={result.precision:.2f} R={result.recall:.2f}"
+                )
 
             if command.results_path:
                 p = Path(command.results_path)

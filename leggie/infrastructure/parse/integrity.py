@@ -23,6 +23,7 @@ def compute_article_numbers(ids: list[str]) -> tuple[list[int], list[int], list[
 
     # Map IDs to their leading numeric part
     import re
+
     present: set[int] = set()
     for aid in ids:
         m = re.match(r"\d+", aid)

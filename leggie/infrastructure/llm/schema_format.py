@@ -65,8 +65,7 @@ def _make_strict(schema: dict[str, Any], root: dict[str, Any]) -> dict[str, Any]
     # constraints in strict json_schema mode.  Pydantic still validates
     # the parsed object, so dropping them from the schema is safe.
     if result.get("type") == "number":
-        for key in ("minimum", "maximum", "exclusiveMinimum",
-                    "exclusiveMaximum", "multipleOf"):
+        for key in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"):
             result.pop(key, None)
 
     schema_type = result.get("type")

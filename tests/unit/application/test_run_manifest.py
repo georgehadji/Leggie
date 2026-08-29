@@ -53,13 +53,19 @@ class TestRunManifestBuilder:
         b.add_tokens("budget", 100, 0.01)
         b.handle(Event(event_type=EventType.FINDING_CREATED, aggregate_id="x", data={}))
         b.handle(Event(event_type=EventType.FINDING_CONFIRMED, aggregate_id="x", data={}))
-        b.handle(Event(event_type=EventType.STAGE_COMPLETED, aggregate_id="x", data={
-            "tier": "budget",
-            "tokens": 50,
-            "cost": 0.005,
-            "model": "google/gemini-2.5-flash",
-            "route": "lens_analysis",
-        }))
+        b.handle(
+            Event(
+                event_type=EventType.STAGE_COMPLETED,
+                aggregate_id="x",
+                data={
+                    "tier": "budget",
+                    "tokens": 50,
+                    "cost": 0.005,
+                    "model": "google/gemini-2.5-flash",
+                    "route": "lens_analysis",
+                },
+            )
+        )
         b.handle(Event(event_type=EventType.WORKFLOW_COMPLETED, aggregate_id="x", data={}))
 
         m = b.freeze()
@@ -76,7 +82,9 @@ class TestRunManifestBuilder:
 
     def test_builder_failed_status(self):
         b = RunManifestBuilder()
-        b.handle(Event(event_type=EventType.WORKFLOW_FAILED, aggregate_id="x", data={"error": "boom"}))
+        b.handle(
+            Event(event_type=EventType.WORKFLOW_FAILED, aggregate_id="x", data={"error": "boom"})
+        )
         m = b.freeze()
         assert m.status == "failed"
         assert m.final_error == "boom"

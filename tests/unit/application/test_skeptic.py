@@ -44,7 +44,8 @@ def make_finding(
         irac=IRAC(issue="test issue", rule=rule, application="app", conclusion="conc"),
         confidence=Confidence.from_score(confidence),
         severity=Severity(severity),
-        lens="test", model="test",
+        lens="test",
+        model="test",
     )
 
 
@@ -131,8 +132,11 @@ class TestCalibratedSkeptic:
 class TestLLMAdversarialGate:
     @pytest.mark.asyncio
     async def test_refutes_drops_finding(self):
-        llm = FakeLLM(SkepticVerdictResponse(
-            verdict="refutes", reason="Άρθρο δεν υπάρχει", confidence_adjustment=0.0))
+        llm = FakeLLM(
+            SkepticVerdictResponse(
+                verdict="refutes", reason="Άρθρο δεν υπάρχει", confidence_adjustment=0.0
+            )
+        )
         skeptic = CalibratedSkeptic(llm=llm)
         f = make_finding()
         survivors, verdicts = await skeptic.review([f])
@@ -141,8 +145,9 @@ class TestLLMAdversarialGate:
 
     @pytest.mark.asyncio
     async def test_supports_keeps_finding(self):
-        llm = FakeLLM(SkepticVerdictResponse(
-            verdict="supports", reason="ok", confidence_adjustment=0.1))
+        llm = FakeLLM(
+            SkepticVerdictResponse(verdict="supports", reason="ok", confidence_adjustment=0.1)
+        )
         skeptic = CalibratedSkeptic(llm=llm)
         f = make_finding(confidence=0.5)
         survivors, _ = await skeptic.review([f])
@@ -152,8 +157,11 @@ class TestLLMAdversarialGate:
     @pytest.mark.asyncio
     async def test_gate_added_only_with_llm(self):
         no_llm = CalibratedSkeptic()
-        with_llm = CalibratedSkeptic(llm=FakeLLM(
-            SkepticVerdictResponse(verdict="neutral", reason="", confidence_adjustment=0.0)))
+        with_llm = CalibratedSkeptic(
+            llm=FakeLLM(
+                SkepticVerdictResponse(verdict="neutral", reason="", confidence_adjustment=0.0)
+            )
+        )
         assert len(no_llm._gates) == 4
         assert len(with_llm._gates) == 5
 

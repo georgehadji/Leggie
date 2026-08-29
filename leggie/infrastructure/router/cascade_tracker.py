@@ -65,7 +65,7 @@ class CascadeTracker:
         self._decisions.append(decision)
         # Trim if over max
         if len(self._decisions) > self._max_records:
-            self._decisions = self._decisions[-self._max_records:]
+            self._decisions = self._decisions[-self._max_records :]
 
     def get_stats(self) -> dict[str, Any]:
         """Get summary statistics for all recorded decisions."""
@@ -83,7 +83,12 @@ class CascadeTracker:
         tier_stats: dict[str, dict[str, Any]] = {}
         for d in self._decisions:
             if d.tier_attempted not in tier_stats:
-                tier_stats[d.tier_attempted] = {"attempts": 0, "successes": 0, "cost": 0.0, "tokens": 0}
+                tier_stats[d.tier_attempted] = {
+                    "attempts": 0,
+                    "successes": 0,
+                    "cost": 0.0,
+                    "tokens": 0,
+                }
             tier_stats[d.tier_attempted]["attempts"] += 1
             if d.success:
                 tier_stats[d.tier_attempted]["successes"] += 1

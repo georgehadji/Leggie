@@ -74,8 +74,9 @@ def deduplicate(
             chosen = max(cluster_group, key=lambda f: (f.confidence.score, str(f.id)))
         elif keep == "most_severe":
             severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
-            chosen = min(cluster_group, key=lambda f: (
-                severity_order.get(f.severity.value, 5), str(f.id)))
+            chosen = min(
+                cluster_group, key=lambda f: (severity_order.get(f.severity.value, 5), str(f.id))
+            )
         else:
             chosen = cluster_group[0]
         result.append(chosen)
