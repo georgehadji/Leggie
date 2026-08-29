@@ -116,8 +116,57 @@ other, in the same commit.
 
 No gate was removed, reordered, or weakened; the coverage floor stays at 80%.
 
+### 6.3 `.pre-commit-config.yaml` — the gates run automatically
+
+With CI dark, hooks are the only thing that runs the gates without someone
+remembering to. The previous config ran ruff, ruff-format, mypy and bandit —
+but **not pytest and not import-linter**, the two gates CI was the only safety
+net for. Both are now wired, on `pre-push` so they do not tax every commit:
+
+| Stage | Gates | Cost |
+|---|---|---|
+| `pre-commit` | ruff autofix, ruff, mypy, bandit | sub-second to ~1s |
+| `pre-push` | + import-linter, pytest + 80% coverage floor | ~10s |
+
+Two deliberate choices:
+
+- **Every hook shells out to `scripts/run_gates.py`**, so the hooks, the script
+  and `ci.yml` share one definition of each gate and cannot drift. The hooks
+  also use `language: system` — the project's own installed tools, not
+  pre-commit's separately-pinned copies — which removes both version drift and
+  the network dependency. (The old mypy hook ran in an isolated environment with
+  only pydantic installed, so it type-checked against a different dependency set
+  than CI did.)
+- **`ruff format` is deliberately not a hook.** `ci.yml` has no format step, so
+  formatting was never a gate, and the tree is ~85 files away from
+  ruff-format-clean. Enabling it rewrites nearly every file. Worth doing — in
+  its own commit, not silently attached to every future one.
+
+Verified in both directions: with a planted `F841` and a failing test, the
+pre-commit stage fails on `gate: ruff` and the pre-push stage fails on both
+`gate: ruff` and `gate: pytest`, each exiting 1. Hooks that cannot block a bad
+push are decoration.
+
+Install with `pre-commit install` — `default_install_hook_types` wires both
+stages in one command.
+
 ## 7. Standing risk
 
-Until §5 is resolved, **no branch can be verified by CI**, and a green tick
-cannot be used as merge evidence. Use `python scripts/run_gates.py` and say so
-explicitly in the PR, as `docs/PLAN_VERIFICATION_CHAIN_ORDER.md` §4 does.
+Until §5 is resolved, **no branch can be verified by CI**. A red X on a PR
+carries no information, and a green tick is simply unavailable — neither can be
+used as merge evidence.
+
+The local gates are the substitute, and they are a real one: they run the same
+five checks in the same order. What they do **not** replicate is CI's clean-room
+guarantee — a fresh checkout on a fresh runner with a fresh dependency install.
+A local pass can hide a missing dependency declaration, an uncommitted file, or
+a machine-specific assumption. Two cheap habits cover most of that gap:
+
+- run `git status` before trusting a green local run — an uncommitted file is
+  the classic false pass;
+- occasionally verify from a clean clone into a fresh virtualenv, which is what
+  `pip install -e ".[dev,lint]"` on a bare checkout gives you.
+
+State the local result explicitly in the PR, as
+`docs/PLAN_VERIFICATION_CHAIN_ORDER.md` §4 does — say what was run and what it
+returned, rather than pointing at a check mark.

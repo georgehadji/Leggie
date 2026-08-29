@@ -234,8 +234,24 @@ Gold labels follow an IRAC-grounded schema:
 
 ## Development
 
+> **Verification is local.** GitHub Actions has not executed a job for this
+> repository since 2026-07-15 — jobs die in under 10s with no runner assigned,
+> on every branch including `master`. The cause is account-level, not a code
+> regression ([docs/CI_OUTAGE_2026-07.md](docs/CI_OUTAGE_2026-07.md)). Treat a
+> red X on a PR as no signal at all, and a green tick as unavailable — the
+> gates below are the evidence.
+
+### Setup
+
 ```bash
-# Run the full CI gate sequence locally (Windows and Linux)
+pip install -e ".[dev,lint]"
+pre-commit install          # wires both pre-commit and pre-push hooks
+```
+
+### Running the gates
+
+```bash
+# The full CI gate sequence (Windows and Linux)
 python scripts/run_gates.py
 
 # ...or a subset
@@ -245,8 +261,20 @@ python scripts/run_gates.py --list
 
 `scripts/run_gates.py` runs the same five gates as `.github/workflows/ci.yml`,
 in the same order — ruff, mypy, import-linter, bandit, pytest with the 80%
-coverage floor — and exits non-zero if any fails. Keep the two in lockstep: a
-gate changed in one must change in the other, in the same commit.
+coverage floor — and exits non-zero if any fails.
+
+### What runs automatically
+
+`pre-commit install` wires both hook types, and every hook shells out to
+`scripts/run_gates.py`, so the hooks, the script and `ci.yml` cannot drift apart:
+
+| Stage | Gates | Why here |
+|---|---|---|
+| **pre-commit** | ruff autofix, ruff, mypy, bandit | fast — sub-second to ~1s |
+| **pre-push** | + import-linter, pytest + coverage floor | ~10s; the last gate before code leaves the machine |
+
+Keep all three in lockstep: a gate changed in one must change in the others, in
+the same commit.
 
 The individual commands, if you want them one at a time:
 
@@ -265,11 +293,6 @@ pytest tests/unit/application/test_constitutional_lens.py -v  # a single file
 - 48 test files covering domain, application, and infrastructure layers
 - CI-compatible: `pytest`, `ruff`, `mypy`, `import-linter`, `bandit` configured in `pyproject.toml`
 
-> **CI status:** GitHub Actions has not executed jobs for this repository since
-> 2026-07-15 — jobs fail in under 10s with no runner assigned, on every branch
-> including `master`. The cause is account-level, not a code regression; see
-> [docs/CI_OUTAGE_2026-07.md](docs/CI_OUTAGE_2026-07.md). Until it is resolved,
-> verify with `python scripts/run_gates.py` rather than a green tick.
 
 ---
 
