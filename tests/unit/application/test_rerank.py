@@ -264,3 +264,67 @@ class TestModelBasedRerankerDegradation:
         scored = await reranker.rerank([make_finding(issue="A")])
 
         assert len(scored) == 1
+
+
+class _ArbitraryIndexRerankerPort(RerankerPort):
+    """Fake rerank port that returns exactly the RerankResults it's given,
+    including malformed ones — for testing index validation."""
+
+    def __init__(self, results: list[RerankResult]) -> None:
+        self._results = results
+
+    async def rerank(self, query, documents, model="", top_k=None):  # type: ignore[no-untyped-def]
+        return self._results
+
+
+class TestModelBasedRerankerIndexValidation:
+    """DH-16: `_compute_batch_scores` checked a RerankResult.index only
+    against the upper bound (`r.index < len(findings)`). RerankResult comes
+    from an external HTTP API response (untrusted-boundary data, same class
+    DH-5 hardened for chat completions) — a negative index passes that
+    upper-bound check and Python's negative-indexing semantics then map it
+    to the LAST finding via `findings[r.index]`, silently attributing that
+    result's score to the wrong finding instead of being rejected like an
+    out-of-range positive index already was.
+    """
+
+    @pytest.mark.asyncio
+    async def test_negative_index_does_not_misattribute_score(self):
+        port = _ArbitraryIndexRerankerPort(
+            [
+                RerankResult(index=0, relevance_score=0.1),
+                RerankResult(index=-1, relevance_score=0.99),
+            ]
+        )
+        reranker = ModelBasedReranker(reranker_port=port)
+        findings = [make_finding(issue="first"), make_finding(issue="second")]
+
+        scored = await reranker.rerank(findings)
+
+        by_issue = {s.finding.irac.issue: s for s in scored}
+        # The real model score for index 0 lands on the first finding...
+        assert by_issue["first"].composite_score == 0.1
+        # ...and the second finding must NOT silently inherit the score meant
+        # for index -1 — it falls back to composite scoring instead, same as
+        # any other finding the model didn't score (preserved, not dropped).
+        assert by_issue["second"].composite_score != 0.99
+        assert _fell_back_per_finding(by_issue["second"])
+
+    @pytest.mark.asyncio
+    async def test_in_range_indices_unaffected(self):
+        """No-regression: legitimate results (0 <= index < len) still map
+        directly to their finding, unchanged from before this fix."""
+        port = _ArbitraryIndexRerankerPort(
+            [
+                RerankResult(index=0, relevance_score=0.3),
+                RerankResult(index=1, relevance_score=0.7),
+            ]
+        )
+        reranker = ModelBasedReranker(reranker_port=port)
+        findings = [make_finding(issue="first"), make_finding(issue="second")]
+
+        scored = await reranker.rerank(findings)
+
+        by_issue = {s.finding.irac.issue: s for s in scored}
+        assert by_issue["first"].composite_score == 0.3
+        assert by_issue["second"].composite_score == 0.7

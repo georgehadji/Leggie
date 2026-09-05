@@ -5,6 +5,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from pydantic import ValidationError
 
 from leggie.interfaces.cli import build_parser
 
@@ -302,11 +303,65 @@ class TestExitCodes:
 
         assert _exit_code_for(ValueError("blah")) == EXIT_UNKNOWN
 
+    def test_settings_validation_error_exit_code(self):
+        """DH-31: a pydantic.ValidationError (e.g. Settings() rejecting a
+        misconfigured env var against one of its own Field constraints)
+        propagates out of `_build_mediator()` uncaught — it is called with
+        no enclosing try/except inside `main()` — straight to
+        entry_point()'s top-level handler. `_ERROR_TYPE_EXITS` below already
+        maps the string "ValidationError" to EXIT_CONFIG_ERROR for the
+        CommandResult path; `_exit_code_for` (the raw-exception path) did
+        not know about it and fell through to EXIT_UNKNOWN.
+        """
+        from leggie.config.settings import LLMSettings
+        from leggie.interfaces.cli import EXIT_CONFIG_ERROR, _exit_code_for
+
+        with pytest.raises(ValidationError) as exc_info:
+            LLMSettings(max_concurrency=0)  # violates Field(ge=1)
+
+        assert _exit_code_for(exc_info.value) == EXIT_CONFIG_ERROR
+
+    def test_settings_validation_error_exit_code_any_sub_settings(self):
+        """Boundary: the mapping checks the exception TYPE, not one
+        hardcoded settings model — a validation error from a different
+        settings class maps the same way."""
+        from leggie.config.settings import BudgetSettings
+        from leggie.interfaces.cli import EXIT_CONFIG_ERROR, _exit_code_for
+
+        with pytest.raises(ValidationError) as exc_info:
+            BudgetSettings(max_cost_per_run=-1.0)  # violates Field(ge=0.0)
+
+        assert _exit_code_for(exc_info.value) == EXIT_CONFIG_ERROR
+
+    def test_unrelated_exception_still_unknown_after_fix(self):
+        """No-regression: the new isinstance check doesn't broaden the net —
+        an unrelated exception type is still EXIT_UNKNOWN."""
+        from leggie.interfaces.cli import EXIT_UNKNOWN, _exit_code_for
+
+        assert _exit_code_for(TypeError("unrelated")) == EXIT_UNKNOWN
+
     def test_exit_message_has_actionable_text(self):
         from leggie.interfaces.cli import EXIT_BUDGET_EXCEEDED, EXIT_CONFIG_ERROR, _exit_message
 
         assert "budget" in _exit_message(EXIT_BUDGET_EXCEEDED).lower()
         assert "configuration" in _exit_message(EXIT_CONFIG_ERROR).lower()
+
+
+class TestExitCodeIntegration:
+    """DH-31: prove the ValidationError mapping through the real production
+    trigger — a misconfigured env var — not just the lookup table in
+    isolation. `configure_defaults()` calls `get_settings()` as its very
+    first line, and `_build_mediator()` (which calls it) is invoked directly
+    inside `main()` with no enclosing try/except, so any Settings()
+    construction failure is entry_point()'s top-level handler's problem."""
+
+    def test_bad_env_var_exits_config_error_through_real_entry_point(self, monkeypatch, tmp_path):
+        from leggie.interfaces.cli import EXIT_CONFIG_ERROR, entry_point
+
+        monkeypatch.setenv("LEGGIE_LLM__MAX_CONCURRENCY", "0")  # violates Field(ge=1)
+        monkeypatch.setattr(sys, "argv", ["leggie", "preview", str(tmp_path / "nonexistent.txt")])
+
+        assert entry_point() == EXIT_CONFIG_ERROR
 
 
 class TestNewFlags:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import NoReturn
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -42,17 +42,33 @@ class TestValidateModelIds:
 
     @pytest.mark.asyncio
     async def test_live_returns_invalid_from_catalog(self):
+        # `resp` must be a MagicMock, not AsyncMock: httpx.Response.json() is
+        # synchronous (matches production code, which does not await it). An
+        # AsyncMock here makes `resp.json` an AsyncMock child too, so calling
+        # it (unawaited, correctly) hands back a never-awaited coroutine
+        # instead of the configured dict. `validate_model_ids` wraps this
+        # whole block in `contextlib.suppress(Exception)`, so the resulting
+        # AttributeError on the coroutine was silently swallowed and this
+        # test fell through to the offline-allowlist fallback — passing by
+        # coincidence while exercising zero of the live-catalog code path,
+        # and leaking a "coroutine was never awaited" RuntimeWarning.
         import httpx as _httpx
 
         with patch.object(_httpx, "AsyncClient") as mock_client:
-            resp = AsyncMock()
+            resp = MagicMock()
             resp.status_code = 200
             resp.json.return_value = {"data": [{"id": "google/gemini-2.5-flash"}]}
             mock_client.return_value.__aenter__.return_value.get.return_value = resp
+            # anthropic/claude-sonnet-5 is in the OFFLINE allowlist but absent
+            # from this mocked LIVE catalog, so the two code paths disagree on
+            # it — only the live-catalog path reports it invalid. A test that
+            # can't fail this way can't prove the live path ran at all.
             invalid = await llm.validate_model_ids(
-                "key", ["google/gemini-2.5-flash", "nope/x"], use_live=True
+                "key",
+                ["google/gemini-2.5-flash", "anthropic/claude-sonnet-5"],
+                use_live=True,
             )
-        assert "nope/x" in invalid
+        assert "anthropic/claude-sonnet-5" in invalid
         assert "google/gemini-2.5-flash" not in invalid
 
 

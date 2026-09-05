@@ -10,7 +10,6 @@ without double-billing expensive work.
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import re
 from collections.abc import Callable
@@ -49,9 +48,12 @@ from leggie.domain.models import (
     Finding,
     WorkflowState,
 )
+from leggie.observability import get_logger
 
 if TYPE_CHECKING:
     from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
+
+logger = get_logger(__name__)
 
 
 class ParseIntegrityError(Exception):
@@ -159,6 +161,13 @@ class BillAnalysisFlow:
         `run()`. This is descriptive, not evaluative — no findings here.
         """
         file_path = Path(file_path)
+        # Reuse-safe like run(): a flow object may already be DONE/FAILED from
+        # a prior run()/preview() call. Reset to IDLE first so this call's own
+        # transitions are valid table entries instead of silent no-ops (a
+        # state with no matching (state, event) row leaves self._state stuck
+        # on the stale value and drops every STAGE_COMPLETED event, even
+        # though ingest/parse/generate below still run regardless).
+        self._state = WorkflowState.IDLE
         self._transition(WorkflowState.PREVIEWING, "preview_started")
         self._transition(WorkflowState.INGESTING, "ingest_started")
         text = await self._do_ingest(file_path)
@@ -271,7 +280,7 @@ class BillAnalysisFlow:
         # 3. Decompose / Plan
         if self._state == WorkflowState.PLANNING:
             if self._doc is None:
-                self._transition(WorkflowState.PLANNING, "plan_failed")
+                self._transition(WorkflowState.FAILED, "plan_failed")
                 return [], []
             self._orchestrator.decompose(self._doc)
             self._transition(WorkflowState.EXECUTING, "plan_approved")
@@ -279,7 +288,7 @@ class BillAnalysisFlow:
         # 4. Execute — analyze through lenses
         if self._state == WorkflowState.EXECUTING:
             if self._doc is None or not self._doc.articles:
-                self._transition(WorkflowState.EXECUTING, "execution_failed")
+                self._transition(WorkflowState.FAILED, "execution_failed")
                 return [], []
 
             raw_findings = await self._orchestrator.analyze_document(self._doc, lenses)
@@ -620,15 +629,23 @@ class BillAnalysisFlow:
         )
 
     def _transition(self, target: WorkflowState, event: str) -> None:
-        """Transition the FSM, tracking current state."""
+        """Transition the FSM, tracking current state.
+
+        The recorded STAGE_COMPLETED event always reflects what the FSM table
+        actually computed (previous -> next_state), never the caller-supplied
+        *target* — a target that disagrees with the table (e.g. an "_failed"
+        event's real destination is FAILED, not the state being checked when
+        it fired) must not corrupt the audit trail.
+        """
+        previous_state = self._state
         next_state = self._fsm.transition(self._state, event)
         if next_state is not None:
             self._state = next_state
             self._record_event(
                 EventType.STAGE_COMPLETED,
                 {
-                    "from": self._state.value if next_state != target else "previous",
-                    "to": target.value,
+                    "from": previous_state.value,
+                    "to": next_state.value,
                     "event": event,
                 },
             )
@@ -656,9 +673,13 @@ class BillAnalysisFlow:
             "reports": [dataclasses.asdict(r) for r in self._reports],
             "budget_state": budget_state,
         }
-        with contextlib.suppress(OSError):
-            # Checkpointing is best-effort; never fail the run over it.
+        try:
+            # Checkpointing is best-effort; never fail the run over it — but a
+            # crash-resume safety net that silently isn't being written is
+            # worth a warning, not total silence.
             self._checkpoint_store.save(data)
+        except OSError as exc:
+            logger.warning("checkpoint.save_failed", stage=self._state.value, error=str(exc))
 
     def _load_checkpoint(self, file_path: Path | None = None) -> None:
         """Restore run state from the checkpoint store, if a compatible one exists.
@@ -679,8 +700,10 @@ class BillAnalysisFlow:
         if "stage" not in data and "tokens_used" in data:
             guard = self._budget_guard()
             if guard is not None:
-                with contextlib.suppress(OSError, ValueError):
+                try:
                     guard.load_state(data)
+                except Exception:
+                    logger.warning("checkpoint.legacy_budget_state_corrupt")
             return
 
         stage_value = data.get("stage")
@@ -717,8 +740,10 @@ class BillAnalysisFlow:
         if budget_state:
             guard = self._budget_guard()
             if guard is not None:
-                with contextlib.suppress(OSError, ValueError):
+                try:
                     guard.load_state(budget_state)
+                except Exception:
+                    logger.warning("checkpoint.budget_state_corrupt")
 
     def _load_legacy_budget_checkpoint(self) -> None:
         """Restore budget spend from a legacy path-based checkpoint file."""
@@ -732,8 +757,11 @@ class BillAnalysisFlow:
         try:
             state = json.loads(self._checkpoint_path.read_text(encoding="utf-8"))
             guard.load_state(state)
-        except (OSError, ValueError):
-            pass  # Corrupt/missing checkpoint — start fresh rather than crash.
+        except Exception:
+            # Corrupt/missing checkpoint — start fresh rather than crash, but
+            # log it: a silently-ignored corrupt checkpoint looks identical
+            # to "no checkpoint" from the outside.
+            logger.warning("checkpoint.legacy_load_failed", path=str(self._checkpoint_path))
 
     def _record_event(self, event_type: EventType, data: dict[str, Any]) -> None:
         """Record an audit event."""

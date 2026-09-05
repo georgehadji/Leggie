@@ -1,6 +1,17 @@
 """Tests for config/settings — pydantic-settings validation."""
 
-from leggie.config.settings import BudgetSettings, LLMSettings, ReasonerSettings, Settings
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from leggie.config.settings import (
+    BudgetSettings,
+    LLMSettings,
+    PersistenceSettings,
+    ReasonerSettings,
+    Settings,
+)
 
 
 class TestSettings:
@@ -103,6 +114,67 @@ class TestReasonerSettings:
         assert hasattr(s, "reasoner")
         assert isinstance(s.reasoner, ReasonerSettings)
         assert s.reasoner.enabled is False
+
+
+class TestPersistenceSettingsUrlValidation:
+    """DH-31: PersistenceSettings.url had no scheme validation, so a non-sqlite
+    value would silently reach container.py's `.replace("sqlite:///", "")`
+    no-op and be used as a raw (wrong) filesystem path instead of failing
+    loudly — the same "closed-set validation instead of a silently-accepted
+    bare str" fix shape as DH-20's `AnalyzeBillCommand.pipeline`."""
+
+    def test_default_url_is_sqlite(self):
+        assert PersistenceSettings().url == "sqlite:///leggie.db"
+
+    def test_non_sqlite_scheme_rejected(self):
+        with pytest.raises(ValidationError):
+            PersistenceSettings(url="postgres://user@host/db")
+
+    def test_sqlite_path_variants_still_accepted(self):
+        """Boundary: a real, different sqlite path, and the bare-prefix form
+        sqlite3 itself treats as "private on-disk temp db" — neither is
+        malformed, so the validator must not reject them."""
+        assert PersistenceSettings(url="sqlite:///data/other.db").url == "sqlite:///data/other.db"
+        assert PersistenceSettings(url="sqlite:///").url == "sqlite:///"
+
+    def test_bad_url_via_env_var_also_rejected(self, monkeypatch):
+        """The validator fires through the real env-loading path, not just
+        direct kwarg construction."""
+        monkeypatch.setenv("LEGGIE_DB_URL", "mysql://nope")
+        with pytest.raises(ValidationError):
+            PersistenceSettings()
+
+
+class TestPersistenceUrlEnvAlias:
+    """DH-31: of Settings' 8 sub-settings models, `persistence` is the only
+    one whose Python field name ("persistence") disagrees with its own
+    env_prefix stem ("DB") — every sibling (llm/LLM, cascade/CASCADE,
+    budget/BUDGET, retrieval/RETRIEVAL, analysis/ANALYSIS, ingest/INGEST,
+    reasoner/REASONER) keeps the two in sync. Settings' own nested-delimiter
+    mechanism keys off the PYTHON FIELD NAME, not the sub-model's own prefix,
+    so `.env.example`'s previously-documented `LEGGIE_DB__URL` (double
+    underscore — correct by every sibling's convention) silently never
+    applied; only `LEGGIE_DB_URL` (single underscore, matching the
+    sub-model's own prefix) and the unintuitive `LEGGIE_PERSISTENCE__URL`
+    actually override it. Proven directly against the real Settings class,
+    not reasoned about — see the region's own report for the empirical
+    A/B/C comparison this was found with."""
+
+    def test_working_single_underscore_form_overrides(self, monkeypatch):
+        monkeypatch.setenv("LEGGIE_DB_URL", "sqlite:///alternate.db")
+        assert Settings().persistence.url == "sqlite:///alternate.db"
+
+    def test_previously_documented_double_underscore_form_is_silently_ignored(self, monkeypatch):
+        """Locks in the surprising-but-real non-functional form so nobody
+        "corrects" .env.example back to it without noticing the regression."""
+        monkeypatch.setenv("LEGGIE_DB__URL", "sqlite:///alternate.db")
+        assert Settings().persistence.url == "sqlite:///leggie.db"  # default, override dropped
+
+    def test_env_example_documents_the_working_form(self):
+        env_example = Path(__file__).resolve().parent.parent.parent / ".env.example"
+        text = env_example.read_text(encoding="utf-8")
+        assert "LEGGIE_DB_URL=" in text
+        assert "LEGGIE_DB__URL=" not in text
 
 
 # ── PROD-11 settings reflection test ─────────────────────────────────────

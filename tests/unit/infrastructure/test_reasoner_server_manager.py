@@ -6,7 +6,7 @@ import pytest
 
 from leggie.application.ports.reasoner import ReasonerUnavailableError
 from leggie.config.settings import ReasonerSettings
-from leggie.infrastructure.reasoner.server_manager import ReasonerServerManager
+from leggie.infrastructure.reasoner.server_manager import _AGENT_RUN_PATH, ReasonerServerManager
 
 
 class FakeProcess:
@@ -217,6 +217,98 @@ class TestEphemeralContextManager:
 
         assert proc.terminated is True
 
+    @pytest.mark.asyncio
+    async def test_leaked_process_cleaned_up_when_aenter_times_out(self):
+        """DH-25 proof: __aexit__ never runs if __aenter__ raises (standard
+        async context manager protocol) — so a process spawned inside
+        ensure_running() that then never becomes healthy must be cleaned up
+        by __aenter__ itself, or it leaks with no caller able to reach it.
+        """
+        proc = FakeProcess()
+
+        async def never_healthy() -> bool:
+            return False
+
+        manager = ReasonerServerManager(
+            _settings(startup_timeout=1),
+            health_prober=never_healthy,
+            process_spawner=lambda: proc,
+            poll_interval=0.02,
+        )
+        with pytest.raises(ReasonerUnavailableError, match="did not become healthy"):
+            async with manager:
+                pytest.fail("must not enter the body")
+
+        assert proc.terminated is True
+        assert manager._process is None
+
+    @pytest.mark.asyncio
+    async def test_leaked_process_cleaned_up_when_process_exits_early(self):
+        """Boundary: same cleanup must fire on the OTHER __aenter__ failure
+        path (process died before ever becoming healthy), not just timeout."""
+        proc = FakeProcess(exit_code=1)
+
+        async def unhealthy() -> bool:
+            return False
+
+        manager = ReasonerServerManager(
+            _settings(), health_prober=unhealthy, process_spawner=lambda: proc, poll_interval=0.01
+        )
+        with pytest.raises(ReasonerUnavailableError, match="exited early"):
+            async with manager:
+                pytest.fail("must not enter the body")
+
+        # Already dead (poll() != None from the start) — shutdown() correctly
+        # skips a redundant terminate(), but must still clear _process so the
+        # manager doesn't keep thinking it owns a (dead) process handle.
+        assert proc.terminated is False
+        assert manager._process is None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_failure_does_not_mask_the_real_startup_error(self):
+        """Self-review catch: shutdown() itself can raise (e.g. terminate()
+        on an already-dead process handle) — that must never replace the
+        real ReasonerUnavailableError from ensure_running(), mirroring
+        cli_handlers.py's own established try/except-log idiom (PR #7)."""
+
+        class ExplodingProcess(FakeProcess):
+            def terminate(self) -> None:
+                raise OSError("already dead")
+
+        proc = ExplodingProcess()
+
+        async def never_healthy() -> bool:
+            return False
+
+        manager = ReasonerServerManager(
+            _settings(startup_timeout=1),
+            health_prober=never_healthy,
+            process_spawner=lambda: proc,
+            poll_interval=0.02,
+        )
+        with pytest.raises(ReasonerUnavailableError, match="did not become healthy"):
+            async with manager:
+                pytest.fail("must not enter the body")
+
+    @pytest.mark.asyncio
+    async def test_aenter_failure_with_nothing_spawned_does_not_crash(self):
+        """Boundary: __aenter__'s except-path shutdown() call must stay a
+        safe no-op when ensure_running() raised before ever spawning
+        anything (autostart disabled) — no AttributeError/crash masking the
+        real ReasonerUnavailableError."""
+
+        async def unhealthy() -> bool:
+            return False
+
+        manager = ReasonerServerManager(
+            _settings(autostart=False), health_prober=unhealthy, poll_interval=0.01
+        )
+        with pytest.raises(ReasonerUnavailableError, match="(?i)autostart"):
+            async with manager:
+                pytest.fail("must not enter the body")
+
+        assert manager._process is None
+
 
 class TestDefaultSpawnValidation:
     def test_raises_when_home_not_set(self):
@@ -257,3 +349,77 @@ class TestPortParsing:
     def test_defaults_to_8003_when_no_port(self):
         manager = ReasonerServerManager(_settings(base_url="http://localhost"))
         assert manager._port() == 8003
+
+
+class _FakeProbeResponse:
+    def __init__(self, status_code: int = 200, json_value: Any = None) -> None:
+        self.status_code = status_code
+        self._json_value = json_value
+
+    def json(self) -> Any:
+        return self._json_value
+
+
+class _FakeProbeAsyncClient:
+    """Stand-in for httpx.AsyncClient — no transport-injection seam exists on
+    _default_health_probe (unlike ReasonerAdapter), so the client class itself
+    is monkeypatched at the module reference, matching this file's existing
+    fakes-over-mocks convention."""
+
+    def __init__(self, response: _FakeProbeResponse, **_kwargs: Any) -> None:
+        self._response = response
+
+    async def __aenter__(self) -> "_FakeProbeAsyncClient":
+        return self
+
+    async def __aexit__(self, *_args: object) -> None:
+        return None
+
+    async def get(self, _url: str) -> _FakeProbeResponse:
+        return self._response
+
+
+class TestDefaultHealthProbeResponseValidation:
+    """DH-26: the real _default_health_probe() HTTP-parsing logic — every
+    other test in this file injects a fake health_prober callable and never
+    exercises this method's own response handling at all."""
+
+    def _patch_client(self, monkeypatch: pytest.MonkeyPatch, response: _FakeProbeResponse) -> None:
+        import leggie.infrastructure.reasoner.server_manager as sm
+
+        monkeypatch.setattr(
+            sm.httpx, "AsyncClient", lambda **kw: _FakeProbeAsyncClient(response, **kw)
+        )
+
+    @pytest.mark.asyncio
+    async def test_non_dict_json_body_degrades_to_unhealthy(self, monkeypatch):
+        """Proof: a wrong service occupying the port can return valid JSON
+        that isn't a dict (a bare list) — must degrade to False, not raise
+        AttributeError out of the probe."""
+        self._patch_client(monkeypatch, _FakeProbeResponse(200, ["not", "a", "dict"]))
+        manager = ReasonerServerManager(_settings())
+        assert await manager._default_health_probe() is False
+
+    @pytest.mark.asyncio
+    async def test_null_json_body_degrades_to_unhealthy(self, monkeypatch):
+        """Boundary: a JSON `null` body (data=None) hits the same .get() call."""
+        self._patch_client(monkeypatch, _FakeProbeResponse(200, None))
+        manager = ReasonerServerManager(_settings())
+        assert await manager._default_health_probe() is False
+
+    @pytest.mark.asyncio
+    async def test_wrong_service_dict_without_agent_path_still_raises(self, monkeypatch):
+        """No-regression: a real dict response from a wrong service (missing
+        the Reasoner agent-run path) must still raise ReasonerUnavailableError
+        exactly as before — the isinstance guard must not swallow this case."""
+        self._patch_client(monkeypatch, _FakeProbeResponse(200, {"paths": {"/other": {}}}))
+        manager = ReasonerServerManager(_settings())
+        with pytest.raises(ReasonerUnavailableError, match="not Reasoner"):
+            await manager._default_health_probe()
+
+    @pytest.mark.asyncio
+    async def test_real_reasoner_openapi_body_is_healthy(self, monkeypatch):
+        """No-regression: a genuine Reasoner OpenAPI document still reports healthy."""
+        self._patch_client(monkeypatch, _FakeProbeResponse(200, {"paths": {_AGENT_RUN_PATH: {}}}))
+        manager = ReasonerServerManager(_settings())
+        assert await manager._default_health_probe() is True

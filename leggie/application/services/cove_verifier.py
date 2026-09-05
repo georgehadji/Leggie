@@ -270,7 +270,11 @@ class CoVeVerifier:
         # need to spend an LLM call on a citation that provably doesn't exist.
         citation_note = ""
         if self._citation_parser is not None:
-            disproven, citation_note = await self._check_citations(finding)
+            try:
+                disproven, citation_note = await self._check_citations(finding)
+            except Exception as e:  # noqa: BLE001 — citation lookup must never crash the run
+                log.warning("cove_citation_error: finding=%s error=%s", finding.id, str(e)[:200])
+                disproven, citation_note = False, ""
             if disproven:
                 log.info("cove_citation_fail: finding=%s", finding.id)
                 return CoVeResult(

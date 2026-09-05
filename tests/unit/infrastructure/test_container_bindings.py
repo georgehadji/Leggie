@@ -219,3 +219,161 @@ class TestBlackboardAdapterBehavior:
         await board.clear_round(1)
         # After clearing round 1, no findings should remain
         assert len(await board.get_all_findings()) == 0
+
+
+class TestCitationIndexLoadRobustness:
+    """DH-29: configure_defaults()'s citation_index.json load must degrade
+    (fall back to an empty resolution index), never crash the whole
+    composition root, and must log a warning whenever it degrades —
+    the same untrusted-package-data trust-boundary class R7 already
+    hardened for the Reasoner's HTTP response bodies (DH-26/DH-27),
+    applied here to container.py's own file read.
+
+    Uses a stdlib ``logging.getLogger`` module logger (container.py:35),
+    not structlog — monkeypatching the bound ``.warning`` method directly
+    (rather than ``caplog``) per DH-2's own documented full-suite-robustness
+    finding for this repo's test suite.
+    """
+
+    @staticmethod
+    def _patch_index_path(monkeypatch: pytest.MonkeyPatch, fake_path) -> None:
+        """Redirect only the citation_index.json lookup to *fake_path*.
+
+        configure_defaults() also resolves config/routes.yaml through this
+        same ResourceLocator.package_resource() method, so the fake must
+        delegate anything else to the real implementation.
+        """
+        from leggie.infrastructure.resources import ResourceLocator
+
+        real = ResourceLocator.package_resource
+
+        def fake(self: ResourceLocator, package: str, resource: str):
+            if package == "leggie.data" and resource == "citation_index.json":
+                return fake_path
+            return real(self, package, resource)
+
+        monkeypatch.setattr(ResourceLocator, "package_resource", fake)
+
+    def test_malformed_json_shape_does_not_crash_configure_defaults(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Proof-of-defect: a JSON body that parses fine but is not an
+        object (a bare list) used to crash configure_defaults() with an
+        uncaught AttributeError from ``list.get`` — reproduced directly
+        against the real Container before this fix landed."""
+        import json
+
+        from leggie.application.ports.citation_parser import CitationParserPort
+        from leggie.infrastructure import container as container_module
+        from leggie.infrastructure.citation import GreekCitationParser
+
+        bad_index = tmp_path / "citation_index.json"
+        bad_index.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+        self._patch_index_path(monkeypatch, bad_index)
+
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            container_module.logger,
+            "warning",
+            lambda msg, *a: warnings.append(msg % a if a else msg),
+        )
+
+        c = container_module.Container()
+        c.configure_defaults()  # must not raise
+
+        parser = c.get(CitationParserPort)
+        assert isinstance(parser, GreekCitationParser)
+        assert parser._resolution_index == set()
+        assert any("malformed_shape" in w for w in warnings), warnings
+
+    def test_unreadable_index_file_is_logged_not_silent(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Boundary: a real OSError during the read (here: the resolved
+        'file' path is actually a directory, so .read_text() raises
+        IsADirectoryError, an OSError subclass) must be logged — the
+        pre-existing except clause silently swallowed this with zero
+        logging, violating leggie-change-control non-negotiable #6."""
+        from leggie.application.ports.citation_parser import CitationParserPort
+        from leggie.infrastructure import container as container_module
+
+        a_directory = tmp_path / "citation_index.json"
+        a_directory.mkdir()
+        self._patch_index_path(monkeypatch, a_directory)
+
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            container_module.logger,
+            "warning",
+            lambda msg, *a: warnings.append(msg % a if a else msg),
+        )
+
+        c = container_module.Container()
+        c.configure_defaults()  # must not raise
+
+        parser = c.get(CitationParserPort)
+        assert parser._resolution_index == set()
+        assert any("load_failed" in w for w in warnings), warnings
+
+    def test_missing_index_file_stays_quiet(self, tmp_path, monkeypatch: pytest.MonkeyPatch):
+        """No-regression: a simply-absent index file (e.g. package data not
+        installed) is the pre-existing, intentionally-quiet degrade path —
+        it must stay quiet (no warning spam for a routine dev/test
+        environment), unlike a file that exists but is broken."""
+        from leggie.application.ports.citation_parser import CitationParserPort
+        from leggie.infrastructure import container as container_module
+
+        missing = tmp_path / "does_not_exist" / "citation_index.json"
+        self._patch_index_path(monkeypatch, missing)
+
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            container_module.logger,
+            "warning",
+            lambda msg, *a: warnings.append(msg % a if a else msg),
+        )
+
+        c = container_module.Container()
+        c.configure_defaults()
+
+        parser = c.get(CitationParserPort)
+        assert parser._resolution_index == set()
+        assert warnings == []
+
+    @pytest.mark.asyncio
+    async def test_well_formed_index_still_loads_correctly(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """No-regression: a well-formed dict-shaped index still loads its
+        identifiers and resolves a known citation, with no warning logged —
+        the isinstance guard must not affect the happy path."""
+        import json
+
+        from leggie.application.ports.citation_parser import CitationParserPort
+        from leggie.domain.models import Citation, CitationScheme
+        from leggie.infrastructure import container as container_module
+
+        good_index = tmp_path / "citation_index.json"
+        good_index.write_text(json.dumps({"identifiers": ["N.4622/2019"]}), encoding="utf-8")
+        self._patch_index_path(monkeypatch, good_index)
+
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            container_module.logger,
+            "warning",
+            lambda msg, *a: warnings.append(msg % a if a else msg),
+        )
+
+        c = container_module.Container()
+        c.configure_defaults()
+
+        parser = c.get(CitationParserPort)
+        assert parser._resolution_index == {"N.4622/2019"}
+        citation = Citation(
+            scheme=CitationScheme.UNKNOWN,
+            identifier="N.4622/2019",
+            original_text="N.4622/2019",
+        )
+        resolved = await parser.resolve(citation)
+        assert resolved.resolved is True
+        assert warnings == []

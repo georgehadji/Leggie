@@ -99,6 +99,62 @@ class TestGreekCitationParser:
         assert resolved.resolved is False
         assert "not independently verified" in (resolved.resolution_evidence or "")
 
+
+class TestLawReferencePatternNotWired:
+    """DH-28 (R7): LAW_REF_PATTERN (module-level, "Individual law references:
+    Ν. ΧΧΧΧ/Έτος") has existed since the initial MVP commit but is never
+    invoked by parse() — individual-law citations like "Ν. 4622/2019", one of
+    the most common cross-reference formats in Greek bills (amending "Ν. XXXX
+    /YYYY" is routine statutory drafting), are silently never extracted at
+    all; they don't even reach "unverified" status.
+
+    [REQUIRES HUMAN REVIEW] — not fixed. Naively wiring the pattern in is not
+    a safe small patch: see the second test below, which proves it would be
+    actively HARMFUL given the current resolution index, not merely
+    incomplete. A correct fix needs either (a) a dedicated CitationScheme
+    member for law references (a Domain change — hook-blocked, its own
+    class-A change) plus populating the index with real law identifiers, or
+    (b) making CoVeVerifier._check_citations scheme-aware about what
+    "disproven" means (R4 territory, already re-verified/closed this
+    campaign — reopening it here is out of R7's file scope). Both cross
+    region/layer boundaries and carry real regression risk if rushed, per
+    this campaign's own DH-9 precedent.
+    """
+
+    def test_law_reference_text_yields_zero_citations_today(self, parser):
+        text = "Το άρθρο 5 του Ν. 4622/2019 τροποποιείται ως εξής."
+        citations = parser.parse(text)
+        assert citations == []  # documents today's (incomplete) behavior
+
+    @pytest.mark.asyncio
+    async def test_naive_wiring_would_falsely_disprove_a_real_law_citation(self):
+        """The packaged resolution index (built by tools/build_citation_index.py,
+        wired in container.py) has zero "Ν. XXXX/YYYY"-shaped entries — only
+        Constitution/ΦΕΚ/CELEX/Charter identifiers. If LAW_REF_PATTERN matches
+        were wired into parse() today, mapped to any existing CitationScheme,
+        resolve() against a real-shaped index reports checked=True,
+        resolved=False for every one of them — which
+        CoVeVerifier._check_citations (cove_verifier.py) treats as positively
+        DISPROVEN, hard-dropping the finding — even for a citation to a real,
+        valid law. That would be worse than today's silent omission.
+        """
+        # Representative of the real packaged index: non-empty, no
+        # law-ref-shaped identifiers (matches build_citation_index.py's
+        # constitution/fek/celex/charter categories).
+        index = {"Σύνταγμα Άρθρο 5", "ΦΕΚ Α 137/2023", "32018L1972"}
+        parser = GreekCitationParser(resolution_index=index)
+        would_be_citation = Citation(
+            scheme=CitationScheme.UNKNOWN,
+            identifier="Ν. 4622/2019",
+            original_text="Ν. 4622/2019",
+        )
+        resolved = await parser.resolve(would_be_citation)
+        assert resolved.checked is True
+        # -> CoVe would read this pair as DISPROVEN, not "unverified".
+        assert resolved.resolved is False
+
+
+class TestGreekCitationParserBuildIndex:
     def test_build_index(self, parser):
         citations = [
             Citation(

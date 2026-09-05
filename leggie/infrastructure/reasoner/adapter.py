@@ -116,6 +116,19 @@ class ReasonerAdapter(ReasonerPort):
                     continue
                 raise last_error from exc
 
+            # DH-27: valid JSON that isn't an object (bare list/string/null)
+            # would otherwise reach _parse_result's data.get(...) calls and
+            # raise a raw AttributeError instead of degrading like malformed
+            # JSON does just above.
+            if not isinstance(data, dict):
+                last_error = ReasonerUnavailableError(
+                    f"Reasoner returned a non-object JSON response: {type(data).__name__}"
+                )
+                if attempt < self._max_retries - 1:
+                    await asyncio.sleep(self._base_delay * (2**attempt))
+                    continue
+                raise last_error
+
             result = self._parse_result(data, elapsed)
             logger.info(
                 "reasoner.call_completed",
@@ -136,19 +149,25 @@ class ReasonerAdapter(ReasonerPort):
         """Tolerant parsing — missing optional keys default safely."""
         citations = []
         for raw in data.get("citations", []) or []:
+            # DH-27: a malformed entry (e.g. a bare string, not an object) in
+            # an otherwise-valid citations list would crash the same way a
+            # non-dict top-level body did — skip it like any other
+            # unusable entry instead of raising.
+            if not isinstance(raw, dict):
+                continue
             scheme_raw = str(raw.get("scheme", "unknown")).lower()
             try:
                 scheme = CitationScheme(scheme_raw)
             except ValueError:
                 scheme = CitationScheme.UNKNOWN
-            identifier = raw.get("identifier") or raw.get("original_text") or ""
+            identifier = str(raw.get("identifier") or raw.get("original_text") or "")
             if not identifier:
                 continue
             citations.append(
                 Citation(
                     scheme=scheme,
                     identifier=identifier,
-                    original_text=raw.get("original_text", identifier),
+                    original_text=str(raw.get("original_text", identifier)),
                     # Deliberative pipeline skips CoVe/Skeptic entirely (architecture
                     # contract §3) — nothing here was checked against a configured
                     # index, whatever the Reasoner backend's own "resolved" claims.

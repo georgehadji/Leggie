@@ -201,7 +201,9 @@ class ModelBasedReranker(Reranker):
                 model=self._model,
             )
             return {
-                findings[r.index].id: r.relevance_score for r in results if r.index < len(findings)
+                findings[r.index].id: r.relevance_score
+                for r in results
+                if 0 <= r.index < len(findings)
             }
         except Exception as e:  # noqa: BLE001 — reranker fallback must never crash the run
             log.warning(

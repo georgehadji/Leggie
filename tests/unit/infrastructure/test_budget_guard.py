@@ -135,6 +135,65 @@ class TestBudgetGuard:
         assert loaded is None
 
 
+class TestZeroBudgetGuardsAgainstZeroDivision:
+    """DH-23: check()'s ratio computations divided by self._state.max_tokens
+    /max_cost with no zero-guard, unlike the identically-shaped division in
+    usage_ratio a few lines below (which already guards it). max_cost_per_run
+    is Pydantic-validated with Field(ge=0.0) in BudgetSettings — 0.0 is a
+    legal config value — and BudgetGuard's own constructor/from_file() apply
+    no floor at all, so a guard built with max_tokens=0 or max_cost=0.0
+    crashed with ZeroDivisionError on its very first check() call instead of
+    returning any BudgetAction."""
+
+    def test_zero_max_cost_and_tokens_does_not_raise(self):
+        """Proof-of-defect: an all-zero-ceiling guard's check() with a
+        zero-token request used to divide 0/0 and crash."""
+        guard = BudgetGuard(max_tokens=0, max_cost=0.0)
+        action = guard.check(prompt_tokens=0, completion_tokens=0, model="test")
+        assert action == BudgetAction.ALLOW
+
+    def test_zero_max_tokens_only_does_not_raise(self):
+        """Boundary: max_tokens=0 alone. A zero-token request reaches the
+        (now-guarded) division; a real request is BLOCKed before ever
+        reaching it."""
+        guard = BudgetGuard(max_tokens=0, max_cost=5.0)
+        assert guard.check(prompt_tokens=0, completion_tokens=0) == BudgetAction.ALLOW
+        assert guard.check(prompt_tokens=10, completion_tokens=0) == BudgetAction.BLOCK
+
+    def test_zero_max_cost_only_does_not_raise(self):
+        """Boundary: max_cost=0.0 alone (max_tokens normal)."""
+        guard = BudgetGuard(max_tokens=100_000, max_cost=0.0)
+        assert guard.check(prompt_tokens=0, completion_tokens=0) == BudgetAction.ALLOW
+        assert (
+            guard.check(prompt_tokens=10, completion_tokens=0, model="anthropic/claude-sonnet-4")
+            == BudgetAction.BLOCK
+        )
+
+    def test_from_file_with_corrupt_zero_ceiling_does_not_raise(self, tmp_path):
+        """Reachability / no-regression: from_file() applies no validation
+        at all on max_tokens/max_cost (unlike the Pydantic-validated
+        BudgetSettings path) — a hand-edited or corrupted checkpoint file
+        with a 0 ceiling must degrade gracefully, not crash the caller."""
+        path = tmp_path / "corrupt_budget.json"
+        path.write_text(
+            '{"max_tokens": 0, "max_cost": 0.0, "tokens_used": 0, "cost_used": 0.0}',
+            encoding="utf-8",
+        )
+        guard = BudgetGuard.from_file(str(path))
+        assert guard is not None
+        assert guard.check() == BudgetAction.ALLOW
+
+    def test_normal_guard_unaffected(self):
+        """No-regression: a normal, nonzero-ceiling guard's ALLOW/DEGRADE
+        decisions are unchanged by the zero-guard addition."""
+        guard = BudgetGuard(max_tokens=1_000, max_cost=1.0)
+        assert guard.check(prompt_tokens=100, completion_tokens=50) == BudgetAction.ALLOW
+        guard.record_usage(
+            prompt_tokens=450, completion_tokens=400, model="anthropic/claude-sonnet-4"
+        )
+        assert guard.check(prompt_tokens=50, completion_tokens=50) == BudgetAction.DEGRADE
+
+
 # ── PROD-08 concurrency tests ───────────────────────────────────────────
 
 

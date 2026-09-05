@@ -12,6 +12,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from leggie.application.services.cove_verifier import article_number_of
 from leggie.domain.models import Finding, FindingType, Severity
 
 
@@ -50,9 +51,7 @@ class MinimalChangeStrategy(ImprovementStrategy):
             suggestions.append(
                 Suggestion(
                     finding_id=str(finding.id),
-                    article_id=finding.irac.issue.split(" ")[1]
-                    if len(finding.irac.issue.split(" ")) > 1
-                    else "",
+                    article_id=article_number_of(finding),
                     suggestion_type="minimal_change",
                     description="Review delegation clause for constitutional limits per Article 43",
                     proposed_change=f"Specify explicit criteria and limits for the delegated authority in Article {self._extract_article(finding)}",
@@ -64,7 +63,7 @@ class MinimalChangeStrategy(ImprovementStrategy):
             suggestions.append(
                 Suggestion(
                     finding_id=str(finding.id),
-                    article_id=self._extract_article(finding),
+                    article_id=article_number_of(finding),
                     suggestion_type="minimal_change",
                     description=f"Ensure alignment with relevant EU directive: {finding.irac.rule[:80]}",
                     proposed_change="Add explicit reference to the relevant EU directive and ensure full harmonization",
@@ -76,7 +75,7 @@ class MinimalChangeStrategy(ImprovementStrategy):
             suggestions.append(
                 Suggestion(
                     finding_id=str(finding.id),
-                    article_id=self._extract_article(finding),
+                    article_id=article_number_of(finding),
                     suggestion_type="minimal_change",
                     description="Add fiscal impact assessment",
                     proposed_change="Include a quantified fiscal impact analysis for the proposed measure",

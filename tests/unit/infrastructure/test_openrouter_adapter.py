@@ -8,9 +8,15 @@ from contextlib import contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
-from leggie.application.ports.llm import LLMError, LLMRateLimitError, LLMRequest
+from leggie.application.ports.llm import (
+    LLMError,
+    LLMRateLimitError,
+    LLMRequest,
+    LLMTimeoutError,
+)
 from leggie.infrastructure.llm import (
     LLMAdapter,
     LLMConfigurationError,
@@ -361,3 +367,99 @@ class TestReasoningTokenVisibility:
             )
         )
         assert "reasoning_tokens" not in usage
+
+
+# ── DH-4: transport failures must surface through the LLMPort contract ──────
+
+
+class TestTransportErrorTranslation:
+    """A raw httpx transport failure must never leak past generate().
+
+    Before this fix, `self._http_client.post(...)` was unguarded: any
+    httpx.TimeoutException/RequestError propagated as-is, bypassing
+    with_retry's `except (LLMRateLimitError, LLMTimeoutError)` (dead code —
+    LLMTimeoutError was never actually raised anywhere in the codebase),
+    the structured-output ladder's `except (LLMError, ValueError)`, and the
+    CLI's LLMTimeoutError -> EXIT_PROVIDER_UNAVAILABLE mapping.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "exc", [httpx.ReadTimeout("boom"), httpx.ConnectTimeout("boom")]
+    )
+    async def test_timeout_raises_llm_timeout_error(self, exc: Exception):
+        # with_retry() now actually retries LLMTimeoutError (see below), so
+        # every attempt re-raising the same timeout would otherwise burn its
+        # real exponential backoff (1s + 2s) before this assertion runs.
+        with _provider_with_response() as (provider, post):
+            post.side_effect = exc
+            with (
+                patch("leggie.infrastructure.llm.decorators.asyncio.sleep", new=AsyncMock()),
+                pytest.raises(LLMTimeoutError),
+            ):
+                await provider.generate(LLMRequest(prompt="x"))
+
+    @pytest.mark.asyncio
+    async def test_connection_error_raises_llm_error_not_timeout(self):
+        """A non-timeout transport failure is still an LLMError, but not
+        misreported as a timeout — the two are distinguishable failure modes
+        (see reasoner/adapter.py for the same split on the sibling adapter)."""
+        with _provider_with_response() as (provider, post):
+            post.side_effect = httpx.ConnectError("connection refused")
+            with pytest.raises(LLMError) as exc:
+                await provider.generate(LLMRequest(prompt="x"))
+            assert not isinstance(exc.value, LLMTimeoutError)
+
+    @pytest.mark.asyncio
+    async def test_with_retry_actually_retries_a_real_timeout(self):
+        """No-regression / integration: with_retry's LLMTimeoutError branch
+        was unreachable dead code until generate() started raising it. Two
+        timeouts then a success must now be absorbed transparently."""
+        with _provider_with_response() as (provider, post):
+            ok_resp = post.return_value
+            post.side_effect = [
+                httpx.ReadTimeout("boom"),
+                httpx.ReadTimeout("boom"),
+                ok_resp,
+            ]
+            with patch("leggie.infrastructure.llm.decorators.asyncio.sleep", new=AsyncMock()):
+                response = await provider.generate(LLMRequest(prompt="x"))
+        assert response.content == "OK"
+        assert post.call_count == 3
+
+
+# ── DH-5: an empty `choices` list must not crash with a raw IndexError ─────
+
+
+class TestEmptyChoicesHandling:
+    """OpenRouter is untrusted external input: a 200 response can still
+    carry `"choices": []` (e.g. moderation blocks). `.get("choices", [{}])`
+    only supplies its default when the key is ABSENT, not when it is an
+    empty list, so `[0]` on an explicit empty list raised a raw IndexError.
+    """
+
+    @pytest.mark.asyncio
+    async def test_empty_choices_list_raises_llm_error(self):
+        with (
+            _provider_with_response(body={"choices": [], "usage": {}}) as (provider, _),
+            pytest.raises(LLMError) as exc,
+        ):
+            await provider.generate(LLMRequest(prompt="x"))
+        assert "no choices" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_missing_choices_key_still_degrades_gracefully(self):
+        """No regression: a response with no "choices" key at all (distinct
+        from an explicit empty list) keeps its pre-existing graceful
+        empty-content fallback rather than raising."""
+        with _provider_with_response(body={"usage": {}}) as (provider, _):
+            response = await provider.generate(LLMRequest(prompt="x"))
+        assert response.content == ""
+
+    @pytest.mark.asyncio
+    async def test_single_sparse_choice_still_parses(self):
+        """A choice present but missing "message" still degrades to empty
+        content instead of raising — only a genuinely empty list is fatal."""
+        with _provider_with_response(body={"choices": [{}], "usage": {}}) as (provider, _):
+            response = await provider.generate(LLMRequest(prompt="x"))
+        assert response.content == ""

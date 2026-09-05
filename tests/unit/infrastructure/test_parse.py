@@ -405,3 +405,29 @@ class TestParseIntegrity:
         assert rc.reason == RejectionReason.CROSS_REFERENCE
         with pytest.raises(ValidationError):
             rc.number = "999"
+
+    def test_toc_plus_rationale_section_is_flagged_not_clean(self, parser):
+        """Safety net: a bill with BOTH a ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ and a
+        per-article ΑΙΤΙΟΛΟΓΙΚΗ ΕΚΘΕΣΗ walkthrough before the body currently
+        mis-parses into duplicate article IDs (see
+        test_parse_characterization.py::TestExplanatoryMemorandumDoubleRestart
+        for the mechanism and the target fix, tracked as
+        [REQUIRES HUMAN REVIEW] in the R2 defect hunt). This test locks in
+        the mitigation that keeps that mis-parse from silently reaching the
+        LLM pipeline: report.is_clean must go False so
+        bill_analysis_flow._do_parse aborts by default instead of paying to
+        analyse duplicated/wrong text.
+        """
+        text = (
+            "ΣΧΕΔΙΟ ΝΟΜΟΥ\nΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ\n"
+            "Άρθρο 1 Σκοπός\nΆρθρο 2 Ορισμοί\n\n"
+            "ΑΙΤΙΟΛΟΓΙΚΗ ΕΚΘΕΣΗ\n"
+            "Άρθρο 1\nΜε το άρθρο αυτό ορίζεται ο σκοπός.\n\n"
+            "Άρθρο 2\nΜε το άρθρο αυτό δίδονται οι ορισμοί.\n\n"
+            "Άρθρο 1 Σκοπός\n1. Σκοπός του παρόντος είναι η ψηφιακή μετάβαση.\n\n"
+            "Άρθρο 2 Ορισμοί\n1. Οι ορισμοί είναι οι εξής.\n"
+        )
+        doc, report = parser.parse_with_integrity(text)
+        assert report.is_clean is False
+        assert report.duplicate_ids, "Expected duplicate IDs from the rationale walkthrough"
+        assert len(doc.articles) == 4, "2 phantom (rationale) + 2 real, both id '1' and '2'"

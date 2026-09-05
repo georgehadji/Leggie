@@ -117,6 +117,31 @@ class TestReasonerAdapterHappyPath:
         assert result.citations[0].scheme == CitationScheme.UNKNOWN
 
     @pytest.mark.asyncio
+    async def test_malformed_citation_entry_is_skipped_not_a_crash(self):
+        """DH-27 (nested case): a bare string among otherwise-valid citation
+        objects must be skipped, not raise AttributeError out of the whole
+        reason() call — matches the tolerant-parsing contract the class
+        docstring already claims ("missing optional keys default safely")."""
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "synthesis": "text",
+                    "citations": [
+                        "not-a-dict-citation",
+                        {"scheme": "fek", "identifier": "X", "original_text": "X"},
+                    ],
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        adapter = _adapter(transport)
+        result = await adapter.reason(ReasonerRequest(problem="test"))
+        assert len(result.citations) == 1
+        assert result.citations[0].identifier == "X"
+
+    @pytest.mark.asyncio
     async def test_client_run_id_included_when_set(self):
         captured = {}
 
@@ -197,6 +222,52 @@ class TestReasonerAdapterErrors:
         adapter = _adapter(transport, max_retries=2)
         with pytest.raises(ReasonerUnavailableError, match="malformed JSON"):
             await adapter.reason(ReasonerRequest(problem="test"))
+
+    @pytest.mark.asyncio
+    async def test_non_dict_json_response_raises_after_retries(self):
+        """DH-27 proof: a 200 response body that's valid JSON but not an
+        object (e.g. a bare list) reaches _parse_result's data.get(...) calls
+        untyped-checked — must degrade like malformed JSON, not raise a raw
+        AttributeError out of the port's reason() contract."""
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=["not", "a", "dict"])
+
+        transport = httpx.MockTransport(handler)
+        adapter = _adapter(transport, max_retries=2)
+        with pytest.raises(ReasonerUnavailableError):
+            await adapter.reason(ReasonerRequest(problem="test"))
+
+    @pytest.mark.asyncio
+    async def test_null_json_response_raises_after_retries(self):
+        """Boundary: a JSON `null` body (data=None) hits the same .get() call."""
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=b"null")
+
+        transport = httpx.MockTransport(handler)
+        adapter = _adapter(transport, max_retries=2)
+        with pytest.raises(ReasonerUnavailableError):
+            await adapter.reason(ReasonerRequest(problem="test"))
+
+    @pytest.mark.asyncio
+    async def test_non_dict_json_then_success_on_retry(self):
+        """No-regression: like the sibling malformed-JSON/503 retry tests —
+        a transient non-dict response followed by a real object must still
+        recover, proving the new check doesn't disable retry-then-succeed."""
+        call_count = {"n": 0}
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            call_count["n"] += 1
+            if call_count["n"] < 2:
+                return httpx.Response(200, json=[])
+            return httpx.Response(200, json={"synthesis": "recovered"})
+
+        transport = httpx.MockTransport(handler)
+        adapter = _adapter(transport, max_retries=3)
+        result = await adapter.reason(ReasonerRequest(problem="test"))
+        assert result.synthesis == "recovered"
+        assert call_count["n"] == 2
 
     @pytest.mark.asyncio
     async def test_other_4xx_raises_immediately(self):

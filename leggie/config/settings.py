@@ -123,6 +123,19 @@ class PersistenceSettings(BaseSettings):
     echo: bool = False
     wal_mode: bool = True
 
+    @field_validator("url")
+    @classmethod
+    def url_must_be_sqlite(cls, v: str) -> str:
+        # Only SQLite is wired: container.py builds a filesystem path via
+        # url.replace("sqlite:///", ""). Any other scheme silently no-ops
+        # through that .replace() and gets used as a raw (wrong) path instead
+        # of failing loudly at startup.
+        if not v.startswith("sqlite:///"):
+            raise ValueError(
+                f"persistence.url {v!r} must start with 'sqlite:///' (only SQLite is supported)"
+            )
+        return v
+
 
 class ReasonerSettings(BaseSettings):
     """Reasoner service configuration — multi-model deliberative analysis."""

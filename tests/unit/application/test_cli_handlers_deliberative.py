@@ -335,3 +335,35 @@ class TestDeliberativeFallback:
 
         assert deterministic_called["v"] is True
         assert result.success is True
+        assert result.data == "deterministic ran"
+
+
+class TestAnalyzeBillCommandPipelineIsClosedSet:
+    """AnalyzeBillCommand.pipeline must reject anything but the two real
+    pipeline names at construction time (DH-20).
+
+    AnalyzeBillHandler.handle() dispatches with
+    `if command.pipeline == "deliberative": ... else: deterministic` -- a
+    bare `str` field let any typo/unknown value silently run the
+    deterministic pipeline with zero warning. The CLI's own argparse
+    `choices=[...]` already prevents this today (single real call site,
+    interfaces/cli/__init__.py), but Command is meant to be a stable,
+    self-validating contract other callers can construct directly -- it
+    should not depend on a downstream interface being the only thing that
+    happens to gate it.
+    """
+
+    def test_unknown_pipeline_value_is_rejected_at_construction(self, tmp_path):
+        import pydantic
+
+        with pytest.raises(pydantic.ValidationError):
+            AnalyzeBillCommand(file_path=str(tmp_path / "bill.txt"), pipeline="delibrative")
+
+    def test_default_pipeline_is_still_deterministic(self, tmp_path):
+        command = AnalyzeBillCommand(file_path=str(tmp_path / "bill.txt"))
+        assert command.pipeline == "deterministic"
+
+    def test_both_real_pipeline_values_still_construct(self, tmp_path):
+        for value in ("deterministic", "deliberative"):
+            command = AnalyzeBillCommand(file_path=str(tmp_path / "bill.txt"), pipeline=value)
+            assert command.pipeline == value

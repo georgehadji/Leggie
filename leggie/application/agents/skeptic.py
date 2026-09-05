@@ -197,7 +197,27 @@ class CalibratedSkeptic:
                 self._gates.append(LLMAdversarialGate(llm=llm, router=router, model=model))
 
     async def examine(self, finding: Finding) -> list[SkepticVerdict]:
-        return [await gate.examine(finding) for gate in self._gates]
+        """Run every gate, in order, isolating each gate's own failure.
+
+        Each gate is documented to catch its own exceptions and degrade to a
+        neutral verdict (see LLMAdversarialGate). Before this fix that only
+        held for the gates that happened to guard themselves: a gate raising
+        here would abort the whole chain via the list comprehension, silently
+        discarding every earlier gate's verdict and skipping every later gate
+        instead of degrading just the one gate that failed.
+        """
+        verdicts: list[SkepticVerdict] = []
+        for gate in self._gates:
+            try:
+                verdicts.append(await gate.examine(finding))
+            except Exception:
+                log.exception(
+                    "skeptic_gate_error: gate=%s finding=%s", type(gate).__name__, finding.id
+                )
+                verdicts.append(
+                    SkepticVerdict(str(finding.id), "unknown", "neutral", "Gate error")
+                )
+        return verdicts
 
     async def review(
         self, findings: list[Finding], max_concurrency: int = 10

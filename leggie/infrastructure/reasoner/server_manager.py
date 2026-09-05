@@ -22,6 +22,9 @@ import httpx
 
 from leggie.application.ports.reasoner import ReasonerUnavailableError
 from leggie.config.settings import ReasonerSettings
+from leggie.observability import get_logger
+
+logger = get_logger(__name__)
 
 _AGENT_RUN_PATH = "/api/agent/run/sync"
 
@@ -91,7 +94,20 @@ class ReasonerServerManager:
         self._process = None
 
     async def __aenter__(self) -> ReasonerServerManager:
-        await self.ensure_running()
+        # DH-25: __aexit__ never runs if __aenter__ itself raises (standard
+        # async context manager protocol) — so a process spawned by
+        # ensure_running() that then fails to become healthy (or dies early)
+        # would otherwise be leaked with no caller ever able to clean it up.
+        try:
+            await self.ensure_running()
+        except Exception:
+            # Mirror cli_handlers.py's own established idiom (PR #7): a
+            # cleanup failure must never shadow the real startup error.
+            try:
+                await self.shutdown()
+            except Exception:
+                logger.warning("reasoner.cleanup_after_failed_start_failed", exc_info=True)
+            raise
         return self
 
     async def __aexit__(self, *_args: object) -> None:
@@ -126,6 +142,11 @@ class ReasonerServerManager:
         try:
             data = resp.json()
         except ValueError:
+            return False
+        # DH-26: a wrong service occupying the port can return valid JSON
+        # that isn't a dict (bare list/string/number/null) — .get() on that
+        # would raise AttributeError instead of degrading to "not healthy".
+        if not isinstance(data, dict):
             return False
         paths = data.get("paths", {})
         if _AGENT_RUN_PATH not in paths:

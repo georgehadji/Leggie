@@ -179,7 +179,7 @@ From `tasks/todo.md` §0 ("What changed vs the initial spec"):
 |---|---|---|
 | D3 | sequential article loop | CLOSED — flow calls parallel `analyze_document()` (`bill_analysis_flow.py:264`) |
 | D4 | Verbalized Sampling unwired | CLOSED — `--verbalized-sampling` flag + `LEGGIE_ANALYSIS__USE_VERBALIZED_SAMPLING` wired into flow |
-| D5 | ModelBasedReranker unwired | PARTIAL — `LEGGIE_ANALYSIS__RERANKER=model` selector exists, but `configure_defaults()` binds no RerankerPort → silently composite |
+| D5 | ModelBasedReranker unwired | CLOSED (updated 2026-09-04, was stale since 2026-07-14) — `container.py:216-231` registers `RerankerPort` via `_create_reranker()` returning `OpenRouterReranker`; matches **leggie-architecture-contract**'s "D5 closed" (verified 2026-08-10). This row's own "PARTIAL" claim was the doc-drift. |
 | D6 | article-level failure isolation | CLOSED with D3 (smoke v2 onward ran parallel fan-out) |
 | D7 | citation resolution index empty | CLOSED 2026-08-10 — container loads `data/citation_index.json` (181 identifiers) into `GreekCitationParser` for the deterministic pipeline via `CitationParserPort`; this row's own prior "empty index" claim was outdated. See D22 for the real bug it was masking. |
 | D22 | deliberative pipeline's `cli_handlers.py` hand-constructed a second, unindexed `GreekCitationParser()` — every deliberative-report citation read "unverified" regardless of validity | CLOSED 2026-08-10 (IMPL-1 Group A, commit `28e10aa`) — both paths now resolve `CitationParserPort` from the container. ADR-0003. |

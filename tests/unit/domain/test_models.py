@@ -18,6 +18,7 @@ from leggie.domain.models import (
     Evidence,
     Finding,
     FindingType,
+    ModelTier,
     Paragraph,
     Severity,
     SubParagraph,
@@ -236,6 +237,100 @@ class TestFinding:
         assert finding.article_id == "15"
 
 
+class TestFrozenModelsShallowImmutability:
+    """DH-34: ``model_config = {"frozen": True}`` blocks attribute
+    REASSIGNMENT (see ``test_finding_frozen`` above) but does nothing to
+    protect a list/dict-VALUED field from in-place mutation, and
+    ``model_copy()``'s default shallow copy (``deep=False`` — every
+    production call site in this repo relies on that default, none passes
+    ``deep=True``) means an "old" and "new" version of the same ``Finding``
+    share the identical ``evidence``/``counter_evidence`` list object
+    unless that field is itself named in ``update=``. This narrows
+    leggie-architecture-contract's Invariant #3 ("findings are updated via
+    model_copy(update={...})... never mutated in place"): the type system
+    does not actually enforce it for any mutable-collection field.
+    Currently NOT exploited by any production call site (repo-wide grep for
+    ``.evidence.append(``, ``.counter_evidence.append(``, ``.data[...] =``
+    finds none; every real ``model_copy()`` call — ``skeptic.py:246``,
+    ``cove_verifier.py:479``, ``bill_analysis_flow.py:592``/``604`` —
+    rebuilds a fresh list/dict for any field it touches rather than
+    appending) — documented here as a latent structural gap, not an active
+    one. Domain is frozen for this campaign; not fixed here.
+    """
+
+    def test_reassignment_is_blocked_but_in_place_mutation_is_not(self):
+        finding = Finding(
+            finding_type=FindingType.OTHER,
+            irac=IRAC(issue="x", rule="y", application="z", conclusion="w"),
+            confidence=Confidence.from_score(0.5),
+            lens="test",
+            model="test",
+            evidence=[],
+        )
+        # The documented, intended guard (mirrors test_finding_frozen above):
+        with pytest.raises(ValidationError):
+            finding.evidence = [Evidence(text_excerpt="reassigned")]
+        # The gap: the SAME list object is fully mutable in place, silently.
+        finding.evidence.append(Evidence(text_excerpt="snuck in", verdict="supports"))
+        assert len(finding.evidence) == 1  # the "frozen" instance changed anyway
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="DH-34: frozen=True does not deep-freeze list/dict field "
+        "values; in-place mutation of a collection field currently "
+        "succeeds silently instead of raising. This test encodes the "
+        "invariant leggie-architecture-contract Invariant #3 assumes "
+        "holds. Flip to a plain passing test (and remove this marker) "
+        "once Domain collection fields are switched to immutable "
+        "containers -- see parse_integrity.py's tuple[...] fields for the "
+        "precedent already established elsewhere in this same package.",
+    )
+    def test_in_place_mutation_should_be_rejected_but_is_not(self):
+        finding = Finding(
+            finding_type=FindingType.OTHER,
+            irac=IRAC(issue="x", rule="y", application="z", conclusion="w"),
+            confidence=Confidence.from_score(0.5),
+            lens="test",
+            model="test",
+            evidence=[],
+        )
+        with pytest.raises((AttributeError, TypeError)):
+            finding.evidence.append(Evidence(text_excerpt="should be rejected"))
+
+    def test_model_copy_shares_the_same_list_object_not_a_copy(self):
+        """model_copy(update=...) is shallow by default; every production
+        call site relies on this default. A field not named in update= is
+        shared BY REFERENCE with the source instance, not copied."""
+        finding = Finding(
+            finding_type=FindingType.OTHER,
+            irac=IRAC(issue="x", rule="y", application="z", conclusion="w"),
+            confidence=Confidence.from_score(0.5),
+            lens="test",
+            model="test",
+            evidence=[Evidence(text_excerpt="original")],
+        )
+        revised = finding.model_copy(
+            update={"confidence": Confidence.from_score(0.9), "version": 2}
+        )
+        assert revised.evidence is finding.evidence  # same object, not copied
+
+        # Mutating the "new" version's evidence silently corrupts the "old"
+        # version too, because they are the same list object.
+        revised.evidence.append(Evidence(text_excerpt="added to the revision only?"))
+        assert len(finding.evidence) == 2  # ...but it leaked into the parent.
+
+    def test_event_data_dict_is_also_mutable_in_place(self):
+        """Event is documented as "an immutable event in the event-sourced
+        spine" -- the same gap applies to its data dict."""
+        event = Event(
+            event_type=EventType.FINDING_CREATED,
+            aggregate_id="agg-1",
+            data={"finding_id": "f-1"},
+        )
+        event.data["tampered"] = "not part of the original event"
+        assert "tampered" in event.data  # the "immutable" event log entry changed
+
+
 class TestArticle:
     def test_create_article(self):
         article = Article(
@@ -307,6 +402,54 @@ class TestEvent:
         )
         with pytest.raises(ValidationError):
             event.event_type = EventType.ANALYSIS_STARTED
+
+
+class TestEventTypeRuntimeRepresentation:
+    """DH-35: Event is the only model in this file whose model_config sets
+    ``use_enum_values`` (``grep -n use_enum_values leggie/domain/models/*.py``
+    has exactly one hit). Pydantic flattens an enum field to its plain
+    ``str`` ``.value`` immediately after validation when that flag is set,
+    so despite ``event_type`` being ANNOTATED ``EventType``, the value
+    actually stored (and returned by every attribute access) is a bare
+    ``str`` at runtime -- never an ``EventType`` instance. ``==``/``in``/
+    dict-key lookups all still work by accident because ``EventType`` is a
+    ``StrEnum`` (compares and hashes equal to its own string value) --
+    which is exactly why ``TestEvent.test_create_event`` above (an ``==``
+    check) never caught this. ``isinstance(..., EventType)`` and ``.value``
+    attribute access do not get that same accidental safety net and fail
+    today. Locked in as current behavior (DH-35); not fixed here -- Domain
+    is frozen for this campaign.
+    """
+
+    def test_event_type_is_plain_str_at_runtime_not_the_enum_member(self):
+        event = Event(event_type=EventType.LENS_COMPLETED, aggregate_id="agg-1")
+        assert type(event.event_type) is str
+        assert isinstance(event.event_type, EventType) is False
+
+    def test_value_attribute_access_raises_despite_the_eventtype_annotation(self):
+        event = Event(event_type=EventType.WORKFLOW_FAILED, aggregate_id="agg-1")
+        with pytest.raises(AttributeError):
+            _ = event.event_type.value
+
+    def test_equality_and_membership_still_work_which_is_why_this_hid(self):
+        event = Event(event_type=EventType.DEGRADED, aggregate_id="agg-1")
+        assert event.event_type == EventType.DEGRADED
+        assert event.event_type in {EventType.DEGRADED, EventType.BUDGET_TRIPPED}
+
+    def test_sibling_enum_field_without_use_enum_values_keeps_the_real_enum(self):
+        """Contrast case: Finding.model_tier uses a StrEnum too (ModelTier)
+        but Finding's model_config has no use_enum_values, so it keeps the
+        real enum instance -- proving the gap is Event's own config, not a
+        general StrEnum/Pydantic limitation."""
+        finding = Finding(
+            finding_type=FindingType.OTHER,
+            irac=IRAC(issue="x", rule="y", application="z", conclusion="w"),
+            confidence=Confidence.from_score(0.5),
+            lens="test",
+            model="test",
+        )
+        assert type(finding.model_tier) is ModelTier
+        assert isinstance(finding.model_tier, ModelTier)
 
 
 class TestIsGreek:

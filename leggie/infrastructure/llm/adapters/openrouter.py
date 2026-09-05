@@ -18,6 +18,7 @@ from leggie.application.ports.llm import (
     LLMRateLimitError,
     LLMRequest,
     LLMResponse,
+    LLMTimeoutError,
 )
 from leggie.infrastructure.llm.base import BaseLLMProvider
 from leggie.infrastructure.llm.decorators import with_retry
@@ -93,11 +94,16 @@ class OpenRouterProvider(BaseLLMProvider):
         if request.response_format:
             body["response_format"] = request.response_format
 
-        resp = await self._http_client.post(
-            f"{self._base_url}/chat/completions",
-            headers=headers,
-            json=body,
-        )
+        try:
+            resp = await self._http_client.post(
+                f"{self._base_url}/chat/completions",
+                headers=headers,
+                json=body,
+            )
+        except httpx.TimeoutException as exc:
+            raise LLMTimeoutError(f"OpenRouter request timed out: {exc}") from exc
+        except httpx.RequestError as exc:
+            raise LLMError(f"OpenRouter request failed: {exc}") from exc
         elapsed = (time.monotonic() - start) * 1000
 
         if resp.status_code == 429:
@@ -113,7 +119,14 @@ class OpenRouterProvider(BaseLLMProvider):
             raise LLMError(f"OpenRouter API error {resp.status_code}: {body_text}")
 
         data = resp.json()
-        choice = data.get("choices", [{}])[0]
+        # `.get("choices", [{}])` only supplies the default when the key is
+        # ABSENT; a 200 response that carries "choices": [] (moderation
+        # blocks, some provider hiccups) leaves choices=[] and [0] raised a
+        # raw, unwrapped IndexError instead of the port's LLMError contract.
+        choices = data.get("choices", [{}])
+        if not choices:
+            raise LLMError(f"OpenRouter returned no choices (status {resp.status_code})")
+        choice = choices[0]
         content = choice.get("message", {}).get("content") or ""
         finish_reason = choice.get("finish_reason", "stop")
         usage = data.get("usage", {})

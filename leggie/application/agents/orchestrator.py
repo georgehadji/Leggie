@@ -22,7 +22,7 @@ from leggie.application.agents.implementation_lens import ImplementationLens
 from leggie.application.agents.legal_coherence_lens import LegalCoherenceLens
 from leggie.application.agents.lens import DEFAULT_LENS_MAX_TOKENS, Lens
 from leggie.application.ports.llm import LLMPort
-from leggie.application.ports.router import RouterPort
+from leggie.application.ports.router import RouteResult, RouterPort
 from leggie.domain.models import Article, Document, Event, EventType, Finding, LensTask, ModelTier
 from leggie.observability import get_logger
 
@@ -167,9 +167,7 @@ class Orchestrator:
                     return findings
                 # Empty findings from LLM lens: cascade on low confidence
                 if attempt < max_retries - 1 and self._router:
-                    next_result = await self._router.cascade(
-                        "lens_analysis", tier, "empty_findings"
-                    )
+                    next_result = await self._safe_cascade(name, tier, "empty_findings")
                     if next_result:
                         model = next_result.model
                         tier = next_result.tier
@@ -197,7 +195,7 @@ class Orchestrator:
                         )
                 # Cascade to next tier on failure
                 if attempt < max_retries - 1 and self._router:
-                    next_result = await self._router.cascade("lens_analysis", tier, str(e)[:200])
+                    next_result = await self._safe_cascade(name, tier, str(e)[:200])
                     if next_result:
                         model = next_result.model
                         tier = next_result.tier
@@ -206,6 +204,22 @@ class Orchestrator:
                         continue
                 return []
         return []
+
+    async def _safe_cascade(self, name: str, tier: ModelTier, reason: str) -> RouteResult | None:
+        """Cascade, treating a router failure like "no escalation available".
+
+        RouterPort makes no never-raises guarantee (route() above is already
+        guarded the same way) — an unguarded cascade() failure here used to
+        propagate out of the asyncio.TaskGroup in analyze_article(), which
+        cancels every sibling lens task and discards their already-computed
+        findings for the whole article, not just this lens.
+        """
+        assert self._router is not None
+        try:
+            return await self._router.cascade("lens_analysis", tier, reason)
+        except Exception:
+            log.warning("cascade_failed: lens=%s tier=%s using current tier", name, tier.value)
+            return None
 
     async def analyze_document(
         self,

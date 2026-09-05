@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from leggie.application.agents.improver import Suggestion
+from leggie.application.services.cove_verifier import article_number_of
 from leggie.domain.models import Document, Finding, Severity
 
 
@@ -176,15 +177,7 @@ class ReportRenderer(ABC):
     def _findings_by_article(self, findings: list[Finding]) -> dict[str, list[Finding]]:
         by_article: dict[str, list[Finding]] = {}
         for f in findings:
-            # Extract article ID from IRAC issue text
-            parts = f.irac.issue.split(" ")
-            article_id = ""
-            for p in parts:
-                if p.isdigit():
-                    article_id = p
-                    break
-            if not article_id:
-                article_id = "general"
+            article_id = article_number_of(f) or "general"
             if article_id not in by_article:
                 by_article[article_id] = []
             by_article[article_id].append(f)

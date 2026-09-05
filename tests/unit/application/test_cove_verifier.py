@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.llm import LLMPort, LLMResponse
 from leggie.application.services.cove_verifier import CoVeVerifier, article_number_of
 from leggie.domain.models import (
@@ -306,6 +307,67 @@ class TestCoVeVerifier:
         )
         result = await verifier.verify(finding, source_text="πηγή")
         assert result.dropped is False  # unverifiable, not disproven — LLM decides
+
+    @pytest.mark.asyncio
+    async def test_citation_parser_exception_fails_open_not_dropped(self):
+        """DH-15: _check_citations sat OUTSIDE _verify_llm's own try/except,
+        so a citation-parser exception (a port is a plain ABC with no
+        never-raises guarantee, same precedent as DH-11's RouterPort.cascade())
+        propagated uncaught out of verify() instead of failing open like
+        every other error in this function. verify_batch's outer catch-all
+        then turned that into a hard DROP — a legitimate finding silently
+        removed from the report because of a citation-lookup hiccup, not
+        because anything was actually found wrong with it."""
+
+        class _RaisingCitationParser(CitationParserPort):
+            def parse(self, text: str) -> list[Citation]:
+                return [
+                    Citation(
+                        scheme=CitationScheme.FEK,
+                        identifier="ΦΕΚ Α 999/2023",
+                        original_text="ΦΕΚ Α 999/2023",
+                    )
+                ]
+
+            async def resolve(self, citation: Citation) -> Citation:
+                raise RuntimeError("citation index unavailable")
+
+            def supported_schemes(self) -> list[CitationScheme]:
+                return [CitationScheme.FEK]
+
+        llm = FakeLLM(
+            {
+                "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι;"]),
+                "CoVeAnswerResponse": CoVeAnswerResponse(answer="ok", supported_by_source=True),
+                "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                    consistency="consistent", reason="r", keep=True
+                ),
+            }
+        )
+        verifier = CoVeVerifier(llm=llm, citation_parser=_RaisingCitationParser())
+        finding = make_finding()
+        finding = finding.model_copy(
+            update={
+                "irac": IRAC(
+                    issue=finding.irac.issue,
+                    rule="Βλ. ΦΕΚ Α 999/2023",
+                    application=finding.irac.application,
+                    conclusion=finding.irac.conclusion,
+                )
+            }
+        )
+
+        result = await verifier.verify(finding, source_text="πηγή")
+
+        assert result.dropped is False
+        assert result.finding.id == finding.id
+        # The verification chain continued past the citation hiccup and
+        # actually ran, rather than short-circuiting to a bare fail-open.
+        assert llm.calls == [
+            "CoVeQuestionsResponse",
+            "CoVeAnswerResponse",
+            "CoVeCrossCheckResponse",
+        ]
 
     @pytest.mark.asyncio
     async def test_plan_questions_from_text_excerpt(self):

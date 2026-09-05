@@ -15,11 +15,14 @@ It is registered in the ``IngestorFactory`` so all four formats inherit it.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
 from leggie.domain.models import Event, EventType
 from leggie.infrastructure.ingest.base import IngestError, Ingestor, InputNotFoundError
+
+log = logging.getLogger(__name__)
 
 
 class BoundedIngestor(Ingestor):
@@ -42,6 +45,11 @@ class BoundedIngestor(Ingestor):
         self._on_degradation = on_degradation or (lambda _ev: None)
 
     def _refuse(self, reason: str) -> None:
+        # Non-negotiable #6 (no silent failure): log a warning unconditionally
+        # so a refusal is never invisible when the factory's only production
+        # call site (IngestorFactory.get_ingestor) doesn't wire on_degradation
+        # to a real event sink — the callback below is a bonus, not a floor.
+        log.warning("ingest refused: %s", reason)
         self._on_degradation(
             Event(
                 event_type=EventType.DEGRADED,
@@ -67,8 +75,9 @@ class BoundedIngestor(Ingestor):
                 f"the {self._max_file_size_mb:.1f} MB cap."
             )
 
-        # Docx element guard is handled by the concrete ingestor; here we
-        # apply a page cap for PDFs by pre-scanning if supported.
+        # Format-specific guards (docx zip-bomb size, PDF page count) live in
+        # the concrete ingestors, which know their own format; this class
+        # only applies the caps that are meaningful for any format.
         try:
             if self._timeout_s > 0:
                 result = await asyncio.wait_for(self._wrapped.ingest(path), timeout=self._timeout_s)

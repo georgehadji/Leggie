@@ -50,8 +50,15 @@ was misclassifying "the pipeline works" as proven by unit tests alone (§3.1).
 python -m pytest tests/ -q            # full suite; baseline 531 passed (measured 2026-07-15)
 mypy leggie/ --ignore-missing-imports # strict mode is set in pyproject; must be clean on touched modules
 ruff check leggie/ tests/             # do NOT widen the ignore list to pass (see §3.5)
-lint-imports --debug                  # import-linter layer contract; --debug avoids a Rich Live-display
-                                       # crash in normal mode (ARCH-02, install via pip install -e ".[lint]")
+lint-imports --debug --verbose        # import-linter layer contract (install via pip install -e ".[lint]").
+                                       # ARCH-02, corrected 2026-09-04: --debug alone no longer avoids the
+                                       # crash — import-linter 2.12's _build_report() nests a raw rich.live.Live()
+                                       # inside an active rich.progress.Progress(disable=verbose); with the
+                                       # default verbose=False that Progress is enabled and collides with the
+                                       # nested Live on the shared Console ("Only one live display may be
+                                       # active at once", rich==13.9.4). --verbose sets disable=True on that
+                                       # Progress, which is what actually avoids the collision. Upstream bug,
+                                       # not ours; see tests/unit/test_architecture_contract.py.
 ```
 
 Class A additionally requires a **live smoke** (costs money, needs

@@ -54,6 +54,16 @@ class PDFIngestor(Ingestor):
         def _extract() -> str:
             text_parts: list[str] = []
             with pdfplumber.open(str(path)) as pdf:
+                # Page-count guard (PROD-16a): reject before the expensive
+                # per-page extract_text() loop, not after. A page-count bomb
+                # (many pages, little text) would otherwise sail past the
+                # max_elements char cap, which only ever sees the *result*.
+                max_pages = IngestorFactory.bounds["max_pages"]
+                if len(pdf.pages) > max_pages:
+                    raise IngestError(
+                        f"Refusing to ingest {path.name}: {len(pdf.pages)} pages "
+                        f"exceeds the {max_pages} page cap."
+                    )
                 for page in pdf.pages:
                     text = page.extract_text()
                     if text:

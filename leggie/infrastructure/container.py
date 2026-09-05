@@ -173,8 +173,21 @@ class Container:
             index_path = locator.package_resource("leggie.data", "citation_index.json")
             if index_path.exists():
                 index_data = json.loads(index_path.read_text(encoding="utf-8"))
-                resolution_index = set(index_data.get("identifiers", []))
-        except (OSError, ValueError):
+                # DH-29: untrusted package data — a same-shaped-but-wrong body
+                # (a JSON list/string/null instead of an object) must degrade,
+                # not crash configure_defaults() with an uncaught
+                # AttributeError on .get() — same trust-boundary class as
+                # DH-26/DH-27. Also logs, unlike the pre-existing except
+                # branch below, which silently fell back to an empty index.
+                if isinstance(index_data, dict):
+                    resolution_index = set(index_data.get("identifiers", []))
+                else:
+                    logger.warning(
+                        "citation_index.malformed_shape: expected a JSON object, got %s",
+                        type(index_data).__name__,
+                    )
+        except (OSError, ValueError) as exc:
+            logger.warning("citation_index.load_failed: %s", exc)
             resolution_index = set()
         self.register(
             CitationParserPort,
@@ -258,8 +271,14 @@ class Container:
 
         # Register lazily — ReasonerServerManager is only needed when the
         # deliberative pipeline is activated (PROD-32).
-        # Use a string key since ReasonerServerManager is only TYPE_CHECKING
-        # imported at module scope.
+        # DH-30: this used to claim "use a string key since ReasonerServerManager
+        # is only TYPE_CHECKING imported at module scope" — stale. The class IS
+        # imported for real here (not TYPE_CHECKING-guarded) and registered
+        # under the actual class object, matching every other port binding in
+        # this method; module caching guarantees this is the same object a
+        # normal top-level `from ...server_manager import ReasonerServerManager`
+        # elsewhere would import, so `container.get(ReasonerServerManager)`
+        # resolves correctly for any caller that uses it that way.
         from leggie.infrastructure.reasoner.server_manager import (
             ReasonerServerManager as _ReasonerServerManager,
         )

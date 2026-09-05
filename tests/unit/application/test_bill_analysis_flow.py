@@ -555,3 +555,203 @@ class TestSelectionStrictness:
         flow = BillAnalysisFlow()
         with pytest.raises(ValueError, match="requested 10 articles, matched 2"):
             flow._filter_document(doc, "1-10")
+
+
+class TestTransitionEventData:
+    """STAGE_COMPLETED events must record the FSM's real from/to (DH-17).
+
+    _transition() used to mutate self._state to next_state BEFORE building
+    the event dict, so "from" was either the literal placeholder string
+    "previous" (the common case) or -- for the two failure-shortcut call
+    sites whose *target* argument disagrees with what the FSM table actually
+    computes -- a fully backwards from/to pair.
+    """
+
+    def test_normal_transition_records_real_previous_state(self):
+        flow = BillAnalysisFlow()
+        flow._transition(WorkflowState.INGESTING, "ingest_started")
+        events = [e for e in flow.get_event_log() if e.event_type == EventType.STAGE_COMPLETED]
+        assert events[-1].data == {"from": "idle", "to": "ingesting", "event": "ingest_started"}
+
+    def test_mismatched_target_still_records_the_real_destination(self):
+        """plan_failed/execution_failed pass a target that disagrees with the
+        FSM table's actual computed destination (FAILED). The event must
+        reflect the real transition, not invert it."""
+        flow = BillAnalysisFlow()
+        flow._state = WorkflowState.EXECUTING
+        flow._transition(WorkflowState.FAILED, "execution_failed")
+        assert flow.state == WorkflowState.FAILED
+        events = [e for e in flow.get_event_log() if e.event_type == EventType.STAGE_COMPLETED]
+        assert events[-1].data == {
+            "from": "executing",
+            "to": "failed",
+            "event": "execution_failed",
+        }
+
+    def test_invalid_transition_is_a_true_noop(self):
+        """No-regression: an (state, event) pair absent from the table must
+        still be a clean no-op -- state unchanged, nothing recorded."""
+        flow = BillAnalysisFlow()
+        events_before = len(flow.get_event_log())
+        flow._transition(WorkflowState.DONE, "bogus_event")
+        assert flow.state == WorkflowState.IDLE
+        assert len(flow.get_event_log()) == events_before
+
+    @pytest.mark.asyncio
+    async def test_real_empty_document_run_records_correct_failure_event(self, tmp_path):
+        """End-to-end proof through the real run() path: an empty document
+        reaches EXECUTING and its execution_failed shortcut for real."""
+        path = tmp_path / "empty.txt"
+        path.write_text("No articles here.", encoding="utf-8")
+        flow = BillAnalysisFlow()
+        await flow.run(path, output_dir=tmp_path)
+        assert flow.state == WorkflowState.FAILED
+        stage_events = [
+            e for e in flow.get_event_log() if e.event_type == EventType.STAGE_COMPLETED
+        ]
+        last = stage_events[-1]
+        assert last.data["from"] == "executing"
+        assert last.data["to"] == "failed"
+
+
+class TestPreviewReuseSafety:
+    """preview() must be as reuse-safe as run() explicitly is (DH-18).
+
+    run() resets self._state = IDLE at its own start specifically "to keep
+    reuse of a flow object safe" (its own comment). preview() lacked the
+    same reset, so calling it on an already-used instance (post-run() or
+    post-preview()) left every _transition() call inside it silently
+    no-op'ing against a stale, non-IDLE state that has no matching table
+    entry -- self._state stuck at the old value, zero STAGE_COMPLETED events
+    recorded, even though the substantive ingest/parse/generate work still
+    runs regardless (preview() never actually gates on self._state).
+    """
+
+    @pytest.mark.asyncio
+    async def test_preview_after_run_updates_state_not_stuck_at_done(
+        self, sample_bill_file, tmp_path
+    ):
+        flow = BillAnalysisFlow()
+        await flow.run(sample_bill_file, output_dir=tmp_path)
+        assert flow.state == WorkflowState.DONE
+        events_before = len(flow.get_event_log())
+
+        overview = await flow.preview(sample_bill_file)
+
+        assert overview.article_ids() == ["1", "2"]
+        assert flow.state == WorkflowState.PARSING  # preview()'s own last transition
+        assert len(flow.get_event_log()) > events_before
+
+    @pytest.mark.asyncio
+    async def test_preview_called_twice_on_same_instance(self, sample_bill_file):
+        flow = BillAnalysisFlow()
+        await flow.preview(sample_bill_file)
+        overview2 = await flow.preview(sample_bill_file)
+        assert overview2.article_ids() == ["1", "2"]
+        assert flow.state == WorkflowState.PARSING
+
+
+class TestCheckpointFailureIsLogged:
+    """Checkpoint save/load failures must log a warning, not vanish silently
+    (DH-19, non-negotiable #6: no silent failure).
+
+    caplog is unreliable in this suite (see DH-2's addendum in
+    docs/DEFECT_HUNT_PLAN.md): these tests monkeypatch the module logger's
+    bound method directly instead, the pattern R2 landed on after caplog and
+    a directly-attached handler both proved order-dependent.
+    """
+
+    @pytest.mark.asyncio
+    async def test_save_failure_logs_a_warning_and_does_not_raise(
+        self, sample_bill_file, tmp_path, monkeypatch
+    ):
+        from leggie.application.workflow import bill_analysis_flow as flow_module
+
+        warnings: list[tuple[str, dict]] = []
+        monkeypatch.setattr(
+            flow_module.logger, "warning", lambda msg, **kw: warnings.append((msg, kw))
+        )
+
+        class ExplodingStore:
+            def save(self, data):
+                raise OSError("disk full")
+
+            def load(self):
+                return None
+
+        flow = BillAnalysisFlow(checkpoint_store=ExplodingStore())
+        findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
+
+        assert flow.state == WorkflowState.DONE  # a save failure must not abort the run
+        assert warnings, "checkpoint save failure must be logged, not swallowed silently"
+        assert warnings[0][0] == "checkpoint.save_failed"
+
+    def test_corrupt_legacy_checkpoint_logs_a_warning_and_starts_fresh(self, tmp_path, monkeypatch):
+        """_load_legacy_budget_checkpoint() is exercised directly: run()'s own
+        auto-construct-a-CheckpointStore-if-any-path-is-known logic (see
+        run()'s opening lines) means self._checkpoint_store is never None by
+        the time _load_checkpoint() runs through the public run() API
+        whenever a checkpoint path is known from either constructor or call
+        site -- so this legacy method is unreachable-with-effect through
+        run() itself. It still exists and is still worth hardening in
+        isolation, matching this file's own convention of exercising private
+        methods directly (e.g. TestParseIntegrityGate's flow._do_parse())."""
+        from leggie.application.workflow import bill_analysis_flow as flow_module
+        from leggie.infrastructure.budget_guard import BudgetGuard
+
+        warnings: list[tuple[str, dict]] = []
+        monkeypatch.setattr(
+            flow_module.logger, "warning", lambda msg, **kw: warnings.append((msg, kw))
+        )
+
+        checkpoint = tmp_path / "legacy.checkpoint.json"
+        checkpoint.write_text("not json at all {{{", encoding="utf-8")
+
+        guard = BudgetGuard(max_tokens=1000, max_cost=1.0)
+        flow = BillAnalysisFlow(llm=_LLMWithGuard(guard), checkpoint_path=checkpoint)
+
+        flow._load_legacy_budget_checkpoint()  # must not raise
+
+        assert warnings, "corrupt legacy checkpoint must be logged, not swallowed silently"
+        assert warnings[0][0] == "checkpoint.legacy_load_failed"
+
+    @pytest.mark.asyncio
+    async def test_malformed_budget_state_shape_logs_a_warning_and_starts_fresh(
+        self, sample_bill_file, tmp_path, monkeypatch
+    ):
+        """A hand-edited/foreign checkpoint whose budget_state is the wrong
+        JSON type (not an object) used to raise AttributeError uncaught --
+        contextlib.suppress(OSError, ValueError) never matched it."""
+        from leggie.application.workflow import bill_analysis_flow as flow_module
+        from leggie.infrastructure.budget_guard import BudgetGuard
+        from leggie.infrastructure.persistence.checkpoint_store import CheckpointStore
+
+        warnings: list[tuple[str, dict]] = []
+        monkeypatch.setattr(
+            flow_module.logger, "warning", lambda msg, **kw: warnings.append((msg, kw))
+        )
+
+        checkpoint_path = tmp_path / "run.checkpoint.json"
+        store = CheckpointStore(str(checkpoint_path))
+        store.save(
+            {
+                "run_id": "r1",
+                "stage": "reporting",
+                "file_path": str(sample_bill_file),
+                "findings": [],
+                "events": [],
+                "document": None,
+                "source_text": "",
+                "suggestions": [],
+                "reports": [],
+                "budget_state": ["not", "an", "object"],
+            }
+        )
+
+        guard = BudgetGuard(max_tokens=1000, max_cost=1.0)
+        flow = BillAnalysisFlow(llm=_LLMWithGuard(guard), checkpoint_store=store)
+        # Must not raise AttributeError -- best-effort budget restore only.
+        flow._load_checkpoint(sample_bill_file)
+
+        assert warnings, "malformed budget_state must be logged, not raise uncaught"
+        assert warnings[0][0] == "checkpoint.budget_state_corrupt"

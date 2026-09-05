@@ -388,6 +388,8 @@ EXIT_INTERRUPTED = 6
 def _exit_code_for(exc: BaseException) -> int:
     """Return the documented exit code for an exception type (Template Method)."""
     # Import lazily to avoid circular imports at module load.
+    from pydantic import ValidationError
+
     from leggie.application.ports.llm import BudgetExceededError, LLMConfigurationError, LLMError
     from leggie.application.workflow.bill_analysis_flow import ParseIntegrityError
     from leggie.infrastructure.ingest import IngestError, UnsupportedFormatError
@@ -395,7 +397,14 @@ def _exit_code_for(exc: BaseException) -> int:
 
     if isinstance(exc, KeyboardInterrupt):
         return EXIT_INTERRUPTED
-    if isinstance(exc, (LLMConfigurationError, UnsupportedFormatError, InputNotFoundError)):
+    # A pydantic ValidationError (e.g. Settings() rejecting a misconfigured
+    # env var against one of its Field constraints) is a config problem, not
+    # an unknown one — _ERROR_TYPE_EXITS below already maps the string
+    # "ValidationError" to EXIT_CONFIG_ERROR for the CommandResult path; this
+    # is the same mapping for the raw-exception path entry_point() uses.
+    if isinstance(
+        exc, (LLMConfigurationError, UnsupportedFormatError, InputNotFoundError, ValidationError)
+    ):
         return EXIT_CONFIG_ERROR
     if isinstance(exc, FileNotFoundError):
         return EXIT_CONFIG_ERROR

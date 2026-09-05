@@ -56,9 +56,15 @@ class BudgetGuard:
         if total_tokens > self._state.max_tokens or total_cost > self._state.max_cost:
             return BudgetAction.BLOCK
 
-        # Warn at 80% threshold
-        token_ratio = total_tokens / self._state.max_tokens
-        cost_ratio = total_cost / self._state.max_cost
+        # Warn at 80% threshold. Guard both denominators the same way
+        # usage_ratio already does below: max_cost=0.0 is a legal
+        # BudgetSettings value (Field(ge=0.0)) and BudgetGuard's own
+        # constructor/from_file() apply no floor at all, so a 0-budget guard
+        # reaching this line (only possible when total_tokens/total_cost are
+        # also 0, since anything positive is already caught by the BLOCK
+        # check above) must not divide by zero.
+        token_ratio = total_tokens / self._state.max_tokens if self._state.max_tokens > 0 else 0
+        cost_ratio = total_cost / self._state.max_cost if self._state.max_cost > 0 else 0
         if (token_ratio > 0.8 or cost_ratio > 0.8) and not self._state.degraded:
             return BudgetAction.DEGRADE
 

@@ -11,10 +11,20 @@ import-linter" step was green while checking nothing over 34 source files.
 The first test below is the actual regression guard: if a future directory
 is added without __init__.py, the module count silently drops again and this
 fails loudly instead of the contract quietly checking less code. The second
-test runs the real contract end to end, in --debug mode (ARCH-02: normal
-mode crashes on a Rich Live-display conflict in this environment; --debug
-only changes whether exceptions are swallowed for pretty-printing, not
-pass/fail semantics — see importlinter.cli.lint_imports docstring).
+test runs the real contract end to end, with verbose=True (ARCH-02, revised):
+import-linter's own `_build_report()` nests a raw `rich.live.Live()` inside
+an active `rich.progress.Progress(disable=verbose)` — when verbose is False
+(the default), both bind to the shared default Console and Rich's
+`Console.set_live()` unconditionally rejects the second registration
+(`rich.errors.LiveError: Only one live display may be active at once`).
+`is_debug_mode=True` alone does NOT avoid this — that flag only controls
+whether exceptions are swallowed for pretty-printing (see
+importlinter.cli.lint_imports docstring), it does not touch the Progress
+bar. `verbose=True` sets `disable=True` on that Progress, which is what
+actually avoids the nested-Live conflict. Verified against
+import-linter==2.12 + rich==13.9.4; upstream bug, not ours — reopen this
+comment if a future import-linter release fixes it upstream and the
+verbose=True workaround becomes unnecessary.
 """
 
 from __future__ import annotations
@@ -64,13 +74,14 @@ def test_known_leak_sites_are_visible_to_the_graph() -> None:
 def test_layer_contract_passes_in_debug_mode() -> None:
     """End-to-end: the real contract, the real invocation this repo's gates use.
 
-    Uses is_debug_mode=True (ARCH-02) rather than shelling out to the
-    `lint-imports` console script, since the crash under test is specific to
-    normal-mode's pretty-print path, not to contract evaluation itself.
+    Uses is_debug_mode=True (see importlinter.cli.lint_imports docstring) and
+    verbose=True (ARCH-02: avoids the nested Progress/Live crash — see module
+    docstring) rather than shelling out to the `lint-imports` console script.
     """
     exit_code = lint_imports(
         config_filename=str(_REPO_ROOT / "pyproject.toml"),
         is_debug_mode=True,
+        verbose=True,
     )
     assert exit_code == 0, (
         "import-linter layer/domain-purity contracts failed — see stdout above "

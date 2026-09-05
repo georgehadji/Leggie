@@ -5,6 +5,8 @@ Each command maps to a CLI action, keeping the interface layer thin.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from leggie.application.cqrs.base import Command
 
 
@@ -24,7 +26,13 @@ class AnalyzeBillCommand(Command):
     articles: str | None = None
     use_verbalized_sampling: bool = False
     checkpoint_path: str | None = None
-    pipeline: str = "deterministic"
+    # Closed set, not a bare str: AnalyzeBillHandler.handle() dispatches on
+    # `== "deliberative"` with a silent else-branch to the deterministic
+    # pipeline — any other value must fail at construction, not silently run
+    # the wrong pipeline. The CLI already restricts this via argparse
+    # choices=[...]; this makes the command self-validating too, since a
+    # Command is a stable contract other callers may construct directly.
+    pipeline: Literal["deterministic", "deliberative"] = "deterministic"
     perspective: str | None = None
     fallback: bool = False
     allow_degraded_parse: bool = False

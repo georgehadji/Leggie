@@ -72,9 +72,11 @@ def make_finding(
     issue_text: str = "test issue",
     confidence: float = 0.7,
     severity: str = "medium",
+    article_id: str = "",
 ) -> Finding:
     return Finding(
         finding_type=finding_type,
+        article_id=article_id,
         irac=IRAC(
             issue=issue_text,
             rule="test rule",
@@ -159,3 +161,81 @@ class TestEvalScorer:
         result = scorer.score("bill-001", [])
         assert "eu_compliance" in result.type_metrics
         assert "constitutional" in result.type_metrics
+
+
+class TestArticleMatchGating:
+    """DH-24: _matches()'s article-number comparison was dead code — the
+    old `if gold.article_id != finding.irac.issue.split(" ")[0]: pass`
+    computed a boolean and discarded it either way (and even that comparison
+    was never meaningful: split(" ")[0] on real issue text shaped
+    "Άρθρο {id}: ..." returns the word "Άρθρο", never a number) — so a
+    finding was matched to a gold label purely on 3-keyword description
+    overlap, regardless of which article either one was actually about."""
+
+    def test_different_articles_no_longer_match_on_keywords_alone(self):
+        """Proof-of-defect: a finding for a DIFFERENT article than the gold
+        label, sharing >=3 description keywords, must not match."""
+        gs = GoldSet()
+        gs.add_label(
+            "bill-x",
+            GoldLabel(
+                article_id="1",
+                finding_type=FindingType.CONSTITUTIONAL,
+                description="the delegation exceeds constitutional limits here",
+                severity=Severity.HIGH,
+            ),
+        )
+        finding = make_finding(
+            FindingType.CONSTITUTIONAL,
+            issue_text="Άρθρο 50: the delegation exceeds constitutional limits elsewhere",
+            article_id="50",
+        )
+        scorer = EvalScorer(gs)
+        result = scorer.score("bill-x", [finding])
+        assert result.matched == 0
+        assert len(result.spurious) == 1
+
+    def test_same_article_via_article_id_field_still_matches(self):
+        """No-regression / positive case: same article (via the reliable
+        article_id field, not text-regex) plus keyword overlap matches."""
+        gs = GoldSet()
+        gs.add_label(
+            "bill-x",
+            GoldLabel(
+                article_id="7",
+                finding_type=FindingType.CONSTITUTIONAL,
+                description="the delegation exceeds constitutional limits here",
+                severity=Severity.HIGH,
+            ),
+        )
+        finding = make_finding(
+            FindingType.CONSTITUTIONAL,
+            issue_text="the delegation exceeds constitutional limits here too",
+            article_id="7",
+        )
+        scorer = EvalScorer(gs)
+        result = scorer.score("bill-x", [finding])
+        assert result.matched == 1
+
+    def test_unattributable_finding_falls_back_to_keyword_only(self):
+        """Boundary: a legacy/unattributable finding (no article_id, no
+        'Άρθρο N' pattern in its issue text) keeps the old keyword-only
+        behavior rather than being unconditionally rejected."""
+        gs = GoldSet()
+        gs.add_label(
+            "bill-x",
+            GoldLabel(
+                article_id="1",
+                finding_type=FindingType.CONSTITUTIONAL,
+                description="the delegation exceeds constitutional limits here",
+                severity=Severity.HIGH,
+            ),
+        )
+        finding = make_finding(
+            FindingType.CONSTITUTIONAL,
+            issue_text="the delegation exceeds constitutional limits regardless",
+            # article_id defaults to "" and issue_text has no "Άρθρο N"
+        )
+        scorer = EvalScorer(gs)
+        result = scorer.score("bill-x", [finding])
+        assert result.matched == 1

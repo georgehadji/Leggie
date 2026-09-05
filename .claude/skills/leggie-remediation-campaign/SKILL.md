@@ -50,7 +50,7 @@ git log --oneline -3        # EXPECT: HEAD at/after 5a20faa (PR #7 merge, 2026-0
 python -m pytest tests/ -q  # EXPECT: 531 passed (measured 2026-07-15)
 mypy leggie/ --ignore-missing-imports   # EXPECT: clean
 ruff check leggie/ tests/   # EXPECT: clean
-lint-imports                # EXPECT: contract kept
+lint-imports --debug --verbose  # EXPECT: contract kept (bare/--debug-only crashes — see leggie-change-control ARCH-02)
 ```
 
 **Gate:** all green → Phase 2 (Phase 1 mapping below is now historical

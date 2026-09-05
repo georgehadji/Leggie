@@ -7,6 +7,7 @@ from leggie.application.agents.skeptic import (
     FactualGate,
     LLMAdversarialGate,
     NumericGate,
+    SkepticGate,
     SkepticVerdict,
 )
 from leggie.application.ports.llm import LLMPort, LLMResponse
@@ -181,3 +182,68 @@ class TestLLMAdversarialGate:
         f = make_finding()
         v = await gate.examine(f)
         assert v.verdict == "neutral"
+
+
+class CrashingGate(SkepticGate):
+    """A gate that always raises — used to prove per-gate isolation.
+
+    Unlike LLMAdversarialGate, this gate does NOT guard itself; it exercises
+    CalibratedSkeptic's OWN isolation around each gate in the chain, via the
+    real `gates=` constructor parameter (a supported production interface,
+    not a mocked-away internal).
+    """
+
+    async def examine(self, finding: Finding) -> SkepticVerdict:
+        raise RuntimeError("gate exploded")
+
+
+class TestGateIsolation:
+    """One gate's own crash must degrade to neutral for that gate only —
+    never discard the verdicts already collected from earlier gates, and
+    never skip the gates still to run. Before the fix, `examine()`'s list
+    comprehension aborted the whole chain on the first gate exception."""
+
+    @pytest.mark.asyncio
+    async def test_crashing_gate_does_not_discard_other_gates_verdicts(self):
+        skeptic = CalibratedSkeptic(
+            gates=[NumericGate(), CrashingGate(), FactualGate()]
+        )
+        f = make_finding(rule="Το Άρθρο 43 του Συντάγματος ορίζει")
+        verdicts = await skeptic.examine(f)
+        assert len(verdicts) == 3
+        assert verdicts[0].gate == "numeric"
+        assert verdicts[1].gate == "unknown"
+        assert verdicts[1].verdict == "neutral"
+        assert verdicts[2].gate == "factual"
+        assert verdicts[2].verdict == "supports"
+
+    @pytest.mark.asyncio
+    async def test_crash_in_first_gate_still_runs_later_gates(self):
+        """Boundary: the crash is in gate position 0."""
+        skeptic = CalibratedSkeptic(gates=[CrashingGate(), NumericGate()])
+        f = make_finding()
+        verdicts = await skeptic.examine(f)
+        assert len(verdicts) == 2
+        assert verdicts[1].gate == "numeric"
+
+    @pytest.mark.asyncio
+    async def test_crash_in_last_gate_preserves_earlier_verdicts(self):
+        """Boundary: the crash is in the last gate (the adversarial gate's position)."""
+        skeptic = CalibratedSkeptic(gates=[NumericGate(), FactualGate(), CrashingGate()])
+        f = make_finding(rule="Το Άρθρο 43 του Συντάγματος ορίζει")
+        verdicts = await skeptic.examine(f)
+        assert len(verdicts) == 3
+        assert verdicts[0].gate == "numeric"
+        assert verdicts[1].gate == "factual"
+        assert verdicts[1].verdict == "supports"
+
+    @pytest.mark.asyncio
+    async def test_review_survives_a_crashing_gate_without_wrongly_refuting(self):
+        """No-regression at the review() level: a crashing gate degrades to
+        neutral rather than masquerading as a refutation, so the finding
+        still survives review()'s own outer safety net."""
+        skeptic = CalibratedSkeptic(gates=[NumericGate(), CrashingGate()])
+        f = make_finding()
+        survivors, verdicts = await skeptic.review([f])
+        assert len(survivors) == 1
+        assert len(verdicts) == 2

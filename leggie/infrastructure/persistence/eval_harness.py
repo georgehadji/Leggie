@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from leggie.application.services.cove_verifier import article_number_of
 from leggie.domain.models import Finding, FindingType, Severity
 
 
@@ -230,9 +231,18 @@ class EvalScorer:
         """
         if gold.finding_type != finding.finding_type:
             return False
-        if gold.article_id != finding.irac.issue.split(" ")[0]:  # rough article match
-            # Try looser: finding IRAC content mentions the article
-            pass
+        # article_number_of() is the reliable extractor used everywhere else
+        # in this codebase (Finding.article_id, falling back to a regex over
+        # irac.issue) — the naive `.split(" ")[0]` this replaced never
+        # matched real issue text (shaped "Άρθρο {id}: ...", so token [0] was
+        # the word "Άρθρο", never a number) and its result was discarded
+        # (`pass`) either way, so gold labels could match findings from
+        # unrelated articles as long as descriptions shared 3 keywords. Only
+        # enforced when an article number is actually determinable, so
+        # legacy/unattributable findings keep the old keyword-only fallback.
+        found_article = article_number_of(finding)
+        if found_article and gold.article_id != found_article:
+            return False
         # Simple keyword overlap in description
         gold_keywords = set(gold.description.lower().split())
         finding_keywords = set(finding.irac.issue.lower().split())
