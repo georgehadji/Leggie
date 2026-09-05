@@ -76,7 +76,7 @@ class TestBillOverviewGenerator:
         assert overview.summary == "ΠΕΡΙΛΗΨΗ"
         assert overview.article_ids() == ["1", "2"]
         assert overview.articles[0].purpose == "ΣΚΟΠΟΣ"
-        assert overview.articles[0].key_provisions == ["διάταξη"]
+        assert overview.articles[0].key_provisions == ("διάταξη",)  # DH-34: tuple, was list
         assert overview.articles[0].practical_consequences == "ΣΥΝΕΠΕΙΕΣ"
         # 1 bill summary call + 2 article calls
         assert llm.calls == 3

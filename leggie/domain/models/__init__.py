@@ -6,12 +6,14 @@ No I/O, no outward imports.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic.functional_validators import AfterValidator
 
 from leggie.domain.models.parse_integrity import (
     ParseIntegrityReport as ParseIntegrityReport,
@@ -22,6 +24,20 @@ from leggie.domain.models.parse_integrity import (
 from leggie.domain.models.parse_integrity import (
     RejectionReason as RejectionReason,
 )
+
+# DH-34: ``frozen=True`` blocks attribute REASSIGNMENT only — a list-valued
+# field stayed the same fully mutable list, so ``finding.evidence.append(...)``
+# succeeded silently on an instance the architecture calls immutable, and
+# ``model_copy(update=...)`` (shallow at all four production call sites) handed
+# the *same* list object to both the old and the new version, letting a
+# mutation of the revision corrupt its own parent.
+#
+# ``Sequence`` rather than ``tuple[...]`` on purpose: lists are still accepted
+# at every existing construction site (~56 of them, untouched), while mypy sees
+# a read-only Sequence with no ``.append``, so the invariant is enforced
+# statically as well as at runtime. Precedent: parse_integrity.py already types
+# its collection fields immutably.
+type Frozen[T] = Annotated[Sequence[T], AfterValidator(tuple)]
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
@@ -218,7 +234,7 @@ class Article(BaseModel):
 
     id: str = Field(description="Article number (Άρθρο N)")
     title: str = Field(default="")
-    paragraphs: list[Paragraph] = Field(default_factory=list)
+    paragraphs: Frozen[Paragraph] = Field(default_factory=tuple)
     raw_text: str = Field(description="Original text of the article")
 
     def paragraph_by_number(self, number: str) -> Paragraph | None:
@@ -235,7 +251,7 @@ class Paragraph(BaseModel):
 
     number: str
     text: str
-    subparagraphs: list[SubParagraph] = Field(default_factory=list)
+    subparagraphs: Frozen[SubParagraph] = Field(default_factory=tuple)
 
 
 class SubParagraph(BaseModel):
@@ -255,7 +271,7 @@ class Document(BaseModel):
     title: str
     document_id: str = Field(default_factory=lambda: str(uuid4()))
     source_format: str = Field(description="pdf, docx, html, txt")
-    articles: list[Article] = Field(default_factory=list)
+    articles: Frozen[Article] = Field(default_factory=tuple)
     preamble: str = Field(default="")
     raw_text: str = Field(default="")
 
@@ -272,8 +288,8 @@ class ArticleOverview(BaseModel):
     article_id: str
     title: str = Field(default="")
     purpose: str = Field(default="", description="What this article is trying to achieve")
-    key_provisions: list[str] = Field(
-        default_factory=list, description="The most important rules/provisions in this article"
+    key_provisions: Frozen[str] = Field(
+        default_factory=tuple, description="The most important rules/provisions in this article"
     )
     practical_consequences: str = Field(
         default="", description="Real-world practical effects of this article"
@@ -291,7 +307,7 @@ class BillOverview(BaseModel):
 
     intro: str = Field(default="")
     summary: str = Field(default="")
-    articles: list[ArticleOverview] = Field(default_factory=list)
+    articles: Frozen[ArticleOverview] = Field(default_factory=tuple)
 
     def article_ids(self) -> list[str]:
         return [a.article_id for a in self.articles]
@@ -316,8 +332,8 @@ class Finding(BaseModel):
     )
     severity: Severity = Field(default=Severity.MEDIUM)
     confidence: Confidence = Field(description="Calibrated confidence score")
-    evidence: list[Evidence] = Field(default_factory=list)
-    counter_evidence: list[Evidence] = Field(default_factory=list)
+    evidence: Frozen[Evidence] = Field(default_factory=tuple)
+    counter_evidence: Frozen[Evidence] = Field(default_factory=tuple)
 
     # Provenance
     lens: str = Field(description="Which lens produced this finding")
@@ -345,7 +361,7 @@ class Plan(BaseModel):
 
     id: UUID = Field(default_factory=uuid4)
     document_id: str
-    lens_tasks: list[LensTask] = Field(default_factory=list)
+    lens_tasks: Frozen[LensTask] = Field(default_factory=tuple)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -362,7 +378,14 @@ class LensTask(BaseModel):
 class Event(BaseModel):
     """An immutable event in the event-sourced spine."""
 
-    model_config = {"frozen": True, "use_enum_values": True}
+    # DH-35: no ``use_enum_values`` — it flattened event_type to its plain
+    # ``.value`` right after validation, so the field's declared EventType
+    # annotation was one Python itself did not honour: isinstance() was False
+    # and ``.value`` raised AttributeError. Every consumer compares with ==,
+    # ``in``, ``str()`` or a dict key, all of which a StrEnum satisfies
+    # identically, and both model_dump(mode="json") and model_dump_json()
+    # are byte-for-byte unchanged — so nothing observable depended on it.
+    model_config = {"frozen": True}
 
     id: UUID = Field(default_factory=uuid4)
     event_type: EventType

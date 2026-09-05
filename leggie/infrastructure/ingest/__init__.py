@@ -1,12 +1,14 @@
 """Ingest module — bytes → clean text per format (Factory pattern).
 
 Supports PDF, DOCX, HTML, and plain text formats.
-All ingestors offload blocking I/O/parsing to ``asyncio.to_thread`` (PROD-16b).
+All ingestors offload blocking I/O/parsing off the event loop (PROD-16b) via
+``run_off_loop``, which — unlike ``asyncio.to_thread`` — does not let an
+abandoned extraction hold the process open past BoundedIngestor's timeout
+(DH-10).
 """
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 from leggie.domain.models import Document as Document
@@ -15,6 +17,7 @@ from leggie.infrastructure.ingest.base import (
     Ingestor,
     InputNotFoundError,
     UnsupportedFormatError,
+    run_off_loop,
 )
 from leggie.infrastructure.ingest.bounded import BoundedIngestor
 
@@ -70,7 +73,7 @@ class PDFIngestor(Ingestor):
                         text_parts.append(text)
             return "\n\n".join(text_parts)
 
-        return await asyncio.to_thread(_extract)
+        return await run_off_loop(_extract)
 
 
 class DOCXIngestor(Ingestor):
@@ -107,7 +110,7 @@ class DOCXIngestor(Ingestor):
             paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
             return "\n\n".join(paragraphs)
 
-        return await asyncio.to_thread(_extract)
+        return await run_off_loop(_extract)
 
 
 class HTMLIngestor(Ingestor):
@@ -136,7 +139,7 @@ class HTMLIngestor(Ingestor):
                 tag.decompose()
             return soup.get_text(separator="\n", strip=True)
 
-        return await asyncio.to_thread(_extract)
+        return await run_off_loop(_extract)
 
 
 class TextIngestor(Ingestor):
@@ -150,7 +153,7 @@ class TextIngestor(Ingestor):
         def _read() -> str:
             return path.read_text(encoding="utf-8")
 
-        return await asyncio.to_thread(_read)
+        return await run_off_loop(_read)
 
 
 class IngestorFactory:

@@ -38,6 +38,28 @@ _TOC_MARKER: Pattern[str] = re.compile(
     re.UNICODE | re.MULTILINE,
 )
 
+# ── Pre-body sections (DH-9) ───────────────────────────────────────────────
+# The TOC is not the only region that walks "Άρθρο 1, 2, 3…" before the
+# enacting text. A Greek bill routinely carries an ΑΙΤΙΟΛΟΓΙΚΗ ΕΚΘΕΣΗ
+# (explanatory memorandum) and/or an ΑΝΑΛΥΣΗ ΣΥΝΕΠΕΙΩΝ ΡΥΘΜΙΣΗΣ (regulatory
+# impact analysis), each with its own per-article commentary headings. Body
+# detection anchors on the LAST of these markers, so every pre-body run is
+# skipped rather than just the first — otherwise the rationale's own restart
+# to "Άρθρο 1" is mistaken for the body and the real body then reappears as
+# duplicate IDs.
+#
+# Same strictness as _TOC_MARKER (the marker must be the whole line): this
+# heuristic is the site of the F0 phantom-articles incident, and toc.py's own
+# rule is "never excise on a guess".
+_PRE_BODY_MARKER: Pattern[str] = re.compile(
+    r"^[ \t]*(?:"
+    r"ΠΙΝΑΚΑΣ\s+ΠΕΡΙΕΧΟΜΕΝΩΝ|ΠΕΡΙΕΧΟΜΕΝΑ|"
+    r"ΑΙΤΙΟΛΟΓΙΚΗ\s+ΕΚΘΕΣΗ|"
+    r"ΑΝΑΛΥΣΗ\s+ΣΥΝΕΠΕΙΩΝ\s+ΡΥΘΜΙΣΗΣ"
+    r")[ \t]*$",
+    re.UNICODE | re.MULTILINE,
+)
+
 
 # ── Article heading pattern (FIX_PLAN D1.1, D1.2) ──────────────────────────
 # Line-anchored: ^\s*Άρθρο\s+ at start of line (re.MULTILINE)

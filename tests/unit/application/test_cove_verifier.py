@@ -309,6 +309,46 @@ class TestCoVeVerifier:
         assert result.dropped is False  # unverifiable, not disproven — LLM decides
 
     @pytest.mark.asyncio
+    async def test_citation_in_a_scheme_the_index_never_covered_is_not_dropped(self):
+        """DH-36: the packaged index holds 3 ΦΕΚ, 4 CELEX and *zero* ECLI/URL
+        identifiers, but resolve() used to report checked=True for every
+        scheme merely because the index was non-empty — so a real, valid ECLI
+        arrived here as checked=True/resolved=False and this gate hard-dropped
+        the finding. An index that never covered the scheme cannot disprove
+        anything in it; the LLM cross-check decides instead."""
+        from leggie.infrastructure.citation import GreekCitationParser
+
+        parser = GreekCitationParser(
+            resolution_index={"ΦΕΚ Α 1/2020"},
+            covered_schemes={CitationScheme.FEK},  # as container.py wires it
+        )
+        llm = FakeLLM(
+            {
+                "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι;"]),
+                "CoVeAnswerResponse": CoVeAnswerResponse(answer="ok", supported_by_source=True),
+                "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                    consistency="consistent", reason="r", keep=True
+                ),
+            }
+        )
+        verifier = CoVeVerifier(llm=llm, citation_parser=parser)
+        finding = make_finding()
+        finding = finding.model_copy(
+            update={
+                "irac": IRAC(
+                    issue=finding.irac.issue,
+                    rule="Βλ. ECLI:EU:C:2014:317",
+                    application=finding.irac.application,
+                    conclusion=finding.irac.conclusion,
+                )
+            }
+        )
+        result = await verifier.verify(finding, source_text="πηγή")
+
+        assert result.dropped is False
+        assert llm.calls  # reached the LLM stage instead of short-circuiting
+
+    @pytest.mark.asyncio
     async def test_citation_parser_exception_fails_open_not_dropped(self):
         """DH-15: _check_citations sat OUTSIDE _verify_llm's own try/except,
         so a citation-parser exception (a port is a plain ABC with no

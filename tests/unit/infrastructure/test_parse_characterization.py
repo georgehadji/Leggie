@@ -182,30 +182,27 @@ class TestMonotonicGuard:
 
 
 class TestExplanatoryMemorandumDoubleRestart:
-    """A bill with a ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ *and* a per-article rationale
-    section (ΑΙΤΙΟΛΟΓΙΚΗ ΕΚΘΕΣΗ walking through "Άρθρο 1", "Άρθρο 2", ...
-    before the enacting body) is mis-parsed: ``find_toc_span`` excises only
-    the TOC (marker to its own first ascending-run break), so the break it
-    finds lands on the rationale section, not the real body. The rationale
-    commentary is then parsed as if it were the real articles, and the real
-    body reappears afterwards as duplicates of the same IDs.
+    """DH-9, fixed. A bill with a ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ *and* a per-article
+    rationale section (ΑΙΤΙΟΛΟΓΙΚΗ ΕΚΘΕΣΗ walking through "Άρθρο 1",
+    "Άρθρο 2", ... before the enacting body) used to be mis-parsed:
+    ``find_toc_span`` excised only the first pre-body run, so the break it
+    found landed inside the rationale, the commentary parsed as if it were
+    the real articles, and the real body reappeared afterwards as duplicates
+    of the same IDs.
 
-    Not reproducible against this project's one real-bill fixture (which has
-    no such rationale section — TOC then body only, see
-    oe_sxn_ypdik.txt), so this documents a proven-by-construction gap, not a
-    measured production failure. It is bounded today by the parse-integrity
-    gate (``report.is_clean`` correctly goes False on the duplicate IDs;
-    ``bill_analysis_flow._do_parse`` aborts by default rather than
-    silently analysing the wrong text) — see
-    test_parse.py::TestParseIntegrity for the safety-net regression test.
+    Body detection now anchors on the LAST pre-body marker
+    (``_PRE_BODY_MARKER``), falling back to earlier markers when a later one
+    has no ascending run of its own — see
+    ``test_prose_only_rationale_falls_back_to_the_toc_marker``, which is the
+    F0-regression guard on this change: anchoring blindly on the last marker
+    would abandon the TOC excision and hand every TOC line back as a phantom
+    article.
 
-    [REQUIRES HUMAN REVIEW]: the correct fix generalizes body-start
-    detection to handle more than one pre-body ascending run. This exact
-    heuristic (``infrastructure/parse/toc.py``) is the site of the F0
-    phantom-articles incident (leggie-failure-archaeology #2) and is
-    deliberately not touched here without a dedicated plan doc and a full
-    characterization-test re-run against the reference bill, per
-    leggie-change-control §3 non-negotiable #8.
+    Still not fixed, deliberately: a rationale walkthrough carrying *no*
+    marker line at all. Nothing distinguishes it from the body without
+    guessing, and toc.py's rule is "never excise on a guess" — the
+    parse-integrity gate already refuses such a document
+    (test_parse.py::TestParseIntegrity).
     """
 
     RATIONALE_BILL = (
@@ -235,9 +232,54 @@ class TestExplanatoryMemorandumDoubleRestart:
         "1. Το παρόν εφαρμόζεται σε όλους τους φορείς του δημοσίου τομέα.\n"
     )
 
-    @pytest.mark.xfail(strict=True, reason="R2 defect hunt: double pre-body restart, unfixed")
     def test_rationale_section_does_not_duplicate_articles(self, parser):
-        """Target behaviour: exactly 3 distinct articles, no duplicates."""
+        """Proof-of-defect: exactly 3 distinct articles, no duplicates.
+        Before the fix this produced ['1','2','3','1','2','3']."""
         doc = parser.parse(self.RATIONALE_BILL)
         ids = [a.id for a in doc.articles]
         assert ids == ["1", "2", "3"], f"Expected 3 real articles, got {ids}"
+
+    def test_rationale_body_is_the_enacting_text_not_the_commentary(self, parser):
+        """The right three articles, not merely three of them: the body's
+        numbered provisions must survive, and the memorandum's commentary
+        prose must not be what got parsed."""
+        doc = parser.parse(self.RATIONALE_BILL)
+        assert [p.number for p in doc.articles[0].paragraphs] == ["1"]
+        assert "ψηφιακή μετάβαση" in doc.articles[0].raw_text
+        assert "Με το άρθρο αυτό" not in doc.articles[0].raw_text
+
+    def test_prose_only_rationale_falls_back_to_the_toc_marker(self, parser):
+        """F0-regression guard on this change. A memorandum with no
+        per-article headings of its own yields no ascending run, so anchoring
+        on it alone would find no break at all — abandoning the TOC excision
+        and turning every TOC line back into a phantom article. Detection
+        must fall back to the earlier marker."""
+        bill = (
+            "ΣΧΕΔΙΟ ΝΟΜΟΥ\n"
+            "ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ\n"
+            "Άρθρο 1 Σκοπός\n"
+            "Άρθρο 2 Ορισμοί\n"
+            "\n"
+            "ΑΙΤΙΟΛΟΓΙΚΗ ΕΚΘΕΣΗ\n"
+            "Γενική περιγραφή χωρίς επικεφαλίδες άρθρων εδώ.\n"
+            "\n"
+            "Άρθρο 1 Σκοπός\n"
+            "1. Σκοπός του παρόντος είναι η ψηφιακή μετάβαση.\n"
+            "\n"
+            "Άρθρο 2 Ορισμοί\n"
+            "1. Οι ορισμοί είναι οι εξής για την εφαρμογή του παρόντος.\n"
+        )
+        doc, report = parser.parse_with_integrity(bill)
+        assert [a.id for a in doc.articles] == ["1", "2"]
+        assert report.is_clean is True
+
+    def test_unmarked_rationale_is_still_caught_by_the_integrity_gate(self, parser):
+        """Boundary, deliberately unfixed: with no marker line there is
+        nothing to anchor on, so the duplicate IDs stand — and the
+        parse-integrity gate refuses the document rather than analysing it."""
+        bill = self.RATIONALE_BILL.replace("ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ\n", "").replace(
+            "ΑΙΤΙΟΛΟΓΙΚΗ ΕΚΘΕΣΗ\n", ""
+        )
+        _doc, report = parser.parse_with_integrity(bill)
+        assert report.duplicate_ids
+        assert report.is_clean is False

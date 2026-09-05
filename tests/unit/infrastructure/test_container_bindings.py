@@ -92,11 +92,16 @@ class TestContainerBindings:
         from leggie.infrastructure.resources import ResourceLocator
 
         index_path = ResourceLocator().package_resource("leggie.data", "citation_index.json")
-        known_identifier = json.loads(index_path.read_text(encoding="utf-8"))["identifiers"][0]
+        identifiers = json.loads(index_path.read_text(encoding="utf-8"))["identifiers"]
+        # DH-36: the scheme matters now — the index is only consulted for the
+        # schemes its own ``categories`` declare. This assertion used to pass
+        # CitationScheme.UNKNOWN with identifiers[0] ("Σύνταγμα Άρθρο 1"),
+        # which resolved True purely because coverage was not checked at all.
+        known_identifier = next(i for i in identifiers if i.startswith("ΦΕΚ"))
 
         parser = container.get(CitationParserPort)
         citation = Citation(
-            scheme=CitationScheme.UNKNOWN,
+            scheme=CitationScheme.FEK,
             identifier=known_identifier,
             original_text=known_identifier,
         )
@@ -354,7 +359,13 @@ class TestCitationIndexLoadRobustness:
         from leggie.infrastructure import container as container_module
 
         good_index = tmp_path / "citation_index.json"
-        good_index.write_text(json.dumps({"identifiers": ["N.4622/2019"]}), encoding="utf-8")
+        # DH-36: a well-formed index declares which schemes it covers. Without
+        # ``categories`` the container can no longer tell, so it fails open —
+        # covered by test_index_without_categories_verifies_nothing below.
+        good_index.write_text(
+            json.dumps({"identifiers": ["ΦΕΚ Α 137/2023"], "categories": {"fek": 1}}),
+            encoding="utf-8",
+        )
         self._patch_index_path(monkeypatch, good_index)
 
         warnings: list[str] = []
@@ -368,12 +379,88 @@ class TestCitationIndexLoadRobustness:
         c.configure_defaults()
 
         parser = c.get(CitationParserPort)
-        assert parser._resolution_index == {"N.4622/2019"}
+        assert parser._resolution_index == {"ΦΕΚ Α 137/2023"}
         citation = Citation(
-            scheme=CitationScheme.UNKNOWN,
-            identifier="N.4622/2019",
-            original_text="N.4622/2019",
+            scheme=CitationScheme.FEK,
+            identifier="ΦΕΚ Α 137/2023",
+            original_text="ΦΕΚ Α 137/2023",
         )
         resolved = await parser.resolve(citation)
         assert resolved.resolved is True
         assert warnings == []
+
+    @pytest.mark.asyncio
+    async def test_covered_schemes_come_from_the_index_categories(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """DH-36 proof: the container must derive scheme coverage from the
+        index file's own ``categories``, so a scheme with zero declared
+        entries is never 'checked' and can never be read as disproven.
+
+        ``constitution``/``charter`` are deliberately not schemes: their
+        identifiers are shaped "Σύνταγμα Άρθρο N", which parse() never emits.
+        """
+        import json
+
+        from leggie.application.ports.citation_parser import CitationParserPort
+        from leggie.domain.models import CitationScheme
+        from leggie.infrastructure import container as container_module
+
+        index = tmp_path / "citation_index.json"
+        index.write_text(
+            json.dumps(
+                {
+                    "identifiers": ["ΦΕΚ Α 137/2023", "32018L1972"],
+                    # The real packaged shape: no ecli, no url.
+                    "categories": {"constitution": 120, "fek": 3, "celex": 4, "charter": 54},
+                }
+            ),
+            encoding="utf-8",
+        )
+        self._patch_index_path(monkeypatch, index)
+
+        c = container_module.Container()
+        c.configure_defaults()
+
+        parser = c.get(CitationParserPort)
+        assert parser._covered_schemes == {CitationScheme.FEK, CitationScheme.CELEX}
+
+    @pytest.mark.asyncio
+    async def test_index_without_categories_verifies_nothing(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """DH-36 boundary: an index that does not declare its coverage buys
+        nothing. Fail open (everything unverified) and say so — never fail
+        closed on a guess, which is what turned valid citations into
+        'disproven' ones in the first place."""
+        import json
+
+        from leggie.application.ports.citation_parser import CitationParserPort
+        from leggie.domain.models import Citation, CitationScheme
+        from leggie.infrastructure import container as container_module
+
+        index = tmp_path / "citation_index.json"
+        index.write_text(json.dumps({"identifiers": ["ΦΕΚ Α 137/2023"]}), encoding="utf-8")
+        self._patch_index_path(monkeypatch, index)
+
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            container_module.logger,
+            "warning",
+            lambda msg, *a: warnings.append(msg % a if a else msg),
+        )
+
+        c = container_module.Container()
+        c.configure_defaults()
+
+        parser = c.get(CitationParserPort)
+        assert parser._covered_schemes == set()
+        resolved = await parser.resolve(
+            Citation(
+                scheme=CitationScheme.FEK,
+                identifier="ΦΕΚ Α 137/2023",
+                original_text="ΦΕΚ Α 137/2023",
+            )
+        )
+        assert resolved.checked is False
+        assert any("no_categories" in w for w in warnings), warnings

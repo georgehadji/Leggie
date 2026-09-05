@@ -270,7 +270,7 @@ class TestUnnumberedProse:
         """
         text = "Άρθρο 1 Σκοπός\n\nΆρθρο 2 Αντικείμενο\n1. Κείμενο της διάταξης.\n"
         doc = parser.parse(text)
-        assert doc.articles[0].paragraphs == []
+        assert doc.articles[0].paragraphs == ()  # DH-34: collection fields are tuples
         assert [p.number for p in doc.articles[1].paragraphs] == ["1"]
 
 
@@ -406,17 +406,19 @@ class TestParseIntegrity:
         with pytest.raises(ValidationError):
             rc.number = "999"
 
-    def test_toc_plus_rationale_section_is_flagged_not_clean(self, parser):
-        """Safety net: a bill with BOTH a ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ and a
-        per-article ΑΙΤΙΟΛΟΓΙΚΗ ΕΚΘΕΣΗ walkthrough before the body currently
-        mis-parses into duplicate article IDs (see
-        test_parse_characterization.py::TestExplanatoryMemorandumDoubleRestart
-        for the mechanism and the target fix, tracked as
-        [REQUIRES HUMAN REVIEW] in the R2 defect hunt). This test locks in
-        the mitigation that keeps that mis-parse from silently reaching the
-        LLM pipeline: report.is_clean must go False so
-        bill_analysis_flow._do_parse aborts by default instead of paying to
-        analyse duplicated/wrong text.
+    def test_toc_plus_rationale_section_parses_clean(self, parser):
+        """DH-9: a bill with BOTH a ΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ and a per-article
+        ΑΙΤΙΟΛΟΓΙΚΗ ΕΚΘΕΣΗ walkthrough before the body used to mis-parse into
+        4 articles — 2 phantom (the memorandum's commentary) plus 2 real,
+        duplicating IDs '1' and '2'. The safety net held (is_clean went
+        False, so bill_analysis_flow._do_parse aborted by default rather than
+        paying to analyse duplicated text), but the document was unanalysable
+        without --allow-degraded-parse.
+
+        Body detection now anchors on the last pre-body marker, so the real
+        body is found and the parse is clean. Mechanism and the F0-regression
+        guard on that change:
+        test_parse_characterization.py::TestExplanatoryMemorandumDoubleRestart.
         """
         text = (
             "ΣΧΕΔΙΟ ΝΟΜΟΥ\nΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ\n"
@@ -428,6 +430,6 @@ class TestParseIntegrity:
             "Άρθρο 2 Ορισμοί\n1. Οι ορισμοί είναι οι εξής.\n"
         )
         doc, report = parser.parse_with_integrity(text)
-        assert report.is_clean is False
-        assert report.duplicate_ids, "Expected duplicate IDs from the rationale walkthrough"
-        assert len(doc.articles) == 4, "2 phantom (rationale) + 2 real, both id '1' and '2'"
+        assert [a.id for a in doc.articles] == ["1", "2"]
+        assert report.duplicate_ids == ()
+        assert report.is_clean is True

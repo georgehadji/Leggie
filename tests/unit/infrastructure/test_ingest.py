@@ -274,26 +274,27 @@ class TestPDFIngestorPageCap:
 
 
 class TestTimeoutDoesNotActuallyStopWork:
-    """[REQUIRES HUMAN REVIEW] — documented, not fixed.
+    """DH-10. ``BoundedIngestor``'s ``timeout_s`` stops the CALLER from
+    waiting; it does not stop the underlying worker, and it never can — a
+    Python thread has no cooperative or forced-cancellation mechanism, so the
+    OS thread runs the synchronous ingest function to completion regardless.
+    The first test below locks that in: it is a property of threads, not a
+    defect, and no fix short of a different execution model changes it.
 
-    ``BoundedIngestor``'s ``timeout_s`` stops the CALLER from waiting; it
-    does not stop the underlying worker. Every concrete ingestor offloads
-    its blocking work via ``asyncio.to_thread``, which runs on the default
-    ``ThreadPoolExecutor``. ``asyncio.wait_for``'s cancellation on timeout
-    detaches the awaiting coroutine, but a Python thread has no cooperative
-    or forced-cancellation mechanism — the OS thread keeps running the
-    synchronous ingest function to completion in the background regardless.
+    What *was* a defect is what that abandoned worker cost. Under
+    ``asyncio.to_thread`` it ran on the loop's default ``ThreadPoolExecutor``,
+    whose non-daemon threads ``asyncio.Runner`` joins at
+    ``loop.shutdown_default_executor()`` — so the "timeout" freed the caller
+    and then the process sat there waiting out the full duration of the work
+    it had just abandoned (measured: 0.2 s timeout over 3.0 s of work still
+    exited at 3.03 s). PROD-16a's wall-clock cap was a claim the code did not
+    honour. ``run_off_loop`` (ingest/base.py) puts the work on a daemon
+    thread, which shutdown does not join.
 
-    Repeated timeouts (several adversarial/slow uploads in a row) therefore
-    leak permanently-busy workers out of the *shared* default executor,
-    which every other ``asyncio.to_thread`` call in the process also uses —
-    not an ingest-only blast radius. This is exactly the class of harm
-    PROD-16 names ("prevents untrusted documents from exhausting the host"),
-    but the fix is a different execution model (e.g. a
-    ``ProcessPoolExecutor`` whose workers can actually be terminated), which
-    is an architecture decision out of this defect's size budget, not a
-    small patch — documented here rather than papered over with a diff that
-    would not actually stop the work either.
+    Residual, accepted: the abandoned thread still burns CPU until it
+    finishes on its own. Terminating it needs ``ProcessPoolExecutor``, whose
+    per-ingest spawn cost buys nothing for a single-run CLI — see
+    docs/ESCALATED_DEFECTS_PLAN.md §4.
     """
 
     @pytest.mark.asyncio
@@ -325,3 +326,64 @@ class TestTimeoutDoesNotActuallyStopWork:
         assert not finished.is_set(), "expected the thread to still be mid-sleep"
         await asyncio.sleep(0.5)
         assert finished.is_set(), "the 'cancelled' work ran to completion anyway"
+
+    def test_timeout_no_longer_holds_the_process_open(self, tmp_path):
+        """Proof-of-defect for the half that *was* fixable.
+
+        Deliberately a sync test: it drives ``asyncio.run`` itself, because
+        the defect lives in ``asyncio.Runner``'s shutdown, which joins the
+        default executor's non-daemon workers. Before the fix this took as
+        long as the abandoned work (0.6 s); now the timeout governs.
+        """
+        from leggie.infrastructure.ingest.base import Ingestor, run_off_loop
+        from leggie.infrastructure.ingest.bounded import BoundedIngestor
+
+        class SlowIngestor(Ingestor):
+            async def ingest(self, source: Path | str) -> str:
+                return await run_off_loop(lambda: (time.sleep(0.6), "done")[1])
+
+        src = tmp_path / "irrelevant.txt"
+        src.write_text("x", encoding="utf-8")
+
+        async def _drive() -> None:
+            with pytest.raises(IngestError, match="timed out"):
+                await BoundedIngestor(SlowIngestor(), timeout_s=0.05).ingest(src)
+
+        start = time.perf_counter()
+        asyncio.run(_drive())
+        elapsed = time.perf_counter() - start
+
+        assert elapsed < 0.4, f"process held open for {elapsed:.2f}s by abandoned ingest work"
+
+    @pytest.mark.asyncio
+    async def test_worker_runs_on_a_daemon_thread_off_the_shared_executor(self, tmp_path):
+        """Boundary: the mechanism that makes the above true. A daemon thread
+        is not joined at interpreter/loop shutdown, and being off the default
+        executor means a leaked ingest cannot starve every other
+        ``asyncio.to_thread`` caller in the process either."""
+        from leggie.infrastructure.ingest.base import run_off_loop
+
+        seen: dict[str, object] = {}
+
+        def _work() -> str:
+            current = threading.current_thread()
+            seen["daemon"] = current.daemon
+            seen["name"] = current.name
+            return "ok"
+
+        assert await run_off_loop(_work) == "ok"
+        assert seen["daemon"] is True
+        assert seen["name"] == "leggie-ingest"
+
+    @pytest.mark.asyncio
+    async def test_exception_from_the_worker_still_propagates(self):
+        """No-regression: swapping the offload mechanism must not swallow or
+        reshape failures raised inside the blocking extractor — the four real
+        ingestors raise IngestError/InputNotFoundError from in there."""
+        from leggie.infrastructure.ingest.base import run_off_loop
+
+        def _boom() -> str:
+            raise IngestError("pdfplumber exploded")
+
+        with pytest.raises(IngestError, match="pdfplumber exploded"):
+            await run_off_loop(_boom)

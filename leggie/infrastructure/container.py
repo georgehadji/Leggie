@@ -164,11 +164,16 @@ class Container:
         )
 
         # Citation parser with known-good resolution index (D7)
-        from leggie.infrastructure.citation import GreekCitationParser
+        from leggie.domain.models import CitationScheme
+        from leggie.infrastructure.citation import (
+            INDEX_CATEGORY_SCHEMES,
+            GreekCitationParser,
+        )
         from leggie.infrastructure.resources import ResourceLocator
 
         locator = ResourceLocator()
         resolution_index: set[str] = set()
+        covered_schemes: set[CitationScheme] = set()
         try:
             index_path = locator.package_resource("leggie.data", "citation_index.json")
             if index_path.exists():
@@ -181,6 +186,25 @@ class Container:
                 # branch below, which silently fell back to an empty index.
                 if isinstance(index_data, dict):
                     resolution_index = set(index_data.get("identifiers", []))
+                    # DH-36: the index is authoritative only for the schemes it
+                    # declares entries for. Without that restriction a miss on
+                    # a scheme the file never covered (every ECLI, every URL)
+                    # reached CoVe as "positively disproven" and hard-dropped
+                    # the finding. An index that doesn't declare its coverage
+                    # buys nothing: fail open (everything unverified), never
+                    # fail closed on a guess.
+                    categories = index_data.get("categories")
+                    if isinstance(categories, dict):
+                        covered_schemes = {
+                            scheme
+                            for name, scheme in INDEX_CATEGORY_SCHEMES.items()
+                            if categories.get(name)
+                        }
+                    else:
+                        logger.warning(
+                            "citation_index.no_categories: index declares no scheme "
+                            "coverage; every citation will be reported unverified"
+                        )
                 else:
                     logger.warning(
                         "citation_index.malformed_shape: expected a JSON object, got %s",
@@ -189,9 +213,12 @@ class Container:
         except (OSError, ValueError) as exc:
             logger.warning("citation_index.load_failed: %s", exc)
             resolution_index = set()
+            covered_schemes = set()
         self.register(
             CitationParserPort,
-            lambda: GreekCitationParser(resolution_index=resolution_index),
+            lambda: GreekCitationParser(
+                resolution_index=resolution_index, covered_schemes=covered_schemes
+            ),
         )
 
         # State store — durable (SQLite) when persistence URL is configured,
