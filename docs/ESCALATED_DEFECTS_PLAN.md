@@ -446,9 +446,41 @@ is the correct outcome); `Event.data` remains a mutable dict (§6); the
 abandoned ingest thread still burns CPU until it finishes (§4); DH-2's
 unpinned `pytest-randomly` seed.
 
-**Not yet discharged:** Phase 1 is a class-A change that alters which findings
-survive CoVe, so per leggie-change-control §2 it needs live-smoke evidence
-before it is called done (DoD item 8). No live run has been made.
+## 13. Live-smoke attempt (2026-09-07)
+
+Two single-lens runs against the reference bill, real OpenRouter spend,
+evidence under `docs/evidence/dh36/`:
+
+| Lens | Cost | Citations exercised |
+|---|---|---|
+| `constitutional` | $0.0165 | 0 — surviving finding cites the Constitution (`Άρθρο 77 παρ. 2 του Συντάγματος`), a reference shape the parser never extracts at all |
+| `eu_gdpr` | $0.567 | 0 — surviving finding cites GDPR by name (`Άρθρο 35 ΓΚΠΔ`), not the literal string "CELEX" the parser matches on |
+
+Both runs completed cleanly end-to-end (ingest → lenses → skeptic → CoVe →
+reports), proving the fix introduces no regression and costs nothing
+meaningful. Neither exercised DH-36's actual mechanism.
+
+**Root cause, confirmed offline (no further spend):** ran
+`GreekCitationParser().parse()` directly against the full reference-bill
+source text. Result: **158 citations, 100% scheme `UNKNOWN`** (DH-28's
+law-number pattern, e.g. `Ν. 5028/2023`) — **zero** ΦΕΚ, CELEX, ECLI, or URL
+citations anywhere in the document. This is not a lens-selection problem:
+the source material this project's own reference bill provides contains no
+citation of any scheme DH-36's fix touches, so no lens choice against *this*
+bill could ever exercise it. `UNKNOWN` is deliberately outside
+`INDEX_CATEGORY_SCHEMES` (§2), so it is unaffected by DH-36 either way —
+which also means the 158 real law-references now surfaced by DH-28 were
+never at risk from DH-36's original bug in the first place.
+
+**Not discharged, and not discharge-able against this fixture.** DH-36 needs
+a document that actually cites a ΦΕΚ, CELEX identifier, ECLI, or URL to prove
+the fix live. The project's own reference bill does not contain one. Options,
+not executed: (a) accept the hermetic probe (§1a) — which used real
+`Citation` objects of every affected scheme against the real packaged index —
+as the authoritative evidence, since a live run adds nothing a bill without
+these citations can prove; (b) source or construct a bill/paragraph known to
+cite one of the affected schemes and run a targeted single-lens smoke against
+it. Total spend this session on live validation: $0.58, well under the $5 cap.
 
 ## 12. Provenance
 
