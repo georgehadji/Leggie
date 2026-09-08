@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import TypeVar
 
@@ -89,9 +90,39 @@ class CoVeResult:
     reason: str = ""
 
 
+# Typographic variants that mean the same character but do not compare equal.
+# A model asked to quote verbatim retypes the sentence rather than copying bytes,
+# so it renders the source's ’ as ', its – as -, and its « » as " ". The
+# reference bill alone carries 89 U+2019 and 11 U+2013 (measured 2026-09-08), so
+# a byte-strict gate calls real quotes fabricated (DH-42).
+_PUNCT_FOLD = {
+    **dict.fromkeys(map(ord, "‐‑‒–—―−"), "-"),
+    **dict.fromkeys(map(ord, "‘’‚‛′´΄"), "'"),
+    **dict.fromkeys(map(ord, "“”„″«»"), '"'),
+    # Zero-width and soft hyphens survive PDF extraction and are invisible in
+    # both the source and the quote, so they can only ever cause false misses.
+    **dict.fromkeys(map(ord, "­​‌‍﻿"), None),
+}
+
+
 def _normalize(text: str) -> str:
-    """Normalize text for substring matching: strip, lowercase, collapse whitespace."""
-    return re.sub(r"\s+", " ", text.strip().lower())
+    """Normalize text for substring matching.
+
+    NFC, typographic folding, lowercase, final-sigma folding, collapsed
+    whitespace. Shared by ``validate_quote`` and all five lenses' evidence
+    check, so it governs both whether a finding keeps supporting evidence and
+    whether CoVe hard-drops it as fabricated.
+
+    Deliberately does NOT strip accents: in Greek they carry meaning (πότε /
+    ποτέ), and folding them would let a genuinely different sentence match.
+    The gate must stay able to catch a fabricated quote — this only removes
+    ways a *real* quote can fail.
+    """
+    folded = unicodedata.normalize("NFC", text).translate(_PUNCT_FOLD).lower()
+    # Greek final sigma: "ΟΡΟΣ".lower() is "ορος" but the source reads "όρος",
+    # and a model may output either form mid-word.
+    folded = folded.replace("ς", "σ")
+    return re.sub(r"\s+", " ", folded.strip())
 
 
 class CoVeVerifier:
@@ -259,7 +290,16 @@ class CoVeVerifier:
         # F3 gate: a fabricated verbatim quote is an immediate hard fail.
         quote = self._verbatim_quote(finding)
         if source_text and quote and not self.validate_quote(quote, source_text):
-            log.info("cove_quote_fail: finding=%s (quote not in source)", finding.id)
+            # Log the quote itself, not just the id. DH-42 could not be
+            # diagnosed from the 2026-09-08 smoke — 6 of 8 findings died here
+            # and the log recorded only UUIDs, so there was no way to tell a
+            # fabricated quote from a real one the normalizer mishandled.
+            log.info(
+                "cove_quote_fail: finding=%s quote=%r (quote not in source, source_len=%d)",
+                finding.id,
+                quote[:200],
+                len(source_text),
+            )
             return CoVeResult(
                 finding=finding,
                 all_verified=False,

@@ -468,7 +468,7 @@ tests, the floor moves up, never down.
 | 8 | Types, lint, layers | PASS — mypy clean (116 files), `ruff check` clean, `lint-imports` 2/2. `ruff format --check` names 5 files, all pre-existing debt in files this work did not touch (`skeptic.py`, `test_orchestrator.py`, `test_skeptic.py`, `test_openrouter_adapter.py`, `refresh_model_prices.py`) |
 | 9 | No lingering worker after the ingest timing test | PASS |
 | 10 | DH-36 status corrected | PASS — §11a |
-| 11 | Live smoke run or deferral recorded | **RUN — no regression, but DH-37 not exercised; see §11.2** |
+| 11 | Live smoke run or deferral recorded | **RUN — no regression; DH-37 not exercised by that bill, discharged instead by §11.3** |
 
 Regenerated index diff, for the record: `identifier_count` 181 unchanged,
 `categories` unchanged, only the corrected "Constitution" spelling, a new
@@ -520,10 +520,153 @@ What the run *does* establish, and all it establishes:
 
 ---
 
-## 12. Opened, not fixed — DH-42 (yield collapse in the verification chain)
+### 11.3 DH-37 discharged on a real document (2026-09-08)
 
-**Severity:** HIGH · **Status:** OPEN · **Class:** A · **Found:** 2026-09-08,
-by the §11.2 smoke.
+§11.2 left DH-37 live-unproven for one reason: the reference bill's findings
+carry no citations, so `resolve()` never ran. The fix was for a code path no
+available document exercised. Waiting for the reference bill to eventually
+produce a ΦΕΚ citation was never a plan.
+
+`Inputs/DH37_citation_probe.txt` removes the excuse — a small Greek bill whose
+text forces every citation shape `parse()` emits, including the DH-37 case: a
+real, well-formed ΦΕΚ that is simply not one of the three hand-seeded
+identifiers. Measured against the **container-built parser and the packaged
+index**, i.e. the objects the CLI actually uses:
+
+| Citation | Result | Meaning |
+|---|---|---|
+| `ΦΕΚ Α 88/2024` (unseeded) | `checked=False, resolved=False` | **unverified — DH-37 working.** Before the fix: `checked=True, resolved=False`, the pair CoVe hard-drops on |
+| `ΦΕΚ Α 137/2023` (seeded) | `checked=True, resolved=True` | confirming still works |
+| `CELEX 32016R0679` (seeded) | `checked=True, resolved=True` | confirming still works |
+| `Ν. 4624/2019`, `Ν. 4270/2014` | `checked=False` | DH-28 law refs, never disprovable |
+
+`tests/integration/test_dh37_citation_probe.py` pins this, including a
+whole-document sweep asserting **no citation anywhere in a real bill comes back
+disproven** — the assertion that would have caught DH-36's surviving half. No
+LLM, no network, so it runs in CI at zero cost.
+
+**Honest limit:** this proves the citation gate end-to-end on real document text
+through real wiring. It does not prove a *live LLM run* keeps a finding that
+cites an unseeded ΦΕΚ.
+
+### 11.4 The live probe run, and why it still did not discharge DH-37
+
+```
+leggie analyze Inputs/DH37_citation_probe.txt --lenses constitutional
+```
+
+Run 2026-09-08, $0.016, exit 0. Census: 8 `llm.call`, 4 `skeptic_verdict`,
+1 `cascade`. Findings surviving: **0**.
+
+**All 4 findings were refuted by the skeptic, so none reached CoVe and the
+citation gate never ran.** The blocker is no longer the fixture — the probe did
+its job and produced findings carrying ΦΕΚ citations. It is DH-42's skeptic
+half: the first gate in the chain refuses everything, so nothing downstream can
+be validated live at all.
+
+That reframes DH-42 from "yield is disappointing" to **"the verification chain
+cannot currently be exercised end to end"**. On the 91-article bill the skeptic
+refuted 19 of 27 (70%); on this probe, 4 of 4 (100%).
+
+The run did confirm one thing directly. The four `refutes` verdicts carried
+adjustments of **+0.5, +0.5, −0.5, −0.2** — the sign is arbitrary, exactly as
+§12.0's `_bounded_adjustment` fix assumed. That is live evidence for a change
+that had only log-line evidence before.
+
+---
+
+## 12. DH-42 — yield collapse in the verification chain
+
+**Severity:** HIGH · **Status:** CoVe half FIXED, skeptic half OPEN (policy
+decision) · **Class:** A · **Found:** 2026-09-08, by the §11.2 smoke.
+
+### 12.0 Resolution (2026-09-08)
+
+**Mechanism 2 — fabricated quotes — was not fabrication at all.** `_normalize`
+folded only case and whitespace, then demanded an exact substring. A model asked
+to quote verbatim *retypes* the sentence rather than copying bytes, so it renders
+the source's typography its own way. Measured in the reference bill's 143,335
+characters of paragraph text: **89 × `’` (U+2019), 11 × `–` (U+2013), 4,265
+final sigmas** — every one a way for a byte-strict gate to reject a genuine
+quote. Zero-width and soft hyphens survive PDF extraction and are invisible in
+both strings, so they could only ever cause false misses.
+
+`_normalize` now applies NFC, folds typographic punctuation to ASCII, folds
+final sigma, and strips invisibles. It is shared by `validate_quote` **and all
+five lenses' evidence check**, so one fix repairs both the lens verdict
+("supports" vs "quote-not-verified-as-substring") and the CoVe hard-drop.
+
+This does not loosen the gate in the sense §12 fenced: a fabricated sentence
+still fails. `tests/unit/application/test_quote_normalization.py` pins both
+halves — real quotes survive typographic variation, invented ones (wrong
+ministry, wrong paragraph number, transposed article) are still rejected.
+
+**Deliberate limit, recorded not hidden:** an all-caps quote of accented text
+still misses, because Greek uppercase drops diacritics by convention and
+lowercasing cannot restore them. Fixing that means folding accents, which is the
+same knob that would let `πότε` match `ποτέ` in every comparison and cost the
+gate its ability to catch a fabrication differing by one accented word. Not
+worth it for the narrow case. `TestKnownLimitations` states this in the code.
+
+**Observability, the reason this took a whole extra investigation:** the smoke
+logged `cove_quote_fail` with the finding UUID and nothing else, so there was no
+way to tell a fabricated quote from one the normalizer mishandled. It now logs
+the quote itself and the source length.
+
+**Mechanism 1 — skeptic over-refutation — is a POLICY question, not a bug, and
+is deliberately left open.** `review()` hard-drops on a single `refutes` string
+from one adversarial LLM call: no confidence weighting, no severity threshold,
+no second opinion (`skeptic.py`, `_review_one`). That is what removed 19 of 27.
+Changing it is exactly the "raise yield by loosening a gate" this section fences,
+so it needs an explicit decision rather than a quiet edit.
+
+One real bug *was* found and fixed while reading that path: the critic's
+`confidence_adjustment` arrived unbounded and unsigned — the smoke logged
+`verdict=refutes adjustment=0.50`, a *positive* half-point on a refutation.
+A "supports" that lowers confidence, or a "refutes" that raises it, is the model
+contradicting itself, and taking the number at face value lets that
+contradiction move the score. `_bounded_adjustment` now forces the sign to match
+the verdict.
+
+**Scope was narrowed twice during implementation, both times away from my first
+instinct.** The first version zeroed every `neutral` adjustment and capped
+magnitudes at 0.25. Three ordering tests failed and were right to: a gate can
+legitimately return `neutral` while still docking confidence — the
+deterministic gates do exactly that — and capping magnitudes *shrinks
+penalties*, meaning more findings survive. That is the "raise yield by loosening
+a gate" move this section fences, arrived at by accident. The shipped version
+constrains the sign only, leaves `neutral` untouched, and caps nothing.
+
+**Measured 2026-09-08 (§11.4):** the probe run produced 4 findings and the
+skeptic refuted all 4, so CoVe ran zero times and the quote fix could not be
+observed either way. Mechanism 2's fix remains proven only offline.
+
+**This makes mechanism 1 the priority, and raises its severity.** Refute rates
+now measured: 19/27 (70%) on the reference bill, 4/4 (100%) on the probe. A
+first gate that refuses everything means no downstream stage — CoVe, the
+citation gate, rerank — can be exercised live at all. DH-37's live proof is
+blocked behind it, and so is any future verification work.
+
+**The decision this needs, stated plainly.** `review()` drops a finding on a
+single `refutes` string from one adversarial LLM call: no confidence weighting,
+no severity threshold, no second opinion, and the critic's own
+`confidence_adjustment` is discarded on that path. Options, none of which should
+be taken without the numbers:
+
+1. **Require agreement** — two calls, or one call at a lower temperature with a
+   confirmation pass. Doubles critic cost.
+2. **Grade instead of drop** — a refutation subtracts confidence rather than
+   deleting; the finding survives at lower rank and the reader sees the
+   objection. Closest to what CoVe already does with revise-vs-drop.
+3. **Threshold on severity** — only refute-drop findings below a confidence
+   floor, keeping high-confidence findings with the objection attached.
+4. **Leave it** — accept that the chain is tuned to publish almost nothing, and
+   record that as the product's position.
+
+Before choosing, read the 19 refutation reasons from the 2026-09-08 smoke log
+against their source articles. The critic may well be right; "yield is low" is
+not evidence that it is wrong, and the historical pathology ran the other way
+(299 findings, 68% filler). One ablation per run.
 
 **Not caused by DH-37.** DH-37 only ever *removes* drops, and this run had
 zero citation-gate drops to remove — the losses are entirely upstream of the

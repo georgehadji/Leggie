@@ -176,6 +176,33 @@ class LLMAdversarialGate(SkepticGate):
         return self._model or None, 8192
 
 
+def _bounded_adjustment(verdict: SkepticVerdict) -> float:
+    """Keep a verdict's confidence shift pointing the way the verdict argues.
+
+    ``confidence_adjustment`` arrives straight from the critic model, which
+    returns a magnitude with no guaranteed sign: the 2026-09-08 smoke logged
+    ``verdict=refutes adjustment=0.50``, a *positive* half-point on a
+    refutation. A "supports" that lowers confidence, or a "refutes" that raises
+    it, is the model contradicting itself, and taking the number at face value
+    lets that contradiction move the finding's score.
+
+    Scope is deliberately narrow. Only the sign is constrained, and only where
+    the verdict asserts a direction:
+
+    * ``neutral`` is passed through untouched, sign and magnitude. A gate can
+      legitimately decline to take a position while still docking confidence —
+      the deterministic gates do exactly that.
+    * Magnitudes are NOT capped. Clamping them would shrink penalties, i.e.
+      make MORE findings survive, which is the "raise yield by loosening a
+      gate" move DH-42 fences.
+    """
+    if verdict.verdict == "supports":
+        return abs(verdict.confidence_adjustment)
+    if verdict.verdict == "refutes":
+        return -abs(verdict.confidence_adjustment)
+    return verdict.confidence_adjustment
+
+
 class CalibratedSkeptic:
     """Calibrated Skeptic — Chain of Responsibility of typed gates.
 
@@ -245,7 +272,7 @@ class CalibratedSkeptic:
                     refuted = any(v.verdict == "refutes" for v in verdicts)
                     if refuted:
                         return verdicts, None
-                    adjustment = sum(v.confidence_adjustment for v in verdicts)
+                    adjustment = sum(_bounded_adjustment(v) for v in verdicts)
                     if adjustment != 0:
                         new_score = min(1.0, max(0.0, finding.confidence.score + adjustment))
                         finding = finding.model_copy(
