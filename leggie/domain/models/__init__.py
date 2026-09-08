@@ -34,9 +34,14 @@ from leggie.domain.models.parse_integrity import (
 #
 # ``Sequence`` rather than ``tuple[...]`` on purpose: lists are still accepted
 # at every existing construction site (~56 of them, untouched), while mypy sees
-# a read-only Sequence with no ``.append``, so the invariant is enforced
-# statically as well as at runtime. Precedent: parse_integrity.py already types
-# its collection fields immutably.
+# a read-only Sequence with no ``.append``. Precedent: parse_integrity.py
+# already types its collection fields immutably.
+#
+# LIMIT: the ``AfterValidator`` runs on construction and on ``model_validate``,
+# NOT on ``model_copy(update=...)`` — pydantic splices update values in raw, and
+# mypy cannot see it either (``update: dict[str, Any]``). Any caller passing a
+# collection through ``model_copy(update=...)`` must pass a tuple itself; see
+# ``BillAnalysisFlow._filter_document``.
 type Frozen[T] = Annotated[Sequence[T], AfterValidator(tuple)]
 
 # ── Enums ──────────────────────────────────────────────────────────────────────

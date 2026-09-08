@@ -556,6 +556,29 @@ class TestSelectionStrictness:
         with pytest.raises(ValueError, match="requested 10 articles, matched 2"):
             flow._filter_document(doc, "1-10")
 
+    def test_article_subset_stays_immutable(self):
+        """model_copy(update=...) skips validators, so both subset paths must
+        pass a tuple themselves — otherwise .articles comes back a mutable list
+        and the DH-34 frozen-collection invariant is silently broken."""
+        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
+        from leggie.domain.models import Article, Document, Paragraph
+
+        doc = Document(
+            title="Test",
+            source_format="txt",
+            raw_text="x",
+            articles=[
+                Article(
+                    id=str(i), title="A", paragraphs=[Paragraph(number="1", text="x")], raw_text="x"
+                )
+                for i in (1, 2, 3)
+            ],
+        )
+        flow = BillAnalysisFlow()
+
+        assert type(flow._filter_document(doc, "1-2").articles) is tuple
+        assert type(flow._select_article_ids(doc, ["1", "3"]).articles) is tuple
+
 
 class TestTransitionEventData:
     """STAGE_COMPLETED events must record the FSM's real from/to (DH-17).

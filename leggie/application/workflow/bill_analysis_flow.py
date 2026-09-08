@@ -589,7 +589,9 @@ class BillAnalysisFlow:
                 f"Available IDs: {[a.id for a in doc.articles[:10]]}{'...' if len(doc.articles) > 10 else ''}"
             )
         filtered = [a for a in doc.articles if a.id in keep_ids]
-        return doc.model_copy(update={"articles": filtered}, deep=False)
+        # tuple(): model_copy(update=...) bypasses validators, so the Frozen[T]
+        # coercion never runs here — pass an already-immutable value.
+        return doc.model_copy(update={"articles": tuple(filtered)}, deep=False)
 
     def _select_article_ids(self, doc: Document, ids: list[str]) -> Document:
         """Return a new Document keeping only articles whose id is in *ids*."""
@@ -601,7 +603,8 @@ class BillAnalysisFlow:
                 "matched": len(selected),
             },
         )
-        return doc.model_copy(update={"articles": selected}, deep=False)
+        # tuple(): see _filter_document — model_copy(update=...) skips validation.
+        return doc.model_copy(update={"articles": tuple(selected)}, deep=False)
 
     def _dedup_findings(self, findings: list[Finding]) -> list[Finding]:
         """Remove near-duplicate findings, keeping the best per cluster."""
