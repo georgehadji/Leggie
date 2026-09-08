@@ -10,10 +10,8 @@ from __future__ import annotations
 import hashlib
 import re
 from re import Pattern
-from typing import Any
 
 from leggie.application.agents.lens import Lens
-from leggie.application.ports.llm import LLMPort
 from leggie.domain.models import (
     IRAC,
     Article,
@@ -32,10 +30,11 @@ log = get_logger(__name__)
 class ConstitutionalLens(Lens):
     """Constitutional lens — uses LLM when available, regex fallback otherwise."""
 
-    def __init__(
-        self, llm: LLMPort | None = None, model: str = "google/gemini-2.5-flash", **kwargs: Any
-    ) -> None:
-        super().__init__(llm=llm, model=model, **kwargs)
+    # SSOT-4: no __init__ override. It existed only to hardcode a vendor model
+    # id as this lens's default — a configuration value named in the
+    # application layer, and the one lens of five to do it. Lens.__init__
+    # already defaults model to "", meaning "whatever the router or adapter
+    # resolves", which is how the other four have always behaved.
 
     def name(self) -> str:
         return "constitutional"

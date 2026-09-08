@@ -20,6 +20,7 @@ from leggie.application.ports.llm import (
     LLMResponse,
     LLMTimeoutError,
 )
+from leggie.config.settings import get_settings
 from leggie.infrastructure.llm.base import BaseLLMProvider
 from leggie.infrastructure.llm.decorators import with_retry
 from leggie.infrastructure.rate_limiter import RateLimiter
@@ -46,17 +47,24 @@ class OpenRouterProvider(BaseLLMProvider):
     def __init__(
         self,
         api_key: str,
-        base_url: str = "https://openrouter.ai/api/v1",
-        default_model: str = "google/gemini-2.5-flash",
+        base_url: str | None = None,
+        default_model: str | None = None,
         rate_limiter: RateLimiter | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         if not api_key:
             raise LLMConfigurationError("OpenRouter API key not configured")
+        # SSOT-4/SSOT-5: base_url, default_model and the rate ceiling belong to
+        # LLMSettings. They were spelled out here as literals too, so the
+        # adapter and the settings could disagree about which model is the
+        # default and how fast it may be called.
+        llm_settings = get_settings().llm
         self._api_key = api_key
-        self._base_url = base_url
-        self._default_model = default_model
-        self._rate_limiter = rate_limiter or RateLimiter(max_rate=5.0)
+        self._base_url = llm_settings.openrouter_base_url if base_url is None else base_url
+        self._default_model = (
+            llm_settings.openrouter_default_model if default_model is None else default_model
+        )
+        self._rate_limiter = rate_limiter or RateLimiter(max_rate=llm_settings.max_rate_per_second)
         # Container-scoped client avoids a fresh TLS handshake per call (PROD-14).
         # When None, defaults to the pooled client below.
         self._http_client = http_client or httpx.AsyncClient(

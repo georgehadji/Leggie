@@ -30,6 +30,7 @@ from pydantic import BaseModel
 from leggie.application.ports.citation_parser import CitationParserPort
 from leggie.application.ports.llm import LLMPort, LLMRequest
 from leggie.application.ports.router import RouterPort
+from leggie.config.settings import get_settings
 from leggie.domain.models import IRAC, Citation, Confidence, Finding
 from leggie.domain.models.structured_output import (
     CoVeAnswerResponse,
@@ -148,7 +149,7 @@ class CoVeVerifier:
         self,
         findings: list[Finding],
         article_index: dict[str, str] | None = None,
-        max_concurrency: int = 10,
+        max_concurrency: int | None = None,
     ) -> list[CoVeResult]:
         """Verify a batch of findings using bounded fan-out (PROD-35).
 
@@ -163,6 +164,9 @@ class CoVeVerifier:
             return []
 
         index = article_index or {}
+        # SSOT-3: the ceiling lives in LLMSettings, not as a literal here.
+        if max_concurrency is None:
+            max_concurrency = get_settings().llm.max_verification_concurrency
         semaphore = asyncio.Semaphore(max_concurrency)
 
         async def _verify_one(f: Finding) -> CoVeResult:

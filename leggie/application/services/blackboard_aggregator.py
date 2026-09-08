@@ -125,6 +125,10 @@ class BlackboardAggregator:
         for f in dedup_survivors:
             board.post(f, agent_id="dedup")
 
+        # SSOT-3: review() resolves max_skeptic_concurrency from settings
+        # itself, so nothing is passed here. Threading it from this call site
+        # instead would break every CalibratedSkeptic stub that implements the
+        # old signature — the ceiling is the callee's business, not ours.
         survivors, _ = await self._skeptic.review(dedup_survivors)
         refuted_count = len(dedup_survivors) - len(survivors)
         if refuted_count:
@@ -143,6 +147,7 @@ class BlackboardAggregator:
         for f in survivors:
             board.post(f, agent_id="skeptic")
 
+        # As above: verify_batch reads max_verification_concurrency itself.
         cove_results = await self._cove.verify_batch(survivors, article_index)
         verified = [r.finding for r in cove_results if not r.dropped]
         dropped = sum(1 for r in cove_results if r.dropped)

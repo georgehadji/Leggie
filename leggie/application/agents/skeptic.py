@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from leggie.application.ports.llm import LLMPort, LLMRequest
 from leggie.application.ports.router import RouterPort
+from leggie.config.settings import get_settings
 from leggie.domain.models import Confidence, Finding, FindingType
 from leggie.domain.models.structured_output import SkepticVerdictResponse
 from leggie.observability import get_logger
@@ -214,23 +215,27 @@ class CalibratedSkeptic:
                 log.exception(
                     "skeptic_gate_error: gate=%s finding=%s", type(gate).__name__, finding.id
                 )
-                verdicts.append(
-                    SkepticVerdict(str(finding.id), "unknown", "neutral", "Gate error")
-                )
+                verdicts.append(SkepticVerdict(str(finding.id), "unknown", "neutral", "Gate error"))
         return verdicts
 
     async def review(
-        self, findings: list[Finding], max_concurrency: int = 10
+        self, findings: list[Finding], max_concurrency: int | None = None
     ) -> tuple[list[Finding], list[SkepticVerdict]]:
         """Review a batch of findings with bounded fan-out (PROD-36).
 
         Each finding is examined independently under a semaphore. Results
         are folded in **input order** so model_copy confidence adjustments
         and the survivor list are order-stable.
+
+        ``max_concurrency`` defaults to ``LLMSettings.max_skeptic_concurrency``
+        (SSOT-3); it used to be a literal 10 here, so the documented env var
+        was read by nothing.
         """
         if not findings:
             return [], []
 
+        if max_concurrency is None:
+            max_concurrency = get_settings().llm.max_skeptic_concurrency
         semaphore = asyncio.Semaphore(max_concurrency)
 
         async def _review_one(finding: Finding) -> tuple[list[SkepticVerdict], Finding | None]:

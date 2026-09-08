@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Literal
 
+from leggie.config.settings import get_settings
 from leggie.domain.pricing import estimate_cost
 
 
@@ -42,8 +43,19 @@ class BudgetGuard:
     This class uses ``estimate_cost()`` from that module — see PROD-30.
     """
 
-    def __init__(self, max_tokens: int = 500_000, max_cost: float = 5.0) -> None:
-        self._state = BudgetState(max_tokens=max_tokens, max_cost=max_cost)
+    def __init__(self, max_tokens: int | None = None, max_cost: float | None = None) -> None:
+        # SSOT: BudgetSettings owns both ceilings (SSOT-1). This signature used
+        # to read ``max_tokens: int = 500_000`` — 40x below the configured
+        # 20,000,000, and the exact value of the historical budget-block
+        # incident where the token ceiling throttled runs long before the $5
+        # cost cap could govern. settings.py explains why the ceiling must sit
+        # above the cost runway; this default contradicted it, and only
+        # container.py avoided the trap by passing both values explicitly.
+        caps = get_settings().budget
+        self._state = BudgetState(
+            max_tokens=caps.max_tokens_per_run if max_tokens is None else max_tokens,
+            max_cost=caps.max_cost_per_run if max_cost is None else max_cost,
+        )
 
     def check(
         self, prompt_tokens: int = 0, completion_tokens: int = 0, model: str = ""

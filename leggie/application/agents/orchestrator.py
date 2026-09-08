@@ -23,6 +23,7 @@ from leggie.application.agents.legal_coherence_lens import LegalCoherenceLens
 from leggie.application.agents.lens import DEFAULT_LENS_MAX_TOKENS, Lens
 from leggie.application.ports.llm import LLMPort
 from leggie.application.ports.router import RouteResult, RouterPort
+from leggie.config.settings import get_settings
 from leggie.domain.models import Article, Document, Event, EventType, Finding, LensTask, ModelTier
 from leggie.observability import get_logger
 
@@ -52,7 +53,7 @@ class Orchestrator:
     def __init__(
         self,
         llm: LLMPort | None = None,
-        model: str = "google/gemini-2.5-flash",
+        model: str | None = None,
         lens_config: dict[str, type[Lens]] | None = None,
         max_concurrent: int = _DEFAULT_MAX_CONCURRENT,
         max_article_concurrency: int = _DEFAULT_MAX_ARTICLE_CONCURRENCY,
@@ -61,7 +62,9 @@ class Orchestrator:
         use_verbalized_sampling: bool = False,
     ) -> None:
         self._llm = llm
-        self._model = model
+        # SSOT-4: the default model is LLMSettings', not a literal repeated in
+        # the application layer.
+        self._model = get_settings().llm.openrouter_default_model if model is None else model
         self._lens_classes = lens_config or _DEFAULT_LENSES
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._max_article_concurrency = max_article_concurrency

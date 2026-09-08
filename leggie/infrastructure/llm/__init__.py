@@ -24,6 +24,7 @@ from leggie.application.ports.llm import (
     LLMResponse,
     LLMTimeoutError,
 )
+from leggie.config.settings import get_settings
 from leggie.domain.pricing import MODEL_PRICES
 from leggie.infrastructure.llm.adapters.openrouter import OpenRouterProvider
 from leggie.infrastructure.llm.base import BaseLLMProvider
@@ -54,7 +55,7 @@ _OFFLINE_MODEL_ALLOWLIST: frozenset[str] = frozenset(MODEL_PRICES)
 async def validate_model_ids(
     api_key: str,
     model_ids: list[str],
-    base_url: str = "https://openrouter.ai/api/v1",
+    base_url: str | None = None,
     use_live: bool = True,
 ) -> list[str]:
     """Validate model IDs against the OpenRouter catalog.
@@ -62,7 +63,7 @@ async def validate_model_ids(
     Args:
         api_key: OpenRouter API key for querying /models.
         model_ids: List of model IDs to validate.
-        base_url: OpenRouter base URL.
+        base_url: OpenRouter base URL; defaults to LLMSettings (SSOT-4).
         use_live: If True, query the live /models endpoint; fall back to offline allowlist.
 
     Returns:
@@ -70,6 +71,9 @@ async def validate_model_ids(
     """
     if not model_ids:
         return []
+
+    if base_url is None:
+        base_url = get_settings().llm.openrouter_base_url
 
     if use_live and api_key:
         with contextlib.suppress(Exception):
@@ -99,13 +103,21 @@ class LLMAdapter(LLMPort):
     def __init__(
         self,
         openrouter_key: str = "",
-        openrouter_base_url: str = "https://openrouter.ai/api/v1",
-        default_model: str = "google/gemini-2.5-flash",
+        openrouter_base_url: str | None = None,
+        default_model: str | None = None,
         validate_on_init: bool = True,
         rate_limiter: RateLimiter | None = None,
     ) -> None:
         if not openrouter_key:
             raise LLMConfigurationError("OpenRouter API key not configured")
+        # SSOT-4: the base URL and default model come from LLMSettings, not
+        # from a literal repeated in every constructor down the stack. The
+        # allowlist check below still runs against the RESOLVED model.
+        llm_settings = get_settings().llm
+        if openrouter_base_url is None:
+            openrouter_base_url = llm_settings.openrouter_base_url
+        if default_model is None:
+            default_model = llm_settings.openrouter_default_model
         # Quick offline allowlist check at init time (FX3)
         if validate_on_init and default_model and default_model not in _OFFLINE_MODEL_ALLOWLIST:
             raise LLMConfigurationError(
