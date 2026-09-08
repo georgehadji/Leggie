@@ -33,6 +33,14 @@ async def run_off_loop[T](fn: Callable[[], T]) -> T:
     long-lived process: ProcessPoolExecutor, whose workers can genuinely be
     terminated (at the cost of per-ingest process spawn and picklable
     extractors).
+
+    ponytail: also unbounded — one daemon thread per call, no cap and no
+    back-pressure, where the default executor it replaced was bounded. Safe
+    while Leggie ingests one file per run and BoundedIngestor caps each call
+    in wall-clock. If ingest is ever batched or served concurrently, gate the
+    spawn below on an asyncio.Semaphore sized from settings before adding
+    threads (note it bounds concurrency within a loop, not across the
+    process).
     """
     loop = asyncio.get_running_loop()
     future: asyncio.Future[T] = loop.create_future()

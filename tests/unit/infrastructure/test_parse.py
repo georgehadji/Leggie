@@ -433,3 +433,44 @@ class TestParseIntegrity:
         assert [a.id for a in doc.articles] == ["1", "2"]
         assert report.duplicate_ids == ()
         assert report.is_clean is True
+
+    def test_non_monotonic_rationale_never_parses_silently_wrong(self, parser):
+        """DH-39: find_toc_span assumes each pre-body region ascends, then
+        restarts. A rationale that walks its articles OUT OF ORDER breaks that
+        assumption — the descent fires inside the rationale rather than at the
+        body boundary, so the span can end early and hand rationale commentary
+        back as articles.
+
+        The assertion is the invariant, not a snapshot: whatever span comes
+        out, the parse must not be *silently* wrong. Either the body was found
+        correctly, or the integrity gate refuses the document — which is what
+        bill_analysis_flow._do_parse acts on. A wrong-but-clean parse is the F0
+        phantom-articles failure this module exists to prevent, and would be a
+        new defect rather than a reason to weaken this test.
+
+        Measured 2026-09-08: this input takes the SECOND branch. find_toc_span
+        ends the span at the rationale's out-of-order "Άρθρο 1", so 5 articles
+        with 2 duplicate ids come back and is_clean is False — the document is
+        refused rather than analysed wrongly. The limitation is real but
+        contained; the day the span is fixed, the first branch takes over and
+        this test keeps passing unchanged.
+        """
+        text = (
+            "ΣΧΕΔΙΟ ΝΟΜΟΥ\nΠΙΝΑΚΑΣ ΠΕΡΙΕΧΟΜΕΝΩΝ\n"
+            "Άρθρο 1 Σκοπός\nΆρθρο 2 Ορισμοί\nΆρθρο 3 Έναρξη ισχύος\n\n"
+            "ΑΙΤΙΟΛΟΓΙΚΗ ΕΚΘΕΣΗ\n"
+            # Out of order on purpose: 3, then 1, then 2.
+            "Άρθρο 3\nΜε το άρθρο αυτό ρυθμίζεται η έναρξη ισχύος.\n\n"
+            "Άρθρο 1\nΜε το άρθρο αυτό ορίζεται ο σκοπός.\n\n"
+            "Άρθρο 2\nΜε το άρθρο αυτό δίδονται οι ορισμοί.\n\n"
+            "Άρθρο 1 Σκοπός\n1. Σκοπός του παρόντος είναι η ψηφιακή μετάβαση.\n\n"
+            "Άρθρο 2 Ορισμοί\n1. Οι ορισμοί είναι οι εξής.\n\n"
+            "Άρθρο 3 Έναρξη ισχύος\n1. Η ισχύς αρχίζει από τη δημοσίευση.\n"
+        )
+        doc, report = parser.parse_with_integrity(text)
+
+        parsed_correctly = [a.id for a in doc.articles] == ["1", "2", "3"]
+        assert parsed_correctly or not report.is_clean, (
+            f"non-monotonic rationale parsed to {[a.id for a in doc.articles]} "
+            f"and still reported clean — that is a silent F0-class regression"
+        )

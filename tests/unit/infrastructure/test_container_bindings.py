@@ -390,20 +390,20 @@ class TestCitationIndexLoadRobustness:
         assert warnings == []
 
     @pytest.mark.asyncio
-    async def test_covered_schemes_come_from_the_index_categories(
+    async def test_authority_is_declared_never_inferred_from_counts(
         self, tmp_path, monkeypatch: pytest.MonkeyPatch
     ):
-        """DH-36 proof: the container must derive scheme coverage from the
-        index file's own ``categories``, so a scheme with zero declared
-        entries is never 'checked' and can never be read as disproven.
+        """DH-37 proof: nonzero ``categories`` counts must NOT arm the gate.
 
-        ``constitution``/``charter`` are deliberately not schemes: their
-        identifiers are shaped "Σύνταγμα Άρθρο N", which parse() never emits.
+        This replaces test_covered_schemes_come_from_the_index_categories.
+        Deriving authority from counts (DH-36) confused presence with
+        exhaustiveness: an index holding 3 ΦΕΚ numbers counted as authoritative
+        over ΦΕΚ, so every genuine gazette reference outside those three came
+        back disproven and CoVe hard-dropped the finding.
         """
         import json
 
         from leggie.application.ports.citation_parser import CitationParserPort
-        from leggie.domain.models import CitationScheme
         from leggie.infrastructure import container as container_module
 
         index = tmp_path / "citation_index.json"
@@ -411,7 +411,7 @@ class TestCitationIndexLoadRobustness:
             json.dumps(
                 {
                     "identifiers": ["ΦΕΚ Α 137/2023", "32018L1972"],
-                    # The real packaged shape: no ecli, no url.
+                    # The real packaged shape: nonzero fek/celex, no ecli, no url.
                     "categories": {"constitution": 120, "fek": 3, "celex": 4, "charter": 54},
                 }
             ),
@@ -423,16 +423,63 @@ class TestCitationIndexLoadRobustness:
         c.configure_defaults()
 
         parser = c.get(CitationParserPort)
-        assert parser._covered_schemes == {CitationScheme.FEK, CitationScheme.CELEX}
+        assert parser._authoritative_schemes == set()
 
     @pytest.mark.asyncio
-    async def test_index_without_categories_verifies_nothing(
+    async def test_declared_authority_is_honoured(self, tmp_path, monkeypatch: pytest.MonkeyPatch):
+        """DH-37 boundary: the switch works when an index actually claims it.
+        Unknown names are ignored rather than crashing configure_defaults()."""
+        import json
+
+        from leggie.application.ports.citation_parser import CitationParserPort
+        from leggie.domain.models import CitationScheme
+        from leggie.infrastructure import container as container_module
+
+        index = tmp_path / "citation_index.json"
+        index.write_text(
+            json.dumps(
+                {
+                    "identifiers": ["ΦΕΚ Α 137/2023"],
+                    "authoritative_schemes": ["fek", "constitution", "not_a_scheme"],
+                }
+            ),
+            encoding="utf-8",
+        )
+        self._patch_index_path(monkeypatch, index)
+
+        c = container_module.Container()
+        c.configure_defaults()
+
+        parser = c.get(CitationParserPort)
+        assert parser._authoritative_schemes == {CitationScheme.FEK}
+
+    @pytest.mark.asyncio
+    async def test_packaged_index_as_shipped_declares_no_authority(self):
+        """DH-37 guard on the real data file, not a fixture: if a future
+        builder change ever arms the gate on a hand-seeded list, valid
+        findings start disappearing again. Fail here first."""
+        from leggie.application.ports.citation_parser import CitationParserPort
+        from leggie.infrastructure import container as container_module
+
+        c = container_module.Container()
+        c.configure_defaults()
+
+        parser = c.get(CitationParserPort)
+        assert parser._resolution_index, "packaged index failed to load at all"
+        assert parser._authoritative_schemes == set()
+
+    @pytest.mark.asyncio
+    async def test_index_without_declared_authority_disproves_nothing(
         self, tmp_path, monkeypatch: pytest.MonkeyPatch
     ):
-        """DH-36 boundary: an index that does not declare its coverage buys
-        nothing. Fail open (everything unverified) and say so — never fail
-        closed on a guess, which is what turned valid citations into
-        'disproven' ones in the first place."""
+        """DH-37 boundary: an index that claims nothing gets nothing. Fail open
+        (a miss is merely unverified) — never fail closed on a guess, which is
+        what turned valid citations into 'disproven' ones in the first place.
+
+        Absence is the correct steady state for every index Leggie ships, so
+        unlike DH-36's ``no_categories`` it must NOT warn — that would fire on
+        every single run.
+        """
         import json
 
         from leggie.application.ports.citation_parser import CitationParserPort
@@ -454,13 +501,46 @@ class TestCitationIndexLoadRobustness:
         c.configure_defaults()
 
         parser = c.get(CitationParserPort)
-        assert parser._covered_schemes == set()
+        assert parser._authoritative_schemes == set()
         resolved = await parser.resolve(
             Citation(
                 scheme=CitationScheme.FEK,
-                identifier="ΦΕΚ Α 137/2023",
-                original_text="ΦΕΚ Α 137/2023",
+                identifier="ΦΕΚ Α 88/2024",
+                original_text="ΦΕΚ Α 88/2024",
             )
         )
         assert resolved.checked is False
-        assert any("no_categories" in w for w in warnings), warnings
+        assert warnings == [], warnings
+
+    @pytest.mark.asyncio
+    async def test_malformed_authority_declaration_warns_and_disarms(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """DH-37 trust boundary: package data is untrusted. A declaration of
+        the wrong shape must degrade to no authority AND say so — same class as
+        DH-29's malformed_shape handling."""
+        import json
+
+        from leggie.application.ports.citation_parser import CitationParserPort
+        from leggie.infrastructure import container as container_module
+
+        index = tmp_path / "citation_index.json"
+        index.write_text(
+            json.dumps({"identifiers": ["ΦΕΚ Α 137/2023"], "authoritative_schemes": "fek"}),
+            encoding="utf-8",
+        )
+        self._patch_index_path(monkeypatch, index)
+
+        warnings: list[str] = []
+        monkeypatch.setattr(
+            container_module.logger,
+            "warning",
+            lambda msg, *a: warnings.append(msg % a if a else msg),
+        )
+
+        c = container_module.Container()
+        c.configure_defaults()
+
+        parser = c.get(CitationParserPort)
+        assert parser._authoritative_schemes == set()
+        assert any("malformed_authority" in w for w in warnings), warnings

@@ -1,15 +1,16 @@
 {
-  "description": "Known-good Greek legal citation identifiers used by the deterministic citation resolver (PROD-05). Constituition articles, ΦΕΚ, CELEX, and Charter references.",
+  "description": "Known-good Greek legal citation identifiers used by the deterministic citation resolver (PROD-05). Constitution articles, ΦΕΚ, CELEX, and Charter references.",
   "source": "Built offline by tools/build_citation_index.py",
   "version": 1,
   "identifier_count": 181,
-  "build_date": "2026-07-31T09:43:34.621973+00:00",
+  "build_date": "2026-09-08T12:05:59.631900+00:00",
   "categories": {
     "constitution": 120,
     "fek": 3,
     "celex": 4,
     "charter": 54
   },
+  "authoritative_schemes": [],
   "identifiers": [
     "Σύνταγμα Άρθρο 1",
     "Σύνταγμα Άρθρο 2",

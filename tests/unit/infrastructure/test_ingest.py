@@ -338,9 +338,15 @@ class TestTimeoutDoesNotActuallyStopWork:
         from leggie.infrastructure.ingest.base import Ingestor, run_off_loop
         from leggie.infrastructure.ingest.bounded import BoundedIngestor
 
+        # DH-41: Event.wait(0.6) blocks exactly as time.sleep(0.6) did, so the
+        # timing proof below is unchanged — but it can be released once the
+        # assertion has been made, instead of leaving a daemon thread running
+        # into whatever test comes next.
+        stop = threading.Event()
+
         class SlowIngestor(Ingestor):
             async def ingest(self, source: Path | str) -> str:
-                return await run_off_loop(lambda: (time.sleep(0.6), "done")[1])
+                return await run_off_loop(lambda: (stop.wait(0.6), "done")[1])
 
         src = tmp_path / "irrelevant.txt"
         src.write_text("x", encoding="utf-8")
@@ -350,10 +356,12 @@ class TestTimeoutDoesNotActuallyStopWork:
                 await BoundedIngestor(SlowIngestor(), timeout_s=0.05).ingest(src)
 
         start = time.perf_counter()
-        asyncio.run(_drive())
-        elapsed = time.perf_counter() - start
-
-        assert elapsed < 0.4, f"process held open for {elapsed:.2f}s by abandoned ingest work"
+        try:
+            asyncio.run(_drive())
+            elapsed = time.perf_counter() - start
+            assert elapsed < 0.4, f"process held open for {elapsed:.2f}s by abandoned ingest work"
+        finally:
+            stop.set()  # the abandoned worker must not outlive the test it proved
 
     @pytest.mark.asyncio
     async def test_worker_runs_on_a_daemon_thread_off_the_shared_executor(self, tmp_path):

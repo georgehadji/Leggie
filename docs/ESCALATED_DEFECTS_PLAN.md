@@ -429,7 +429,7 @@ one that stands between the project and a meaningful 91-article smoke.
 
 | Phase | Landed | Files | Deviation from the plan |
 |---|---|---|---|
-| 1 — DH-36 | YES | `infrastructure/citation/__init__.py` (`covered_schemes` ctor arg, `_covers()`, `INDEX_CATEGORY_SCHEMES`), `infrastructure/container.py` (derives coverage from the index's `categories`) | None. `covered_schemes=None` deliberately keeps the old "caller asserts full coverage" semantics for callers that built their own index; only the composition root, which loads a packaged file it did not build, passes an explicit set. |
+| 1 — DH-36 | **HALF** — completed by DH-37, see below | `infrastructure/citation/__init__.py` (`covered_schemes` ctor arg, `_covers()`, `INDEX_CATEGORY_SCHEMES`), `infrastructure/container.py` (derived coverage from the index's `categories`) | None at the time. `covered_schemes=None` deliberately kept the old "caller asserts full coverage" semantics for callers that built their own index; only the composition root, which loads a packaged file it did not build, passed an explicit set. |
 | 2 — DH-28 | YES | `infrastructure/citation/__init__.py` (`LAW_REF_PATTERN` wired into `parse()`, widened to `\b[Νν]`) | None. |
 | 3 — DH-10 | YES | `infrastructure/ingest/base.py` (`run_off_loop`, `_hand_back`), `infrastructure/ingest/__init__.py` (4 call sites) | Two additions found while implementing: (a) settling the future by **argument**, not closure — `except … as exc` unbinds `exc` at block exit, so a lambda capturing it raised `NameError` on the loop and left the future pending forever (caught by the new exception test, which hung); (b) `_hand_back` suppresses `RuntimeError` so an abandoned worker completing after its loop closed does not raise inside a daemon thread at exit. |
 | 4 — DH-35 | YES | `domain/models/__init__.py` (`Event.model_config`) | None. The two compensating shims (`persistence/__init__.py:69`, `sqlite_event_store.py:103-105`) were left in place as planned. |
@@ -445,6 +445,36 @@ marker line at all — the parse-integrity gate refuses such a document, which
 is the correct outcome); `Event.data` remains a mutable dict (§6); the
 abandoned ingest thread still burns CPU until it finishes (§4); DH-2's
 unpinned `pytest-randomly` seed.
+
+### 11a. Correction — Phase 1 closed only half of DH-36 (2026-09-08)
+
+An adversarial review of `c9a1de0` found that the row above overstated its
+own result, and this section is the correction.
+
+DH-36 gated on **presence** — "does the index hold any entries for this
+scheme?" That closed the ECLI/URL half, where the count is zero. It left the
+ΦΕΚ/CELEX half open, because the packaged index hand-seeds 3 ΦΕΚ and 4 CELEX
+identifiers: nonzero, so still "covered", so still disprovable. Every genuine
+gazette reference outside those three continued to arrive at
+`CoVeVerifier._check_citations` as `checked=True, resolved=False` and got the
+whole finding hard-dropped. ΦΕΚ is the most-cited scheme in Greek bills, so
+this was the expensive half.
+
+Presence is not exhaustiveness. Disproving a citation needs the latter, and
+nothing Leggie ships has it.
+
+Worse, Phase 1 shipped `test_covered_scheme_still_disproves_a_genuine_miss`,
+which asserted the surviving half was correct behaviour — locking the defect
+in. That test has been deleted, not adjusted.
+
+**DH-37** (`docs/POST_DH36_REVIEW_PLAN.md`) completes the fix: authority to
+disprove is now DECLARED by the index file (`authoritative_schemes`), never
+inferred from a count, and the packaged index declares none. The mechanism
+survives behind the switch for the day the index is built from a live
+register (ADR-0004, CELLAR).
+
+Phase 1's class-A live-smoke obligation (§10 item 8) carries forward to DH-37
+unchanged — it is the same behaviour, now correct.
 
 ## 13. Live-smoke attempt (2026-09-07)
 

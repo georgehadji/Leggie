@@ -173,6 +173,34 @@ From `tasks/todo.md` §0 ("What changed vs the initial spec"):
   even when both call sites compile and pass their own local tests — see
   ADR-0003, ADR-0002.
 
+### 17. DH-36/DH-37 — the citation gate hard-dropped valid findings — SETTLED 2026-09-08
+
+- **Symptom:** findings carrying real, valid Greek legal citations vanished
+  from reports entirely. No warning, no downgrade — dropped.
+- **Root cause (two rounds).** `CoVeVerifier._check_citations` reads
+  `checked=True, resolved=False` as *positively disproven* and drops the whole
+  finding. `GreekCitationParser.resolve()` set `checked=True` whenever any
+  index was configured, so a real ECLI or et.gr URL against an index holding
+  zero of either was "disproven" (**DH-36**). DH-36's own fix then gated on
+  the index's `categories` counts — a *presence* test — while disproving needs
+  *exhaustiveness*. The packaged index hand-seeds 3 ΦΕΚ and 4 CELEX
+  identifiers, so both stayed "covered" and every genuine gazette reference
+  outside those three kept dropping its finding (**DH-37**). ΦΕΚ is the
+  most-cited scheme in Greek bills, so DH-36 closed the cheap half.
+- **Second-order failure:** DH-36 shipped
+  `test_covered_scheme_still_disproves_a_genuine_miss`, which asserted the
+  surviving half was correct — a test locking the defect in. It was deleted,
+  not adjusted.
+- **Fix:** authority to disprove is DECLARED by the index file
+  (`authoritative_schemes`), never inferred from a count; a hit still confirms
+  regardless. The packaged index declares none, so the deterministic parser
+  disproves nothing today and wrongness is left to CoVe's LLM cross-check.
+  ADR-0008; plan `docs/POST_DH36_REVIEW_PLAN.md`.
+- **Moral:** "the index has some entries for this" is not "the index has all
+  entries for this". A test that asserts a half-fixed behaviour is worse than
+  no test — it makes the remaining half look intentional. Neither round was
+  found by a bug report; both came from reading the code adversarially.
+
 ## Open defect ledger (2026-07-14 snapshot; D7/D22 updated 2026-08-10)
 
 | ID | Defect | Status |

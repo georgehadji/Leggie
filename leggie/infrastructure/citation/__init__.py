@@ -52,11 +52,11 @@ LAW_REF_PATTERN: Pattern[str] = re.compile(
     re.UNICODE,
 )
 
-# Which ``categories`` key of data/citation_index.json corresponds to which
-# scheme this parser emits (DH-36). The index also carries `constitution` and
-# `charter` counts, deliberately absent here: those identifiers are shaped
-# "Σύνταγμα Άρθρο N" / "Χάρτης Άρθρο N", which parse() never produces, so they
-# can never make the index authoritative for anything.
+# Which ``authoritative_schemes`` entry of data/citation_index.json corresponds
+# to which scheme this parser emits (DH-36/DH-37). `constitution` and `charter`
+# are deliberately absent: those identifiers are shaped "Σύνταγμα Άρθρο N" /
+# "Χάρτης Άρθρο N", which parse() never produces, so they can never make the
+# index authoritative for anything.
 INDEX_CATEGORY_SCHEMES: dict[str, CitationScheme] = {
     "fek": CitationScheme.FEK,
     "celex": CitationScheme.CELEX,
@@ -75,16 +75,21 @@ class GreekCitationParser(CitationParserPort):
     def __init__(
         self,
         resolution_index: set[str] | None = None,
-        covered_schemes: set[CitationScheme] | None = None,
+        authoritative_schemes: set[CitationScheme] | None = None,
     ) -> None:
         self._resolution_index = resolution_index or set()
-        # DH-36: an index is authoritative only for the schemes it actually
-        # holds entries for. ``None`` means "the caller asserts this index
-        # covers every scheme it will be asked about" — true when the caller
-        # built it itself (build_resolution_index), false for a packaged data
-        # file, which is why container.py passes an explicit set derived from
-        # the file's own ``categories``.
-        self._covered_schemes = covered_schemes
+        # DH-37: an index may CONFIRM anything it holds, but may DISPROVE only
+        # a scheme it is an exhaustive register for. DH-36 gated on *presence*
+        # ("does the index hold any entries for this scheme?") — but the
+        # packaged file hand-seeds three ΦΕΚ and four CELEX identifiers, so
+        # presence was true while exhaustiveness was nowhere near, and every
+        # real citation outside those seven still came back disproven.
+        #
+        # ``None`` = the caller built this index itself and asserts
+        # exhaustiveness (build_resolution_index). The default empty set is
+        # confirm-only, which is what every index Leggie ships today earns.
+        # Stored as-is: ``None`` and ``set()`` mean opposite things here.
+        self._authoritative_schemes = authoritative_schemes
 
     def parse(self, text: str) -> list[Citation]:
         """Extract and normalize all citations from text."""
@@ -140,7 +145,7 @@ class GreekCitationParser(CitationParserPort):
         # Individual law references (DH-28). Emitted under UNKNOWN rather than
         # a dedicated scheme: no resolution index carries law identifiers, so a
         # scheme of its own would buy nothing today, and adding one is a Domain
-        # change. UNKNOWN is never in any index's declared coverage, so these
+        # change. UNKNOWN is never in any index's declared authority, so these
         # can only ever come back checked=False — visible as "unverified" in
         # reports, and never disprovable by CoVe (which is what made wiring
         # this pattern in unsafe before DH-36 was fixed).
@@ -155,36 +160,48 @@ class GreekCitationParser(CitationParserPort):
 
         return citations
 
-    def _covers(self, scheme: CitationScheme) -> bool:
-        """Can the configured index say anything at all about *scheme*?"""
-        return self._covered_schemes is None or scheme in self._covered_schemes
+    def _is_authoritative(self, scheme: CitationScheme) -> bool:
+        """May a MISS on *scheme* be reported as positively disproven?
+
+        Only for a scheme the index is an exhaustive register of. Holding a
+        few entries is not the same as holding them all (DH-37).
+        """
+        return self._authoritative_schemes is None or scheme in self._authoritative_schemes
 
     async def resolve(self, citation: Citation) -> Citation:
         """Resolve a citation against the available index.
 
         Returns the citation with resolved flag set based on index lookup.
         """
-        if self._resolution_index and self._covers(citation.scheme):
-            resolved = citation.identifier in self._resolution_index
-            evidence = "resolved against internal index" if resolved else "not found in index"
+        if citation.identifier in self._resolution_index:
+            # A hit is positive evidence whether or not the index is
+            # exhaustive: the identifier is literally on the known-good list.
+            resolved = True
             checked = True
+            evidence = "resolved against internal index"
+        elif self._resolution_index and self._is_authoritative(citation.scheme):
+            resolved = False
+            checked = True
+            evidence = f"not found in an index declared exhaustive for '{citation.scheme.value}'"
         else:
-            # Fail closed: nothing was actually checked, so we must not report
-            # the citation as resolved. Structural parsing (parse()) already
-            # succeeded — this only means "unverified", not "invalid".
+            # Fail closed: nothing was conclusively checked, so we must not
+            # report the citation as resolved. Structural parsing (parse())
+            # already succeeded — this only means "unverified", not "invalid".
             #
-            # Two ways to get here. No index at all, or (DH-36) an index that
-            # holds no entries for this citation's scheme: the packaged index
-            # carries 3 ΦΕΚ, 4 CELEX and zero ECLI/URL identifiers, so marking
-            # those checked=True made CoVeVerifier._check_citations read every
-            # real, valid ECLI/URL — and every ΦΕΚ outside those three — as
-            # positively DISPROVEN and hard-drop the whole finding.
+            # Two ways to get here. No index at all, or (DH-37) an index that
+            # is not an exhaustive register for this citation's scheme — which
+            # is every index Leggie ships: the packaged file hand-seeds 3 ΦΕΚ
+            # and 4 CELEX identifiers. Reporting those misses checked=True made
+            # CoVeVerifier._check_citations read a real, valid ΦΕΚ outside the
+            # seeded three as positively DISPROVEN and hard-drop the whole
+            # finding. Whether a citation is *wrong* is left to CoVe's LLM
+            # cross-check, which is where a judgement call belongs.
             resolved = False
             checked = False
             evidence = (
                 "no resolution index configured — not independently verified"
                 if not self._resolution_index
-                else f"index has no entries for scheme '{citation.scheme.value}' "
+                else f"index is not exhaustive for scheme '{citation.scheme.value}' "
                 "— not independently verified"
             )
 
@@ -198,7 +215,17 @@ class GreekCitationParser(CitationParserPort):
         )
 
     def supported_schemes(self) -> list[CitationScheme]:
-        return [CitationScheme.FEK, CitationScheme.CELEX, CitationScheme.ECLI, CitationScheme.URL]
+        # Every scheme parse() can emit — UNKNOWN included, which carries the
+        # DH-28 individual law references ("Ν. 4622/2019"). The port contract
+        # is "schemes this parser handles", not "schemes the index covers", so
+        # index authority is deliberately not consulted here (DH-40).
+        return [
+            CitationScheme.FEK,
+            CitationScheme.CELEX,
+            CitationScheme.ECLI,
+            CitationScheme.URL,
+            CitationScheme.UNKNOWN,
+        ]
 
     def build_resolution_index(self, citations: list[Citation]) -> set[str]:
         """Build a resolution index from a known-good list of citations."""

@@ -318,9 +318,13 @@ class TestCoVeVerifier:
         anything in it; the LLM cross-check decides instead."""
         from leggie.infrastructure.citation import GreekCitationParser
 
+        # DH-37 note: the authority set is now empty as container.py wires it,
+        # so ΦΕΚ is no longer disprovable either. This test still pins the
+        # ECLI half — see test_real_but_unseeded_fek_citation_survives_the_gate
+        # for the half DH-36 left open.
         parser = GreekCitationParser(
             resolution_index={"ΦΕΚ Α 1/2020"},
-            covered_schemes={CitationScheme.FEK},  # as container.py wires it
+            authoritative_schemes=set(),
         )
         llm = FakeLLM(
             {
@@ -403,6 +407,60 @@ class TestCoVeVerifier:
         assert result.finding.id == finding.id
         # The verification chain continued past the citation hiccup and
         # actually ran, rather than short-circuiting to a bare fail-open.
+        assert llm.calls == [
+            "CoVeQuestionsResponse",
+            "CoVeAnswerResponse",
+            "CoVeCrossCheckResponse",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_real_but_unseeded_fek_citation_survives_the_gate(self):
+        """DH-37 in the terms that actually matter: finding loss.
+
+        The packaged index hand-seeds three ΦΕΚ numbers. Under DH-36 a nonzero
+        count made ΦΕΚ 'covered', so a real gazette reference outside those
+        three resolved to checked=True/resolved=False — the exact pair
+        _check_citations reads as DISPROVEN — and the whole finding was
+        hard-dropped. ΦΕΚ is the most-cited scheme in Greek bills, so this was
+        the expensive half of the defect.
+
+        Wired through the real GreekCitationParser rather than a stub: the bug
+        was in how the adapter set ``checked``, so a stub would prove nothing.
+        """
+        from leggie.infrastructure.citation import GreekCitationParser
+
+        parser = GreekCitationParser(
+            resolution_index={"ΦΕΚ Α 137/2023", "32018L1972"},
+            authoritative_schemes=set(),  # what container.py builds today
+        )
+        llm = FakeLLM(
+            {
+                "CoVeQuestionsResponse": CoVeQuestionsResponse(questions=["Τι;"]),
+                "CoVeAnswerResponse": CoVeAnswerResponse(answer="ok", supported_by_source=True),
+                "CoVeCrossCheckResponse": CoVeCrossCheckResponse(
+                    consistency="consistent", reason="r", keep=True
+                ),
+            }
+        )
+        verifier = CoVeVerifier(llm=llm, citation_parser=parser)
+        finding = make_finding()
+        finding = finding.model_copy(
+            update={
+                "irac": IRAC(
+                    issue=finding.irac.issue,
+                    rule="Βλ. ΦΕΚ Α 88/2024",  # real shape, simply not seeded
+                    application=finding.irac.application,
+                    conclusion=finding.irac.conclusion,
+                )
+            }
+        )
+
+        result = await verifier.verify(finding, source_text="πηγή")
+
+        assert result.dropped is False, result.reason
+        assert result.finding.id == finding.id
+        # Not short-circuited: the citation was left to the LLM cross-check,
+        # which is where a judgement about wrongness belongs.
         assert llm.calls == [
             "CoVeQuestionsResponse",
             "CoVeAnswerResponse",

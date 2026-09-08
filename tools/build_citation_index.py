@@ -1,20 +1,28 @@
 #!/usr/bin/env python3
 """Build the citation resolution index (PROD-05).
 
-Offline builder for `data/citation_index.json`. Seeds the index with
-known-good Greek legal citation identifiers across the three resolver
-categories:
+Offline builder for `leggie/data/citation_index.json`. Seeds the index with
+known-good Greek legal citation identifiers across four categories:
 
+* Σύνταγμα (Constitution) — "Σύνταγμα Άρθρο N"
 * ΦΕΚ (Government Gazette) — e.g. "ΦΕΚ Α 137/2023"
 * CELEX (EU law) — e.g. "32018L1972"
-* ECLI (case law) — e.g. "ECLI:EL:...:2023:..."
+* Χάρτης (EU Charter) — "Χάρτης Άρθρο N"
 
-Future: pull live identifiers from data.gov.gr `gov-et-laws`, EUR-Lex CELLAR
-SPARQL, and the static Σύνταγμα when network access is available. This script
-always produces a valid, versioned index.
+No ECLI or URL identifiers are seeded, and only the ΦΕΚ/CELEX entries are in a
+shape ``GreekCitationParser.parse()`` can ever emit — the Σύνταγμα and Χάρτης
+strings exist for a resolver that does not parse them yet.
+
+DH-37 — ``authoritative_schemes`` is the switch that lets the resolver report a
+MISS as positively disproven, and it ships EMPTY on purpose. Every seeded
+category here is a hand-picked handful, not an exhaustive register: three ΦΕΚ
+numbers cannot tell a fabricated gazette reference from a real one nobody
+seeded. Add a scheme name to that list ONLY when the index for it is built from
+a complete live register (data.gov.gr `gov-et-laws`, EUR-Lex CELLAR SPARQL) —
+arming it on a seeded list makes CoVe hard-drop valid findings.
 
 Usage:
-    python tools/build_citation_index.py [--output data/citation_index.json]
+    python tools/build_citation_index.py [--output leggie/data/citation_index.json]
 """
 
 from __future__ import annotations
@@ -37,10 +45,10 @@ FEK_REFERENCES = [
 
 # EU law (CELEX) — GDPR, directives, regulations commonly cited in Greek bills.
 CELEX_REFS = [
-    "32018L1972",   # European Electronic Communications Code
-    "32016R0679",   # GDPR
-    "32015L0849",   # 4AMLD
-    "32019L0790",   # AML directive
+    "32018L1972",  # European Electronic Communications Code
+    "32016R0679",  # GDPR
+    "32015L0849",  # 4AMLD
+    "32019L0790",  # AML directive
 ]
 
 # Key EU Charter (Χάρτης) articles.
@@ -49,18 +57,18 @@ CHARTER_ARTICLES = [f"Χάρτης Άρθρο {n}" for n in range(1, 55)]
 
 def identifier_count() -> int:
     """Total seeded identifiers."""
-    return len(CONSTITUTION_ARTICLES) + len(FEK_REFERENCES) + len(CELEX_REFS) + len(CHARTER_ARTICLES)
+    return (
+        len(CONSTITUTION_ARTICLES) + len(FEK_REFERENCES) + len(CELEX_REFS) + len(CHARTER_ARTICLES)
+    )
 
 
 def build() -> dict[str, Any]:
     """Assemble the citation index document."""
-    identifiers = (
-        CONSTITUTION_ARTICLES + FEK_REFERENCES + CELEX_REFS + CHARTER_ARTICLES
-    )
+    identifiers = CONSTITUTION_ARTICLES + FEK_REFERENCES + CELEX_REFS + CHARTER_ARTICLES
     return {
         "description": (
             "Known-good Greek legal citation identifiers used by the deterministic "
-            "citation resolver (PROD-05). Constituition articles, ΦΕΚ, CELEX, and "
+            "citation resolver (PROD-05). Constitution articles, ΦΕΚ, CELEX, and "
             "Charter references."
         ),
         "source": "Built offline by tools/build_citation_index.py",
@@ -73,6 +81,10 @@ def build() -> dict[str, Any]:
             "celex": len(CELEX_REFS),
             "charter": len(CHARTER_ARTICLES),
         },
+        # DH-37: schemes this index is an EXHAUSTIVE register for, and may
+        # therefore disprove a miss in. Empty because none of the above is —
+        # see the module docstring before adding to it.
+        "authoritative_schemes": [],
         "identifiers": identifiers,
     }
 
@@ -80,7 +92,8 @@ def build() -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build the citation resolution index.")
     parser.add_argument(
-        "--output", default="leggie/data/citation_index.json",
+        "--output",
+        default="leggie/data/citation_index.json",
         help="Output path (default: the packaged leggie/data location)",
     )
     args = parser.parse_args()

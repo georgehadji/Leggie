@@ -319,6 +319,11 @@ class CoVeVerifier:
         was checked against a *configured* index and explicitly not found —
         never when there's simply no index to check against (that's
         "unverified", not "wrong", and is left for the LLM cross-check).
+
+        The rule below is correct and has been since it was written; DH-37 was
+        a wrong ``checked`` arriving from the adapter. If a valid citation is
+        ever hard-dropped again, fix the index's declared authority
+        (``GreekCitationParser._is_authoritative``), not this gate.
         """
         if self._citation_parser is None:
             raise RuntimeError("CoVe verifier requires a CitationParserPort")

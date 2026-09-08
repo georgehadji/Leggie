@@ -173,7 +173,7 @@ class Container:
 
         locator = ResourceLocator()
         resolution_index: set[str] = set()
-        covered_schemes: set[CitationScheme] = set()
+        authoritative_schemes: set[CitationScheme] = set()
         try:
             index_path = locator.package_resource("leggie.data", "citation_index.json")
             if index_path.exists():
@@ -186,24 +186,31 @@ class Container:
                 # branch below, which silently fell back to an empty index.
                 if isinstance(index_data, dict):
                     resolution_index = set(index_data.get("identifiers", []))
-                    # DH-36: the index is authoritative only for the schemes it
-                    # declares entries for. Without that restriction a miss on
-                    # a scheme the file never covered (every ECLI, every URL)
-                    # reached CoVe as "positively disproven" and hard-dropped
-                    # the finding. An index that doesn't declare its coverage
-                    # buys nothing: fail open (everything unverified), never
-                    # fail closed on a guess.
-                    categories = index_data.get("categories")
-                    if isinstance(categories, dict):
-                        covered_schemes = {
+                    # DH-37: authority to DISPROVE is DECLARED by the index,
+                    # never inferred from a count. DH-36 derived it from the
+                    # ``categories`` counts, but "holds 3 ΦΕΚ numbers" is a
+                    # presence test where disproving needs exhaustiveness — so
+                    # every real ΦΕΚ outside the seeded three still reached CoVe
+                    # as "positively disproven" and hard-dropped the finding.
+                    #
+                    # An index that says nothing claims nothing: fail open
+                    # (everything merely unverified), never fail closed on a
+                    # guess. Absent is the correct steady state for every index
+                    # Leggie ships, so it is not worth a warning; a declaration
+                    # of the wrong shape is.
+                    declared = index_data.get("authoritative_schemes")
+                    if isinstance(declared, list):
+                        authoritative_schemes = {
                             scheme
                             for name, scheme in INDEX_CATEGORY_SCHEMES.items()
-                            if categories.get(name)
+                            if name in declared
                         }
-                    else:
+                    elif declared is not None:
                         logger.warning(
-                            "citation_index.no_categories: index declares no scheme "
-                            "coverage; every citation will be reported unverified"
+                            "citation_index.malformed_authority: expected a list of "
+                            "scheme names, got %s; no scheme will be treated as "
+                            "exhaustive",
+                            type(declared).__name__,
                         )
                 else:
                     logger.warning(
@@ -213,11 +220,12 @@ class Container:
         except (OSError, ValueError) as exc:
             logger.warning("citation_index.load_failed: %s", exc)
             resolution_index = set()
-            covered_schemes = set()
+            authoritative_schemes = set()
         self.register(
             CitationParserPort,
             lambda: GreekCitationParser(
-                resolution_index=resolution_index, covered_schemes=covered_schemes
+                resolution_index=resolution_index,
+                authoritative_schemes=authoritative_schemes,
             ),
         )
 

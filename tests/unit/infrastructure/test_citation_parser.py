@@ -63,6 +63,23 @@ class TestGreekCitationParser:
         assert CitationScheme.CELEX in schemes
         assert CitationScheme.ECLI in schemes
 
+    def test_supported_schemes_covers_everything_parse_emits(self, parser):
+        """DH-40: the port contract is "schemes this parser handles", so the
+        list must not fall behind parse(). UNKNOWN was missing from it for the
+        whole life of the DH-28 law-reference pattern.
+
+        Deriving the expectation from parse() rather than hard-coding it keeps
+        the two in step the next time a pattern is added.
+        """
+        text = (
+            "ΦΕΚ Α 137/2023, CELEX 32018L1972, ECLI:EU:C:2014:317, "
+            "https://www.et.gr/api/DownloadFeka/?fek_pdf=20210100123, ο ν. 4622/2019"
+        )
+        emitted = {c.scheme for c in parser.parse(text)}
+        assert emitted, "fixture text stopped matching any pattern"
+        assert emitted <= set(parser.supported_schemes())
+        assert CitationScheme.UNKNOWN in parser.supported_schemes()
+
     @pytest.mark.asyncio
     async def test_resolve_with_index(self):
         index = {"ΦΕΚ Α 137/2023", "ΦΕΚ Β 42/2022"}
@@ -84,7 +101,10 @@ class TestGreekCitationParser:
         )
         resolved2 = await parser.resolve(cite2)
         assert resolved2.resolved is False
-        assert "not found in index" in (resolved2.resolution_evidence or "")
+        # No authority argument = the caller built this index and asserts it is
+        # complete, so a miss here is still a real, checked miss (DH-37).
+        assert resolved2.checked is True
+        assert "declared exhaustive" in (resolved2.resolution_evidence or "")
 
     @pytest.mark.asyncio
     async def test_resolve_without_index(self, parser):
@@ -147,7 +167,7 @@ class TestLawReferenceExtraction:
         CoVe hard-drops findings for."""
         parser = GreekCitationParser(
             resolution_index={"Σύνταγμα Άρθρο 5", "ΦΕΚ Α 137/2023", "32018L1972"},
-            covered_schemes={CitationScheme.FEK, CitationScheme.CELEX},
+            authoritative_schemes={CitationScheme.FEK, CitationScheme.CELEX},
         )
         (citation,) = parser.parse("Ο Ν. 4622/2019 ορίζει…")
         resolved = await parser.resolve(citation)
@@ -156,33 +176,39 @@ class TestLawReferenceExtraction:
         assert resolved.resolved is False
 
 
-class TestSchemeCoverage:
-    """DH-36: a resolution index is authoritative only for the schemes it
-    actually holds entries for.
+class TestSchemeAuthority:
+    """DH-37: an index may CONFIRM anything it holds, but may DISPROVE only a
+    scheme it is an *exhaustive* register for.
 
-    The packaged data/citation_index.json declares
-    ``{"constitution": 120, "fek": 3, "celex": 4, "charter": 54}`` — zero ECLI
-    and zero URL identifiers, and 174 of its 181 entries are shaped
-    "Σύνταγμα Άρθρο N" / "Χάρτης Άρθρο N", which parse() can never emit. Before
-    this fix resolve() reported checked=True for every scheme as long as the
-    index was merely non-empty, so a real, valid ECLI or et.gr URL — and every
-    ΦΕΚ outside the packaged three — came back checked=True, resolved=False:
-    exactly the pair CoVeVerifier._check_citations (cove_verifier.py:334) reads
-    as positively DISPROVEN and hard-drops the finding for.
+    The packaged leggie/data/citation_index.json hand-seeds 3 ΦΕΚ and 4 CELEX
+    identifiers, zero ECLI and zero URL, and 174 of its 181 entries are shaped
+    "Σύνταγμα Άρθρο N" / "Χάρτης Άρθρο N", which parse() can never emit.
+
+    DH-36 gated on *presence* — "does the index hold any entries for this
+    scheme?" — which closed the ECLI/URL half and left the ΦΕΚ/CELEX half
+    open: a real, valid gazette reference outside the seeded three still came
+    back checked=True, resolved=False, exactly the pair
+    CoVeVerifier._check_citations (cove_verifier.py) reads as positively
+    DISPROVEN and hard-drops the whole finding for. ΦΕΚ is the most-cited
+    scheme in Greek bills, so that was the expensive half.
+
+    Authority is now DECLARED by the index, never inferred from a count, and
+    the packaged index declares none.
     """
 
     @staticmethod
     def _packaged_shape_parser() -> GreekCitationParser:
-        """A parser wired the way container.py wires the real packaged index."""
+        """A parser wired the way container.py wires the real packaged index:
+        entries it can confirm against, and no declared authority at all."""
         return GreekCitationParser(
             resolution_index={"ΦΕΚ Α 137/2023", "32018L1972", "Σύνταγμα Άρθρο 5"},
-            covered_schemes={CitationScheme.FEK, CitationScheme.CELEX},
+            authoritative_schemes=set(),
         )
 
     @pytest.mark.asyncio
-    async def test_uncovered_scheme_is_unverified_not_disproven(self):
-        """Proof-of-defect: an ECLI against an index declaring no ECLI entries
-        must not be checked at all."""
+    async def test_unauthoritative_scheme_is_unverified_not_disproven(self):
+        """An ECLI against an index that declares no authority over ECLI must
+        not be checked at all."""
         parser = self._packaged_shape_parser()
         cite = Citation(
             scheme=CitationScheme.ECLI,
@@ -193,10 +219,10 @@ class TestSchemeCoverage:
 
         assert resolved.checked is False  # -> CoVe cannot read this as disproven
         assert resolved.resolved is False
-        assert "no entries for scheme 'ecli'" in (resolved.resolution_evidence or "")
+        assert "not exhaustive for scheme 'ecli'" in (resolved.resolution_evidence or "")
 
     @pytest.mark.asyncio
-    async def test_uncovered_url_scheme_is_unverified(self):
+    async def test_unauthoritative_url_scheme_is_unverified(self):
         """Boundary: the second scheme the packaged index has zero entries for."""
         url = "https://www.et.gr/api/DownloadFeka/?fek_pdf=20210100123"
         parser = self._packaged_shape_parser()
@@ -208,11 +234,38 @@ class TestSchemeCoverage:
         assert resolved.resolved is False
 
     @pytest.mark.asyncio
-    async def test_covered_scheme_still_disproves_a_genuine_miss(self):
-        """No-regression: coverage must not turn the gate off entirely. A ΦΕΚ
-        is a scheme the index *does* cover, so a miss there is still a real,
-        checked miss — that is the whole point of having an index."""
+    async def test_sparse_index_miss_is_unverified_not_disproven(self):
+        """THE DH-37 defect. A real, valid gazette reference that simply is not
+        one of the three hand-seeded ΦΕΚ numbers must come back unverified.
+
+        This replaces test_covered_scheme_still_disproves_a_genuine_miss, whose
+        premise ("a ΦΕΚ miss is a real, checked miss") *was* the defect: with 3
+        seeded numbers the index disproved essentially every genuine citation
+        it was shown, and CoVe hard-dropped the finding carrying it.
+        """
         parser = self._packaged_shape_parser()
+        resolved = await parser.resolve(
+            Citation(
+                scheme=CitationScheme.FEK,
+                identifier="ΦΕΚ Α 88/2024",
+                original_text="ΦΕΚ Α 88/2024",
+            )
+        )
+
+        assert resolved.checked is False  # -> CoVe cannot read this as disproven
+        assert resolved.resolved is False
+        assert "not exhaustive for scheme 'fek'" in (resolved.resolution_evidence or "")
+
+    @pytest.mark.asyncio
+    async def test_declared_authoritative_scheme_disproves_a_miss(self):
+        """The mechanism stays alive behind the switch: an index that DECLARES
+        itself exhaustive for ΦΕΚ may still disprove a miss. Nothing Leggie
+        ships declares this today — it is for the day the index is built from
+        a live register (ADR-0004, CELLAR)."""
+        parser = GreekCitationParser(
+            resolution_index={"ΦΕΚ Α 137/2023"},
+            authoritative_schemes={CitationScheme.FEK},
+        )
         resolved = await parser.resolve(
             Citation(
                 scheme=CitationScheme.FEK,
@@ -223,11 +276,16 @@ class TestSchemeCoverage:
 
         assert resolved.checked is True
         assert resolved.resolved is False
-        assert "not found in index" in (resolved.resolution_evidence or "")
+        assert "declared exhaustive" in (resolved.resolution_evidence or "")
 
     @pytest.mark.asyncio
-    async def test_covered_scheme_hit_still_resolves(self):
-        """No-regression: the packaged ΦΕΚ and CELEX entries keep working."""
+    async def test_hit_resolves_even_when_scheme_is_not_authoritative(self):
+        """No-regression: the packaged ΦΕΚ and CELEX entries keep working.
+
+        A hit is positive evidence whether or not the index is exhaustive —
+        the identifier is literally on the known-good list. Only a MISS needs
+        authority to mean anything.
+        """
         parser = self._packaged_shape_parser()
         for scheme, identifier in (
             (CitationScheme.FEK, "ΦΕΚ Α 137/2023"),
@@ -240,11 +298,11 @@ class TestSchemeCoverage:
             assert resolved.resolved is True, scheme
 
     @pytest.mark.asyncio
-    async def test_covered_schemes_none_means_caller_asserts_full_coverage(self):
-        """Boundary: the default keeps the old semantics for a caller that
-        built the index itself (build_resolution_index) and therefore knows
-        what is in it. Only container.py, which loads a packaged file it did
-        not build, passes an explicit set."""
+    async def test_none_means_caller_asserts_exhaustiveness(self):
+        """Boundary: ``None`` keeps the old semantics for a caller that built
+        the index itself (build_resolution_index) and therefore knows it is
+        complete. Only container.py, which loads a packaged file it did not
+        build, passes an explicit set."""
         parser = GreekCitationParser(resolution_index={"ΦΕΚ Α 137/2023"})
         resolved = await parser.resolve(
             Citation(
@@ -258,22 +316,34 @@ class TestSchemeCoverage:
         assert resolved.resolved is False
 
     @pytest.mark.asyncio
-    async def test_empty_covered_set_checks_nothing(self):
-        """Boundary: an index whose categories declare no parser-emitted
-        scheme (the fail-open default container.py uses when ``categories`` is
-        missing or unrecognisable) must verify nothing rather than disprove
-        everything."""
-        parser = GreekCitationParser(resolution_index={"ΦΕΚ Α 137/2023"}, covered_schemes=set())
-        resolved = await parser.resolve(
+    async def test_empty_authority_still_confirms_a_hit_but_never_disproves(self):
+        """Boundary: the fail-open default container.py uses when the index
+        declares no authority (which is every index Leggie ships) must still
+        confirm what it holds — declaring no authority costs the resolver its
+        power to disprove, not its power to verify."""
+        parser = GreekCitationParser(
+            resolution_index={"ΦΕΚ Α 137/2023"}, authoritative_schemes=set()
+        )
+
+        hit = await parser.resolve(
             Citation(
                 scheme=CitationScheme.FEK,
                 identifier="ΦΕΚ Α 137/2023",
                 original_text="ΦΕΚ Α 137/2023",
             )
         )
+        assert hit.checked is True
+        assert hit.resolved is True
 
-        assert resolved.checked is False
-        assert resolved.resolved is False
+        miss = await parser.resolve(
+            Citation(
+                scheme=CitationScheme.FEK,
+                identifier="ΦΕΚ Α 88/2024",
+                original_text="ΦΕΚ Α 88/2024",
+            )
+        )
+        assert miss.checked is False
+        assert miss.resolved is False
 
 
 class TestGreekCitationParserBuildIndex:
