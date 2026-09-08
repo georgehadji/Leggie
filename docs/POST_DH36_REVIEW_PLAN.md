@@ -468,14 +468,108 @@ tests, the floor moves up, never down.
 | 8 | Types, lint, layers | PASS — mypy clean (116 files), `ruff check` clean, `lint-imports` 2/2. `ruff format --check` names 5 files, all pre-existing debt in files this work did not touch (`skeptic.py`, `test_orchestrator.py`, `test_skeptic.py`, `test_openrouter_adapter.py`, `refresh_model_prices.py`) |
 | 9 | No lingering worker after the ingest timing test | PASS |
 | 10 | DH-36 status corrected | PASS — §11a |
-| 11 | Live smoke run or deferral recorded | **OPEN — user decision, see §2.8** |
-
-**Criterion 11 is the only one outstanding.** DH-37 is class A, and the
-standing rule is never to run a live smoke unasked. The change is strictly
-drop-removing, so `findings_per_article` can only rise or hold, and criterion 2
-covers the mechanism offline — but that argument has to be *chosen and
-recorded*, not assumed.
+| 11 | Live smoke run or deferral recorded | **RUN — no regression, but DH-37 not exercised; see §11.2** |
 
 Regenerated index diff, for the record: `identifier_count` 181 unchanged,
 `categories` unchanged, only the corrected "Constitution" spelling, a new
 `build_date`, and `"authoritative_schemes": []`.
+
+### 11.2 Live smoke, single lens (2026-09-08)
+
+Run at the user's explicit request, discharging the class-A obligation in
+§2.8. `leggie analyze Inputs/OE_ΣΧΝ-ΥΠΔΙΚ.pdf --lenses constitutional`,
+exit 0. Log: `smoke_dh37.log` (521 lines, scratchpad — not committed).
+
+Phase 4a first, free: 91 articles, `is_clean=true`, 0 duplicates, 0 missing,
+0 rejected, 89 s wall clock. Note the ingest cap is a hardcoded
+`timeout_s=120.0` in `ingest/bounded.py` with no env override — 31 s of
+headroom on the reference bill, and the 2026-09-07 attempt (§13 of
+`ESCALATED_DEFECTS_PLAN.md`) died exactly there.
+
+| §10 gate | Measured | Verdict |
+|---|---|---|
+| Parse failures < 5% of LLM calls | 0 of 200 | PASS |
+| Non-neutral skeptic verdicts present | 19 refutes / 8 supports / 0 neutral | PASS |
+| No mass `skeptic_llm_error` | 0 | PASS |
+| CoVe drop/revise on valid input | 8 `cove_result`, 6 dropped | PASS |
+| Spend under the $5 cap | **$0.58** | PASS |
+| Findings proportional to article count | 2 findings, **0.02/article** | **FAIL — DH-42** |
+
+Event census: 200 `llm.call` (128 `google/gemini-2.5-flash`, 72
+`x-ai/grok-4.5`), 72 `cascade`, 27 `skeptic_verdict`, 8 `cove_result`,
+6 `cove_quote_fail`.
+
+**DH-37 was NOT exercised by this run, and the smoke therefore does not
+positively prove the fix.** Citation-gate drops: 0. Citation evidence strings
+in the log: 0. `citations` on both surviving findings: `null`. Not one citation
+reached `resolve()`, so the changed code path never executed. This is the same
+wall the 2026-09-07 DH-36 attempt hit and recorded in §13 — the reference
+fixture does not emit the citations these defects are about.
+
+What the run *does* establish, and all it establishes:
+
+1. **No regression.** Exit 0, no degraded events, no budget trip, zero parse
+   failures, spend an order of magnitude under the cap.
+2. **Every drop is attributable and none is the citation gate.** All 6 CoVe
+   drops are `cove_quote_fail` — a fabricated `verbatim_quote`, which is the
+   correct drop.
+3. **The offline end-to-end case (criterion 2) remains the only positive
+   evidence for DH-37.** Discharging it live needs a fixture whose findings
+   actually carry ΦΕΚ citations; a synthetic bill built for that purpose is
+   the cheaper route than waiting for the reference bill to produce one.
+
+---
+
+## 12. Opened, not fixed — DH-42 (yield collapse in the verification chain)
+
+**Severity:** HIGH · **Status:** OPEN · **Class:** A · **Found:** 2026-09-08,
+by the §11.2 smoke.
+
+**Not caused by DH-37.** DH-37 only ever *removes* drops, and this run had
+zero citation-gate drops to remove — the losses are entirely upstream of the
+code this plan touched. Filed separately so it is not mistaken for fallout.
+
+**Symptom:** a single-lens run over 91 articles yields 2 findings
+(0.02/article) against the v5 baseline of 0.14/article (`SMOKE_AUDIT.md`,
+2026-07-11). The `findings_stats.py` health note puts 0.01 in pathological
+territory; this sits just above it.
+
+**Evidence — the funnel, measured:**
+
+| Stage | Count | Loss |
+|---|---|---|
+| Findings reaching the skeptic | 27 | — |
+| After the skeptic (`supports`) | 8 | **19 refuted, 70%** |
+| Reaching CoVe | 8 | — |
+| Surviving CoVe | 2 | **6 dropped, 75%** |
+| **End to end** | **2 of 27** | **93%** |
+
+Against v5, which recorded 19 verdicts as 9 refutes / 9 supports / 1 neutral:
+the refute rate rose from **47% to 70%**, and CoVe then removed three quarters
+of what the skeptic passed. The raw lens yield is *not* the problem — 27
+findings from 91 articles is healthy; the verification chain is eating them.
+
+**Two candidate mechanisms, neither confirmed:**
+
+1. **Skeptic over-refutation.** 19/27 refuted by the `adversarial_critic`
+   route. Needs per-verdict inspection against the source: are these genuine
+   refutations or an over-eager critic?
+2. **Fabricated quotes at the lens stage.** All 6 CoVe drops are
+   `cove_quote_fail` — the lens model returned a `verbatim_quote` absent from
+   the source. CoVe is behaving correctly; the *lens* is producing unusable
+   evidence. 128 of the 200 calls ran on `google/gemini-2.5-flash`, which is
+   the cheapest tier and the obvious suspect for quote fabrication.
+
+Mechanism 2 is the more actionable and the more testable: a quote either
+appears in the source or it does not, so it needs no judgement call.
+
+**Do NOT fix by loosening a gate.** Both stages are doing what they were built
+to do; the historical pathology this project already suffered was the opposite
+(299 findings, 68% INFO filler). Raising yield by weakening the skeptic or the
+quote check would recreate it. The fix belongs upstream — at whatever is
+producing refutable claims and fabricated quotes.
+
+**First step when this is picked up:** dump the 6 `cove_quote_fail` findings
+with their claimed quotes beside the real article text, and the 19 refutations
+with the critic's stated reason. One ablation per run
+(leggie-research-methodology). Do not change two variables at once.
