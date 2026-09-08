@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from leggie.config.settings import get_settings
 from leggie.domain.models import Document as Document
 from leggie.infrastructure.ingest.base import (
     IngestError,
@@ -61,7 +62,7 @@ class PDFIngestor(Ingestor):
                 # per-page extract_text() loop, not after. A page-count bomb
                 # (many pages, little text) would otherwise sail past the
                 # max_elements char cap, which only ever sees the *result*.
-                max_pages = IngestorFactory.bounds["max_pages"]
+                max_pages = IngestorFactory._cap("max_pages")
                 if len(pdf.pages) > max_pages:
                     raise IngestError(
                         f"Refusing to ingest {path.name}: {len(pdf.pages)} pages "
@@ -167,13 +168,25 @@ class IngestorFactory:
         ".txt": TextIngestor,
     }
 
-    # Global bounds applied to every ingestor (PROD-16a).
-    bounds: dict[str, float | int] = {
-        "max_file_size_mb": 50.0,
-        "max_pages": 10_000,
-        "max_elements": 500_000,
-        "timeout_s": 120.0,
-    }
+    # Runtime OVERRIDES of the PROD-16a bounds, empty by default.
+    #
+    # SSOT: the values themselves live in IngestSettings and nowhere else, so
+    # they are configurable (LEGGIE_INGEST_*) and cannot drift between the
+    # three places that used to spell them out. This dict exists only so a
+    # caller — in practice a test — can tune one cap without touching the
+    # environment. Keys: max_file_size_mb, max_pages, max_elements, timeout_s.
+    bounds: dict[str, float | int] = {}
+
+    @classmethod
+    def _cap(cls, name: str) -> float | int:
+        """Resolve one cap: a runtime override if set, else the setting."""
+        if name in cls.bounds:
+            return cls.bounds[name]
+        caps = get_settings().ingest
+        if name == "timeout_s":
+            return caps.timeout_seconds
+        value: float | int = getattr(caps, name)
+        return value
 
     @classmethod
     def register_format(cls, extension: str, ingestor_cls: type[Ingestor]) -> None:
@@ -192,14 +205,13 @@ class IngestorFactory:
         if ext not in cls._ingestors:
             raise UnsupportedFormatError(f"Unsupported format: {ext}")
         base = cls._ingestors[ext]()
-        # `bounds` is deliberately a mutable dict[str, float | int] so callers can
-        # tune caps at runtime; page/element caps are counts and must arrive as int.
+        # Page/element caps are counts and must arrive as int.
         return BoundedIngestor(
             base,
-            max_file_size_mb=float(cls.bounds["max_file_size_mb"]),
-            max_pages=int(cls.bounds["max_pages"]),
-            max_elements=int(cls.bounds["max_elements"]),
-            timeout_s=float(cls.bounds["timeout_s"]),
+            max_file_size_mb=float(cls._cap("max_file_size_mb")),
+            max_pages=int(cls._cap("max_pages")),
+            max_elements=int(cls._cap("max_elements")),
+            timeout_s=float(cls._cap("timeout_s")),
         )
 
     @classmethod

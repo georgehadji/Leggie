@@ -19,6 +19,7 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
+from leggie.config.settings import get_settings
 from leggie.domain.models import Event, EventType
 from leggie.infrastructure.ingest.base import IngestError, Ingestor, InputNotFoundError
 
@@ -31,17 +32,25 @@ class BoundedIngestor(Ingestor):
     def __init__(
         self,
         wrapped: Ingestor,
-        max_file_size_mb: float = 50.0,
-        max_pages: int = 10_000,
-        max_elements: int = 500_000,
-        timeout_s: float = 120.0,
+        max_file_size_mb: float | None = None,
+        max_pages: int | None = None,
+        max_elements: int | None = None,
+        timeout_s: float | None = None,
         on_degradation: Callable[[Event], None] | None = None,
     ) -> None:
+        # SSOT: every cap defaults to IngestSettings, never to a literal. These
+        # numbers used to be written out here AND in IngestorFactory.bounds AND
+        # in settings.py, so three copies could drift and only one of them was
+        # configurable. An explicit argument still wins — that is how the
+        # factory applies runtime overrides and how tests pin a short timeout.
+        caps = get_settings().ingest
         self._wrapped = wrapped
-        self._max_file_size_mb = max_file_size_mb
-        self._max_pages = max_pages
-        self._max_elements = max_elements
-        self._timeout_s = timeout_s
+        self._max_file_size_mb = (
+            float(caps.max_file_size_mb) if max_file_size_mb is None else max_file_size_mb
+        )
+        self._max_pages = caps.max_pages if max_pages is None else max_pages
+        self._max_elements = caps.max_elements if max_elements is None else max_elements
+        self._timeout_s = caps.timeout_seconds if timeout_s is None else timeout_s
         self._on_degradation = on_degradation or (lambda _ev: None)
 
     def _refuse(self, reason: str) -> None:

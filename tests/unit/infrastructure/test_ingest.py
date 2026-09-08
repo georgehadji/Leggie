@@ -178,6 +178,77 @@ class TestBoundedIngestor:
         assert any("ingest refused" in c for c in bounded_warnings)
 
 
+class TestIngestCapsSingleSourceOfTruth:
+    """SSOT: IngestSettings defines the PROD-16a caps, and nothing else does.
+
+    The four numbers used to be spelled out three times — settings.py,
+    IngestorFactory.bounds, and BoundedIngestor.__init__ defaults. Only
+    max_file_size_mb was reachable by configuration; the other three could
+    drift apart silently, and the hardcoded 120 s timeout aborted the
+    2026-09-07 live smoke on a bill that needs 89 s to parse with no supported
+    way to raise it.
+    """
+
+    @staticmethod
+    def _pin(monkeypatch, **caps):
+        """Point the settings singleton at explicit cap values."""
+        from leggie.config import settings as settings_module
+
+        pinned = settings_module.Settings(ingest=settings_module.IngestSettings(**caps))
+        monkeypatch.setattr(settings_module, "_settings", pinned)
+        return pinned
+
+    def test_bounded_ingestor_defaults_come_from_settings(self, monkeypatch):
+        from leggie.infrastructure.ingest.bounded import BoundedIngestor
+
+        self._pin(monkeypatch, timeout_seconds=7.5, max_pages=11, max_elements=13)
+        bounded = BoundedIngestor(TextIngestor())
+
+        assert bounded._timeout_s == 7.5
+        assert bounded._max_pages == 11
+        assert bounded._max_elements == 13
+
+    def test_factory_reads_settings(self, monkeypatch):
+        self._pin(monkeypatch, timeout_seconds=3.25, max_pages=17)
+        bounded = IngestorFactory.get_ingestor("x.txt")
+
+        assert bounded._timeout_s == 3.25
+        assert bounded._max_pages == 17
+
+    def test_explicit_argument_still_wins_over_settings(self, monkeypatch):
+        """The caps stay injectable — that is how a test pins a short timeout
+        and how the factory applies a runtime override."""
+        from leggie.infrastructure.ingest.bounded import BoundedIngestor
+
+        self._pin(monkeypatch, timeout_seconds=7.5)
+        assert BoundedIngestor(TextIngestor(), timeout_s=0.05)._timeout_s == 0.05
+
+    def test_factory_bounds_override_still_wins(self, monkeypatch):
+        """`IngestorFactory.bounds` is now overrides-only, but an entry in it
+        must still beat the setting — several tests depend on that."""
+        self._pin(monkeypatch, timeout_seconds=7.5)
+        monkeypatch.setitem(IngestorFactory.bounds, "timeout_s", 0.5)
+
+        assert IngestorFactory.get_ingestor("x.txt")._timeout_s == 0.5
+
+    def test_no_cap_literals_remain_outside_settings(self):
+        """The regression that matters: a second copy of a cap value reappearing
+        in the factory or the decorator. Greps for the specific literals rather
+        than trusting review."""
+        import pathlib
+
+        import leggie
+
+        # Resolved from the installed package, not the working directory, so
+        # this holds wherever pytest is invoked from.
+        pkg = pathlib.Path(leggie.__file__).parent
+        for module in ("infrastructure/ingest/__init__.py", "infrastructure/ingest/bounded.py"):
+            src = (pkg / module).read_text(encoding="utf-8")
+            code = "\n".join(line for line in src.splitlines() if not line.lstrip().startswith("#"))
+            for literal in ("10_000", "500_000", "120.0", "50.0"):
+                assert literal not in code, f"{module} re-hardcodes an ingest cap ({literal})"
+
+
 class TestPDFIngestorPageCap:
     """PROD-16a: the ``max_pages`` cap was accepted by ``BoundedIngestor``
     but never read anywhere (confirmed: zero references outside its own

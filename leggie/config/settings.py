@@ -105,11 +105,27 @@ class AnalysisSettings(BaseSettings):
 
 
 class IngestSettings(BaseSettings):
-    """Ingest configuration."""
+    """Ingest configuration.
+
+    SSOT for the PROD-16a safety caps. These four values were previously
+    written out three times — here, in ``IngestorFactory.bounds``, and again as
+    ``BoundedIngestor.__init__`` defaults — so only ``max_file_size_mb`` was
+    reachable by configuration at all, and the other three could drift apart
+    silently. The hardcoded 120 s ingest timeout is what aborted the
+    2026-09-07 live smoke on a bill that needs 89 s to parse, with no supported
+    way to raise it. Both other sites now read these values.
+    """
 
     model_config = SettingsConfigDict(env_prefix="LEGGIE_INGEST_", env_file=".env", extra="ignore")
 
     max_file_size_mb: int = Field(default=50, ge=1)
+    max_pages: int = Field(default=10_000, ge=1)
+    max_elements: int = Field(default=500_000, ge=1)
+    # Wall-clock cap on a single ingest. 0 disables it; the reference bill
+    # (678 KB, 91 articles) needs ~89 s, so the default leaves little headroom
+    # on a slower machine — raise LEGGIE_INGEST__TIMEOUT_SECONDS rather than
+    # editing code.
+    timeout_seconds: float = Field(default=120.0, ge=0)
     temp_dir: str = Field(default="/tmp/leggie_ingest")  # nosec B108
     ocr_enabled: bool = False
 
