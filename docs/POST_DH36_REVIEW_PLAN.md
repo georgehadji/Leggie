@@ -647,26 +647,70 @@ first gate that refuses everything means no downstream stage — CoVe, the
 citation gate, rerank — can be exercised live at all. DH-37's live proof is
 blocked behind it, and so is any future verification work.
 
-**The decision this needs, stated plainly.** `review()` drops a finding on a
-single `refutes` string from one adversarial LLM call: no confidence weighting,
-no severity threshold, no second opinion, and the critic's own
-`confidence_adjustment` is discarded on that path. Options, none of which should
-be taken without the numbers:
+### 12.1 Resolution of the skeptic half (2026-09-09) — it was not a policy question
 
-1. **Require agreement** — two calls, or one call at a lower temperature with a
-   confirmation pass. Doubles critic cost.
-2. **Grade instead of drop** — a refutation subtracts confidence rather than
-   deleting; the finding survives at lower rank and the reader sees the
-   objection. Closest to what CoVe already does with revise-vs-drop.
-3. **Threshold on severity** — only refute-drop findings below a confidence
-   floor, keeping high-confidence findings with the objection attached.
-4. **Leave it** — accept that the chain is tuned to publish almost nothing, and
-   record that as the product's position.
+§12.0 filed this as a policy decision with four options. Reading the evidence
+first — as this section demanded — showed that was wrong. **It was a
+prompt/code mismatch.**
 
-Before choosing, read the 19 refutation reasons from the 2026-09-08 smoke log
-against their source articles. The critic may well be right; "yield is low" is
-not evidence that it is wrong, and the historical pathology ran the other way
-(299 findings, 68% filler). One ablation per run.
+All 23 refutations from the two smoke runs were decoded and classified:
+
+| Kind | Count | Example |
+|---|---|---|
+| **Falsification** — the finding cites a provision that says something else | ~11 | *"βασίζεται σε εσφαλμένη ερμηνεία του άρθρου 77 παρ. 2"*, with the critic quoting the real text back |
+| **Calibration** — the observation stands, the conclusion overreaches | ~12 | *"κάνει λογικό άλμα στο συμπέρασμα"*, *"υπερβάλλει στη σοβαρότητα"* |
+
+The critic's own system prompt listed four grounds for refutation — *εσφαλμένη
+επίκληση νόμου, μη υπαρκτό άρθρο, λογικό άλμα στο συμπέρασμα, υπερβολή στη
+σοβαρότητα* — then said "if you find a clear error, `refutes`". `review()`
+executes every `refutes` as deletion. So a disagreement about **tone** carried
+the same penalty as citing a nonexistent article: roughly half the deletions
+were real observations that were merely overstated.
+
+**Fix:** the prompt now separates the two. Falsification still refutes and still
+deletes, and the prompt demands the critic show what the provision actually
+says. Overstatement returns `neutral` with a negative `confidence_adjustment`,
+which `review()` folds into the score — the finding survives at lower rank with
+the objection recorded. No schema change: `verdict` + `confidence_adjustment` +
+`reason` already expressed this. Yesterday's `_bounded_adjustment` decision to
+leave `neutral` sign-and-magnitude untouched is what makes it work, and is now
+load-bearing rather than incidental.
+
+This is not the fenced "loosen a gate" move. Nothing that the gate could
+previously prove false now survives; only objections the critic itself framed as
+matters of degree stopped being executions.
+
+### 12.2 Measured — three live runs on the probe, one variable at a time
+
+`leggie analyze Inputs/DH37_citation_probe.txt --lenses constitutional`
+
+| Run | Change | refutes | `cove_result` | `cove_quote_fail` | **findings** | cost |
+|---|---|---|---|---|---|---|
+| v1 | before DH-42 | **4/4** | 0 | — | **0** | $0.016 |
+| v2 | skeptic prompt split | 1/4 | 3 | 2 | 1 | $0.017 |
+| v3 | + quote-gate fixes | 1/4 | 3 | **1** | **2** | $0.018 |
+
+Cost is flat across all three; this bought findings, not tokens. CoVe went from
+never executing to running on every survivor — the chain can now be exercised
+end to end, which was the deeper problem behind §11.4.
+
+**v2 → v3 came from the new logging, not from guessing.** With the quote text
+recorded, both v2 failures were visibly real quotes retyped imperfectly: one
+wrapped in guillemets the source does not carry, one joining the source's line
+break without a space (*"χωρίς τηνπροηγούμενη"*). `validate_quote` now strips
+enclosing quotation marks, and `_normalize` discards whitespace rather than
+collapsing it — spacing is forgiven, content is not.
+
+**The one remaining `cove_quote_fail` is the gate working correctly.** The model
+returned two quotes joined by *«…» και «…»* — a compound excerpt, not the single
+verbatim quote the contract asks for. Accepting it would mean accepting
+arbitrary constructed text. If it proves common, the fix belongs in the lens
+prompt, not the matcher.
+
+**Still not discharged: DH-37's live proof.** Findings now reach CoVe, but
+neither surviving finding carried a ΦΕΚ citation in its evidence, so
+`resolve()` still did not run on the disprovable path. The offline proof
+(§11.3) remains the evidence for DH-37.
 
 **Not caused by DH-37.** DH-37 only ever *removes* drops, and this run had
 zero citation-gate drops to remove — the losses are entirely upstream of the

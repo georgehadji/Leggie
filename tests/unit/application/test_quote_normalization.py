@@ -104,3 +104,18 @@ class TestValidateQuoteContract:
 
     def test_typographic_variant_validates(self) -> None:
         assert CoVeVerifier().validate_quote("της παρ' 3 του άρθρου 12", SOURCE) is True
+
+    def test_enclosing_guillemets_are_stripped(self) -> None:
+        """Measured on the 2026-09-08 probe run: the critic wrapped its quote in
+        « » as quotation punctuation, for a sentence the source carries
+        unquoted. The added marks alone failed a genuine quote."""
+        assert CoVeVerifier().validate_quote("«οι όροι και οι προϋποθέσεις»", SOURCE) is True
+
+    def test_missing_space_at_a_line_join_is_forgiven(self) -> None:
+        """Also measured on that run: the model joined the source's line break
+        without a space — "χωρίς τηνπροηγούμενη" for "χωρίς την\\nπροηγούμενη"."""
+        assert CoVeVerifier().validate_quote("οι όροικαι οι προϋποθέσεις", SOURCE) is True
+
+    def test_whitespace_insensitivity_does_not_forgive_content(self) -> None:
+        """The limit of that leniency: spacing is forgiven, words are not."""
+        assert CoVeVerifier().validate_quote("οι όροι και οι απαιτήσεις", SOURCE) is False

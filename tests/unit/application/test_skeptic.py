@@ -156,6 +156,75 @@ class TestLLMAdversarialGate:
         assert survivors[0].confidence.score > 0.5
 
     @pytest.mark.asyncio
+    async def test_overstatement_downgrades_instead_of_deleting(self):
+        """DH-42: the critic's two kinds of objection must not share a penalty.
+
+        'refutes' deletes. The prompt used to solicit it for four grounds, two
+        of which — "λογικό άλμα στο συμπέρασμα", "υπερβολή στη σοβαρότητα" —
+        are disagreements about how strongly a finding was put, not claims that
+        it is false. 12 of the 23 refutations measured on 2026-09-08 were of
+        that kind: real observations, overstated, deleted outright.
+
+        Overstatement now arrives as neutral carrying a negative adjustment, so
+        the finding SURVIVES at lower confidence with the objection recorded.
+        """
+        llm = FakeLLM(
+            SkepticVerdictResponse(
+                verdict="neutral",
+                reason="Υπερβάλλει στη σοβαρότητα· η παρατήρηση όμως στέκει.",
+                confidence_adjustment=-0.3,
+            )
+        )
+        f = make_finding(confidence=0.7)
+        survivors, verdicts = await CalibratedSkeptic(llm=llm).review([f])
+
+        assert len(survivors) == 1, "an overstated but valid finding was deleted"
+        # 0.7 − 0.3 (critic) + 0.05 (FactualGate: the rule cites a constitutional
+        # provision). review() sums every gate's adjustment, so the chain shows.
+        assert survivors[0].confidence.score == pytest.approx(0.45)
+        assert survivors[0].confidence.score < 0.7, "the objection must cost something"
+        assert any("υπερβάλλει" in (v.reason or "").lower() for v in verdicts)
+
+    @pytest.mark.asyncio
+    async def test_falsification_still_deletes(self):
+        """The other half. Routing overstatement away from 'refutes' must not
+        cost the gate its power to delete a finding that is actually wrong —
+        that is the fenced 'raise yield by loosening a gate' failure."""
+        llm = FakeLLM(
+            SkepticVerdictResponse(
+                verdict="refutes",
+                reason="Το άρθρο 77 παρ. 2 δεν λέει αυτό.",
+                confidence_adjustment=0.5,  # arbitrary sign, as the live run showed
+            )
+        )
+        survivors, _ = await CalibratedSkeptic(llm=llm).review([make_finding()])
+
+        assert survivors == []
+
+    @pytest.mark.asyncio
+    async def test_prompt_separates_falsification_from_overstatement(self):
+        """Pins the instruction itself: the split lives in the prompt, and a
+        future edit that collapses it would silently restore the old
+        delete-everything behaviour with every test above still green."""
+        captured: dict[str, str] = {}
+
+        class _CapturingLLM(FakeLLM):
+            async def generate_structured(self, request, schema):
+                captured["system"] = request.system_prompt or ""
+                return await super().generate_structured(request, schema)
+
+        llm = _CapturingLLM(
+            SkepticVerdictResponse(verdict="neutral", reason="", confidence_adjustment=0.0)
+        )
+        await CalibratedSkeptic(llm=llm).review([make_finding()])
+
+        system = captured["system"]
+        assert "refutes" in system and "neutral" in system
+        # Overstatement must be named, and named on the neutral side.
+        assert "υπερβολή στη σοβαρότητα" in system or "υπερβάλλει" in system
+        assert "ΜΗΝ" in system, "the prompt no longer forbids refuting on tone"
+
+    @pytest.mark.asyncio
     async def test_gate_added_only_with_llm(self):
         no_llm = CalibratedSkeptic()
         with_llm = CalibratedSkeptic(

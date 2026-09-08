@@ -108,13 +108,38 @@ class LLMAdversarialGate(SkepticGate):
 
     async def examine(self, finding: Finding) -> SkepticVerdict:
         model, critic_max_tokens = await self._select_model()
+        # DH-42: 'refutes' DELETES the finding (see CalibratedSkeptic.review),
+        # so the grounds for it must be grounds for deletion. This prompt used
+        # to list four: wrong law cited, nonexistent article, logical leap in
+        # the conclusion, exaggerated severity — then said "if you find a clear
+        # error, refutes". The first two falsify a finding. The last two are
+        # disagreements about how strongly it was put, and 12 of the 23
+        # refutations measured on 2026-09-08 were of that kind: "κάνει λογικό
+        # άλμα", "υπερβάλλει στη σοβαρότητα". A real observation, overstated,
+        # was being deleted rather than toned down.
+        #
+        # The two now route differently. Falsification still refutes and still
+        # deletes; overstatement comes back as 'neutral' carrying a negative
+        # confidence_adjustment, which review() folds into the score so the
+        # finding survives at lower rank with the objection recorded. No schema
+        # change: verdict + confidence_adjustment + reason already express this.
         system = (
             "Είσαι επικριτικός ελεγκτής νομικών ευρημάτων για ελληνικό νομοσχέδιο. "
-            "Ο στόχος σου είναι να ΑΝΑΤΡΕΨΕΙΣ το εύρημα αν είναι λανθασμένο νομικά ή "
-            "πραγματολογικά — μην το αποδέχεσαι απλώς επειδή ακούγεται εύλογο. Ψάξε "
-            "για: εσφαλμένη επίκληση νόμου, μη υπαρκτό άρθρο, λογικό άλμα στο "
-            "συμπέρασμα, υπερβολή στη σοβαρότητα. Αν δεν βρεις σφάλμα, verdict="
-            "'supports' ή 'neutral'. Αν βρεις σαφές σφάλμα, verdict='refutes'."
+            "Μην αποδέχεσαι ένα εύρημα απλώς επειδή ακούγεται εύλογο.\n\n"
+            "Διάκρινε ΑΥΣΤΗΡΑ δύο περιπτώσεις:\n\n"
+            "1) Το εύρημα είναι ΨΕΥΔΕΣ — επικαλείται διάταξη που δεν υπάρχει, "
+            "αποδίδει σε άρθρο περιεχόμενο που δεν έχει, ή η νομική βάση του "
+            "διαψεύδεται από το ίδιο το κείμενο. ΤΟΤΕ verdict='refutes'. Το "
+            "εύρημα ΔΙΑΓΡΑΦΕΤΑΙ, οπότε χρησιμοποίησε το 'refutes' μόνο όταν "
+            "μπορείς να δείξεις τι λέει πράγματι η διάταξη.\n\n"
+            "2) Η παρατήρηση ΣΤΕΚΕΙ αλλά έχει διατυπωθεί υπερβολικά — λογικό "
+            "άλμα στο συμπέρασμα, υπερβολή στη σοβαρότητα, ισχυρισμός πιο "
+            "κατηγορηματικός απ' όσο στηρίζει το κείμενο. ΤΟΤΕ verdict='neutral' "
+            "με ΑΡΝΗΤΙΚΟ confidence_adjustment (-0.1 έως -0.4 ανάλογα με την "
+            "υπερβολή) και εξήγησε στο reason τι ακριβώς υπερβάλλει. ΜΗΝ "
+            "χρησιμοποιείς 'refutes' εδώ: η ένσταση αφορά τον τόνο, όχι την "
+            "ορθότητα.\n\n"
+            "Αν το εύρημα είναι βάσιμο και σωστά διατυπωμένο, verdict='supports'."
         )
         prompt = (
             f"ΕΥΡΗΜΑ ΠΡΟΣ ΕΛΕΓΧΟ:\n"

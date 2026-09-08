@@ -122,7 +122,12 @@ def _normalize(text: str) -> str:
     # Greek final sigma: "ΟΡΟΣ".lower() is "ορος" but the source reads "όρος",
     # and a model may output either form mid-word.
     folded = folded.replace("ς", "σ")
-    return re.sub(r"\s+", " ", folded.strip())
+    # Whitespace is discarded, not collapsed. A model joining the source's line
+    # break emits "χωρίς τηνπροηγούμενη" for "χωρίς την\nπροηγούμενη" — measured
+    # on the 2026-09-08 probe run, where it cost a real finding. Dropping spaces
+    # forgives that without forgiving content: an invented sentence still has to
+    # match character for character.
+    return re.sub(r"\s+", "", folded)
 
 
 class CoVeVerifier:
@@ -151,7 +156,11 @@ class CoVeVerifier:
         """
         if not quote or not source_text:
             return False
-        return _normalize(quote) in _normalize(source_text)
+        # Strip quotation marks the model wrapped AROUND its quote rather than
+        # copied from inside it. Measured on the 2026-09-08 probe run: the
+        # critic returned «Κατά της απόφασης … δικαστηρίου.» for a sentence the
+        # source carries unquoted, and the added guillemets alone failed it.
+        return _normalize(quote).strip("\"'") in _normalize(source_text)
 
     # ── Public API ──────────────────────────────────────────────────────
     async def verify(self, finding: Finding, source_text: str = "") -> CoVeResult:
