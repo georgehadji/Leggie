@@ -205,9 +205,7 @@ class TestGateIsolation:
 
     @pytest.mark.asyncio
     async def test_crashing_gate_does_not_discard_other_gates_verdicts(self):
-        skeptic = CalibratedSkeptic(
-            gates=[NumericGate(), CrashingGate(), FactualGate()]
-        )
+        skeptic = CalibratedSkeptic(gates=[NumericGate(), CrashingGate(), FactualGate()])
         f = make_finding(rule="Το Άρθρο 43 του Συντάγματος ορίζει")
         verdicts = await skeptic.examine(f)
         assert len(verdicts) == 3

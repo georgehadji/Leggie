@@ -72,9 +72,7 @@ def rewrite(catalog: dict[str, dict[str, float | None]]) -> None:
         live = catalog.get(model_id)
         if live is None:
             return match.group(0)
-        body = (
-            f"\n        input_per_1m={live['input']:g}, output_per_1m={live['output']:g},"
-        )
+        body = f"\n        input_per_1m={live['input']:g}, output_per_1m={live['output']:g},"
         if live["cached"] is not None:
             body += f"\n        cached_input_per_1m={live['cached']:g},"
         return f'"{model_id}": ModelPrice({body}\n    )'

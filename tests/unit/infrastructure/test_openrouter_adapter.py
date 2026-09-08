@@ -384,9 +384,7 @@ class TestTransportErrorTranslation:
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "exc", [httpx.ReadTimeout("boom"), httpx.ConnectTimeout("boom")]
-    )
+    @pytest.mark.parametrize("exc", [httpx.ReadTimeout("boom"), httpx.ConnectTimeout("boom")])
     async def test_timeout_raises_llm_timeout_error(self, exc: Exception):
         # with_retry() now actually retries LLMTimeoutError (see below), so
         # every attempt re-raising the same timeout would otherwise burn its

@@ -221,7 +221,9 @@ class EmptyThenFoundLLM(LLMPort):
                 ]
             }
         obj = schema.model_validate(payload)
-        return obj, LLMResponse(content="", model=request.model or "fake", tier_used=ModelTier.BUDGET, usage={})
+        return obj, LLMResponse(
+            content="", model=request.model or "fake", tier_used=ModelTier.BUDGET, usage={}
+        )
 
     async def count_tokens(self, text: str, model: str | None = None) -> int:
         return len(text) // 4
@@ -275,9 +277,13 @@ class TestCascadeFailureIsolation:
         """No-regression: a non-crashing cascade() must still be honoured."""
         llm = EmptyThenFoundLLM()
         orch = Orchestrator(
-            llm=llm, router=WorkingCascadeRouter(), lens_config={"constitutional": ConstitutionalLens}
+            llm=llm,
+            router=WorkingCascadeRouter(),
+            lens_config={"constitutional": ConstitutionalLens},
         )
-        findings = await orch.analyze_article(ARTICLE_DELEGATION_ONLY, lens_names=["constitutional"])
+        findings = await orch.analyze_article(
+            ARTICLE_DELEGATION_ONLY, lens_names=["constitutional"]
+        )
         assert len(findings) == 1
         assert len(llm.requests) == 2
         assert llm.requests[0].model == "google/gemini-2.5-flash"
