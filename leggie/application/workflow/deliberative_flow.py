@@ -18,7 +18,6 @@ from leggie.application.ports.ingest import IngestPort
 from leggie.application.ports.parse import ParsePort
 from leggie.application.ports.reasoner import ReasonerPort, ReasonerRequest, ReasonerResult
 from leggie.application.services.deliberative_prompts import DeliberativePromptRenderer
-from leggie.application.workflow.ingest_parse import lazy_ingest_adapter, lazy_parse_adapter
 from leggie.domain.models import Event, EventType
 
 _CHARS_PER_TOKEN = 4  # rough heuristic, consistent with LLMAdapter.count_tokens
@@ -57,8 +56,10 @@ class DeliberativeFlow:
         self._stage1_preset = stage1_preset
         self._stage2_preset = stage2_preset
         self._server_manager = server_manager
-        self._ingester = ingester or lazy_ingest_adapter()
-        self._parser = parser or lazy_parse_adapter()
+        # ARCH-05: see BillAnalysisFlow — the composition root injects both ports;
+        # no infrastructure fallback is constructed from the application layer.
+        self._ingester = ingester
+        self._parser = parser
         self._prompts = prompt_renderer or DeliberativePromptRenderer()
         self._citation_parser = citation_parser
         self._max_tokens_per_run = max_tokens_per_run
@@ -84,6 +85,11 @@ class DeliberativeFlow:
         if self._server_manager is not None:
             await self._server_manager.ensure_running()
 
+        if self._ingester is None or self._parser is None:
+            raise ValueError(
+                "DeliberativeFlow was built without an IngestPort/ParsePort; pass "
+                "ingester= and parser= (the container binds both)."
+            )
         text = await self._ingester.ingest(file_path)
         doc = self._parser.parse(
             text, title=file_path.stem, source_format=file_path.suffix.lstrip(".")

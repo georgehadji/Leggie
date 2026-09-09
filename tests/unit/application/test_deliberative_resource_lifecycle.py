@@ -18,9 +18,13 @@ import pytest
 from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
 from leggie.application.cqrs.handlers import cli_handlers
 from leggie.application.ports.citation_parser import CitationParserPort
+from leggie.application.ports.ingest import IngestPort
+from leggie.application.ports.parse import ParsePort
 from leggie.application.ports.reasoner import ReasonerPort, ReasonerRequest, ReasonerResult
 from leggie.config.settings import ReasonerSettings, Settings
 from leggie.infrastructure.container import Container
+from leggie.infrastructure.ingest_adapter import IngestAdapter
+from leggie.infrastructure.parse_adapter import ParseAdapter
 from leggie.infrastructure.reasoner.server_manager import ReasonerServerManager
 
 SAMPLE_BILL = "ΣΧΕΔΙΟ ΝΟΜΟΥ\n\nΆρθρο 1 – Δοκιμή\n1. Κείμενο.\n"
@@ -148,6 +152,10 @@ def patch_collaborators(monkeypatch) -> Container:
         lambda: FakeReasonerAdapter(base_url="http://fake", api_key="", request_timeout=1.0),
     )
     container.register(CitationParserPort, lambda: FakeGreekCitationParser())
+    # ARCH-05: the handler injects the ingest/parse ports; the flow no longer
+    # default-constructs adapters for itself.
+    container.register(IngestPort, lambda: IngestAdapter())
+    container.register(ParsePort, lambda: ParseAdapter())
     return container
 
 

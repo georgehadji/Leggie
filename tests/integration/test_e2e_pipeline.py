@@ -6,6 +6,19 @@ Skeptic → CoVe → reports. No mocks, real file I/O.
 
 import pytest
 
+from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
+from leggie.infrastructure.ingest_adapter import IngestAdapter
+from leggie.infrastructure.parse_adapter import ParseAdapter
+
+
+def _flow(**kw) -> BillAnalysisFlow:
+    """ARCH-05: the flow no longer default-constructs its ingest/parse adapters,
+    so tests inject the same two the container binds. Both are offline."""
+    kw.setdefault("ingester", IngestAdapter())
+    kw.setdefault("parser", ParseAdapter())
+    return BillAnalysisFlow(**kw)
+
+
 REAL_BILL = """
 ΣΧΕΔΙΟ ΝΟΜΟΥ
 «Ρυθμίσεις για την ψηφιακή διακυβέρνηση και την προστασία δεδομένων»
@@ -47,9 +60,7 @@ class TestEndToEnd:
     @pytest.mark.asyncio
     async def test_full_pipeline_findings_and_reports(self, bill_file, tmp_path):
         """End-to-end: bill → findings + reports."""
-        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
-
-        flow = BillAnalysisFlow()
+        flow = _flow()
         findings, reports = await flow.run(bill_file, output_dir=tmp_path)
 
         # Should find issues across multiple lenses
@@ -58,9 +69,7 @@ class TestEndToEnd:
     @pytest.mark.asyncio
     async def test_full_pipeline_reports_rendered(self, bill_file, tmp_path):
         """Both report types rendered end-to-end."""
-        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
-
-        flow = BillAnalysisFlow()
+        flow = _flow()
         findings, reports = await flow.run(bill_file, output_dir=tmp_path)
 
         assert len(reports) == 2, "Should produce 2 reports"
@@ -75,9 +84,7 @@ class TestEndToEnd:
     @pytest.mark.asyncio
     async def test_full_pipeline_events_audit_trail(self, bill_file, tmp_path):
         """Audit trail recorded for the full run."""
-        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
-
-        flow = BillAnalysisFlow()
+        flow = _flow()
         await flow.run(bill_file, output_dir=tmp_path)
 
         events = flow.get_event_log()
@@ -91,28 +98,23 @@ class TestEndToEnd:
         """Flow reaches DONE state."""
         # WorkflowState is re-exported incidentally by bill_analysis_flow;
         # import it from the module that defines it.
-        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
         from leggie.domain.models import WorkflowState
 
-        flow = BillAnalysisFlow()
+        flow = _flow()
         await flow.run(bill_file, output_dir=tmp_path)
         assert flow.state == WorkflowState.DONE
 
     @pytest.mark.asyncio
     async def test_full_pipeline_suggestions_generated(self, bill_file, tmp_path):
         """Improvement suggestions produced."""
-        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
-
-        flow = BillAnalysisFlow()
+        flow = _flow()
         await flow.run(bill_file, output_dir=tmp_path)
         assert len(flow.suggestions) > 0, "Should generate improvement suggestions"
 
     @pytest.mark.asyncio
     async def test_full_pipeline_reports_properties(self, bill_file, tmp_path):
         """Reports and suggestions accessible via properties."""
-        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
-
-        flow = BillAnalysisFlow()
+        flow = _flow()
         await flow.run(bill_file, output_dir=tmp_path)
 
         assert len(flow.reports) == 2

@@ -171,6 +171,8 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
                 llm=llm,
                 router=router,
                 cove=cove,
+                ingester=self._container.get(IngestPort),
+                parser=self._container.get(ParsePort),
                 checkpoint_store=checkpoint_store,
                 use_verbalized_sampling=command.use_verbalized_sampling
                 or settings.analysis.use_verbalized_sampling,
@@ -225,6 +227,8 @@ class AnalyzeBillHandler(CommandHandler[AnalyzeBillCommand, str]):
             server_manager = ReasonerServerManager(settings.reasoner)
             flow = DeliberativeFlow(
                 reasoner=reasoner,
+                ingester=self._container.get(IngestPort),
+                parser=self._container.get(ParsePort),
                 stage1_preset=settings.reasoner.stage1_preset,
                 stage2_preset=settings.reasoner.stage2_preset,
                 server_manager=server_manager,
@@ -279,7 +283,12 @@ class PreviewBillHandler(CommandHandler[PreviewBillCommand, dict[str, Any]]):
 
             llm = _resolve_llm_from_container(self._container)
             router = _resolve_router_from_container(self._container)
-            overview = await BillAnalysisFlow(llm=llm, router=router).preview(command.file_path)
+            overview = await BillAnalysisFlow(
+                llm=llm,
+                router=router,
+                ingester=self._container.get(IngestPort),
+                parser=self._container.get(ParsePort),
+            ).preview(command.file_path)
 
             output = {
                 "intro": overview.intro,
@@ -328,7 +337,13 @@ class EvalGoldSetHandler(CommandHandler[EvalGoldSetCommand, list[Any]]):
                 bill_path = _find_bill_file(bill_id, Path(command.gold_set_path).parent)
                 if bill_path and llm:
                     cove = _resolve_cove_from_container(self._container)
-                    flow = BillAnalysisFlow(llm=llm, router=router, cove=cove)
+                    flow = BillAnalysisFlow(
+                        llm=llm,
+                        router=router,
+                        cove=cove,
+                        ingester=self._container.get(IngestPort),
+                        parser=self._container.get(ParsePort),
+                    )
                     findings, _ = await flow.run(bill_path)
                 else:
                     findings = []

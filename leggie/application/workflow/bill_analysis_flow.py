@@ -37,7 +37,6 @@ from leggie.application.services.reports import (
 )
 from leggie.application.services.rerank import CompositeReranker, ModelBasedReranker
 from leggie.application.workflow.flow_state_machine import FlowStateMachine
-from leggie.application.workflow.ingest_parse import lazy_ingest_adapter, lazy_parse_adapter
 from leggie.config.settings import get_settings
 from leggie.domain.clustering import deduplicate
 from leggie.domain.models import (
@@ -109,8 +108,11 @@ class BillAnalysisFlow:
         self._cove = cove or CoVeVerifier(llm=llm, router=router)
         self._improver = ImprovementEngine()
         self._overview_generator = BillOverviewGenerator(llm=llm)
-        self._ingester = ingester or lazy_ingest_adapter()
-        self._parser = parser or lazy_parse_adapter()
+        # ARCH-05: no infrastructure fallback here. The composition root injects
+        # both ports; a flow built without them fails at the stage that needs one
+        # rather than silently constructing an adapter from the application layer.
+        self._ingester = ingester
+        self._parser = parser
         self._dedup_threshold = dedup_threshold
         self._use_blackboard = use_blackboard
         self._reports: list[Report] = []
@@ -522,10 +524,20 @@ class BillAnalysisFlow:
     # ── Private helpers ─────────────────────────────────────────────
 
     async def _do_ingest(self, file_path: Path) -> str:
+        if self._ingester is None:
+            raise ValueError(
+                "BillAnalysisFlow was built without an IngestPort; pass ingester= "
+                "(the container binds one)."
+            )
         result: str = await self._ingester.ingest(file_path)
         return result
 
     def _do_parse(self, text: str, file_path: Path) -> Document:
+        if self._parser is None:
+            raise ValueError(
+                "BillAnalysisFlow was built without a ParsePort; pass parser= "
+                "(the container binds one)."
+            )
         doc, report = self._parser.parse_with_integrity(
             text, title=file_path.stem, source_format=file_path.suffix.lstrip(".")
         )

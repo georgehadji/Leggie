@@ -9,6 +9,17 @@ from leggie.application.workflow.deliberative_flow import (
     DeliberativeFlow,
 )
 from leggie.domain.models import Citation, CitationScheme, EventType
+from leggie.infrastructure.ingest_adapter import IngestAdapter
+from leggie.infrastructure.parse_adapter import ParseAdapter
+
+
+def _delib_flow(**kw) -> DeliberativeFlow:
+    """ARCH-05: the flow no longer default-constructs its ingest/parse adapters,
+    so tests inject the same two the container binds. Both are offline."""
+    kw.setdefault("ingester", IngestAdapter())
+    kw.setdefault("parser", ParseAdapter())
+    return DeliberativeFlow(**kw)
+
 
 SAMPLE_BILL = """
 ΣΧΕΔΙΟ ΝΟΜΟΥ
@@ -78,9 +89,7 @@ class TestDeliberativeFlowRun:
     @pytest.mark.asyncio
     async def test_returns_report_path(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         output_dir = tmp_path / "out"
         report_path = await flow.run(sample_bill_file, output_dir=output_dir)
         assert report_path.exists()
@@ -89,9 +98,7 @@ class TestDeliberativeFlowRun:
     @pytest.mark.asyncio
     async def test_calls_reasoner_twice_with_correct_presets(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         assert len(reasoner.requests) == 2
         assert reasoner.requests[0].preset == "preset-1"
@@ -100,9 +107,7 @@ class TestDeliberativeFlowRun:
     @pytest.mark.asyncio
     async def test_stage2_receives_stage1_output(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         stage1_synthesis = "Synthesis for call 1 (preset=preset-1)"
         assert stage1_synthesis in reasoner.requests[1].problem
@@ -110,9 +115,7 @@ class TestDeliberativeFlowRun:
     @pytest.mark.asyncio
     async def test_report_contains_three_sections(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         report_path = await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         content = report_path.read_text(encoding="utf-8")
         assert "# Περίληψη" in content
@@ -122,9 +125,7 @@ class TestDeliberativeFlowRun:
     @pytest.mark.asyncio
     async def test_report_contains_stage_syntheses(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         report_path = await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         content = report_path.read_text(encoding="utf-8")
         assert "Synthesis for call 1 (preset=preset-1)" in content
@@ -133,18 +134,14 @@ class TestDeliberativeFlowRun:
     @pytest.mark.asyncio
     async def test_bill_text_is_passed_to_reasoner(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         assert "Δοκιμαστικό νομοσχέδιο" in reasoner.requests[0].problem
 
     @pytest.mark.asyncio
     async def test_perspective_is_passed_through(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         await flow.run(sample_bill_file, output_dir=tmp_path / "out", perspective="neutral")
         # Neutral perspective label should appear in Stage 1's rendered prompt.
         assert "Ουδέτερη ανάλυση" in reasoner.requests[0].problem
@@ -154,9 +151,7 @@ class TestDeliberativeFlowEvents:
     @pytest.mark.asyncio
     async def test_records_analysis_started(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         events = flow.get_event_log()
         assert any(e.event_type == EventType.ANALYSIS_STARTED for e in events)
@@ -164,9 +159,7 @@ class TestDeliberativeFlowEvents:
     @pytest.mark.asyncio
     async def test_records_two_stage_completed_events(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         events = flow.get_event_log()
         stage_events = [e for e in events if e.event_type == EventType.STAGE_COMPLETED]
@@ -177,9 +170,7 @@ class TestDeliberativeFlowEvents:
     @pytest.mark.asyncio
     async def test_stage_events_capture_provenance(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         events = flow.get_event_log()
         stage1_event = next(
@@ -193,9 +184,7 @@ class TestDeliberativeFlowEvents:
     @pytest.mark.asyncio
     async def test_records_workflow_completed_with_report_path(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         report_path = await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         events = flow.get_event_log()
         completed = next(e for e in events if e.event_type == EventType.WORKFLOW_COMPLETED)
@@ -205,9 +194,7 @@ class TestDeliberativeFlowEvents:
     async def test_event_log_is_replayable_snapshot(self, sample_bill_file, tmp_path):
         """get_event_log returns a copy — mutating it must not affect the flow's state."""
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         events = flow.get_event_log()
         events.clear()
@@ -219,7 +206,7 @@ class TestDeliberativeFlowServerLifecycle:
     async def test_ensure_running_called_when_manager_provided(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
         manager = FakeServerManager()
-        flow = DeliberativeFlow(
+        flow = _delib_flow(
             reasoner=reasoner,
             stage1_preset="preset-1",
             stage2_preset="preset-2",
@@ -231,9 +218,7 @@ class TestDeliberativeFlowServerLifecycle:
     @pytest.mark.asyncio
     async def test_no_server_manager_skips_lifecycle_check(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         # Should not raise even without a server manager.
         report_path = await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         assert report_path.exists()
@@ -243,7 +228,7 @@ class TestDeliberativeFlowBudget:
     @pytest.mark.asyncio
     async def test_no_budget_configured_never_raises(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
+        flow = _delib_flow(
             reasoner=reasoner,
             stage1_preset="preset-1",
             stage2_preset="preset-2",
@@ -255,7 +240,7 @@ class TestDeliberativeFlowBudget:
     @pytest.mark.asyncio
     async def test_estimate_within_budget_proceeds(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
+        flow = _delib_flow(
             reasoner=reasoner,
             stage1_preset="preset-1",
             stage2_preset="preset-2",
@@ -270,7 +255,7 @@ class TestDeliberativeFlowBudget:
         self, sample_bill_file, tmp_path
     ):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
+        flow = _delib_flow(
             reasoner=reasoner,
             stage1_preset="preset-1",
             stage2_preset="preset-2",
@@ -283,7 +268,7 @@ class TestDeliberativeFlowBudget:
     @pytest.mark.asyncio
     async def test_over_budget_records_budget_tripped_event(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
+        flow = _delib_flow(
             reasoner=reasoner,
             stage1_preset="preset-1",
             stage2_preset="preset-2",
@@ -299,9 +284,7 @@ class TestDeliberativeFlowCitationAppendix:
     @pytest.mark.asyncio
     async def test_no_citation_parser_omits_appendix(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
-        flow = DeliberativeFlow(
-            reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2"
-        )
+        flow = _delib_flow(reasoner=reasoner, stage1_preset="preset-1", stage2_preset="preset-2")
         report_path = await flow.run(sample_bill_file, output_dir=tmp_path / "out")
         content = report_path.read_text(encoding="utf-8")
         assert "Παράρτημα" not in content
@@ -310,7 +293,7 @@ class TestDeliberativeFlowCitationAppendix:
     async def test_citation_parser_with_no_matches_omits_appendix(self, sample_bill_file, tmp_path):
         reasoner = RecordingFakeReasoner()
         citation_parser = FakeCitationParser(citations=[])
-        flow = DeliberativeFlow(
+        flow = _delib_flow(
             reasoner=reasoner,
             stage1_preset="preset-1",
             stage2_preset="preset-2",
@@ -333,7 +316,7 @@ class TestDeliberativeFlowCitationAppendix:
                 )
             ]
         )
-        flow = DeliberativeFlow(
+        flow = _delib_flow(
             reasoner=reasoner,
             stage1_preset="preset-1",
             stage2_preset="preset-2",

@@ -19,6 +19,21 @@ from leggie.domain.models import (
     Severity,
     WorkflowState,
 )
+from leggie.infrastructure.ingest_adapter import IngestAdapter
+from leggie.infrastructure.parse_adapter import ParseAdapter
+
+
+def _flow(**kw) -> BillAnalysisFlow:
+    """Build a flow with the ingest/parse ports the composition root supplies.
+
+    ARCH-05: BillAnalysisFlow no longer default-constructs those two adapters —
+    doing so was the application layer reaching into infrastructure. Tests inject
+    the same two the container binds; both are offline and file-only.
+    """
+    kw.setdefault("ingester", IngestAdapter())
+    kw.setdefault("parser", ParseAdapter())
+    return BillAnalysisFlow(**kw)
+
 
 SAMPLE_BILL = """
 ΣΧΕΔΙΟ ΝΟΜΟΥ
@@ -44,7 +59,7 @@ def sample_bill_file(tmp_path):
 class TestBillAnalysisFlow:
     def test_default_object_graph_is_baseline(self, sample_bill_file):
         """With default settings the flow graph matches the pre-feature baseline."""
-        flow = BillAnalysisFlow()
+        flow = _flow()
         assert flow._orchestrator._use_verbalized_sampling is False
         assert isinstance(flow._reranker, CompositeReranker)
 
@@ -56,7 +71,7 @@ class TestBillAnalysisFlow:
             async def rerank(self, query, documents, model="", top_k=None):
                 return []
 
-        flow = BillAnalysisFlow(
+        flow = _flow(
             use_verbalized_sampling=True,
             reranker_name="model",
             reranker_port=FakeReranker(),
@@ -77,7 +92,7 @@ class TestBillAnalysisFlow:
             async def rerank(self, query, documents, model="", top_k=None):
                 raise RuntimeError("rerank service unavailable")
 
-        flow = BillAnalysisFlow(reranker_name="model", reranker_port=FailingReranker())
+        flow = _flow(reranker_name="model", reranker_port=FailingReranker())
         await flow._reranker.rerank([_make_finding("Άρθρο 1: test")])
 
         events = flow.get_event_log()
@@ -88,13 +103,13 @@ class TestBillAnalysisFlow:
 
     @pytest.mark.asyncio
     async def test_run_returns_findings(self, sample_bill_file, tmp_path):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
         assert len(findings) > 0
 
     @pytest.mark.asyncio
     async def test_run_state_transitions(self, sample_bill_file, tmp_path):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         assert flow.state == WorkflowState.IDLE
         await flow.run(sample_bill_file, output_dir=tmp_path)
         # Re-read through an annotated local: the IDLE assert above narrows
@@ -105,7 +120,7 @@ class TestBillAnalysisFlow:
 
     @pytest.mark.asyncio
     async def test_run_records_events(self, sample_bill_file, tmp_path):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         await flow.run(sample_bill_file, output_dir=tmp_path)
         events = flow.get_event_log()
         assert (
@@ -114,7 +129,7 @@ class TestBillAnalysisFlow:
 
     @pytest.mark.asyncio
     async def test_run_returns_findings_with_irac(self, sample_bill_file, tmp_path):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
         for f in findings:
             assert f.irac.issue
@@ -126,19 +141,19 @@ class TestBillAnalysisFlow:
     async def test_run_empty_document(self, tmp_path):
         path = tmp_path / "empty.txt"
         path.write_text("No articles here.", encoding="utf-8")
-        flow = BillAnalysisFlow()
+        flow = _flow()
         findings, reports = await flow.run(path, output_dir=tmp_path)
         assert len(findings) == 0
 
     @pytest.mark.asyncio
     async def test_run_findings_property(self, sample_bill_file, tmp_path):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         await flow.run(sample_bill_file, output_dir=tmp_path)
         assert len(flow.findings) > 0
 
     @pytest.mark.asyncio
     async def test_run_returns_reports(self, sample_bill_file, tmp_path):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
         assert len(reports) == 2
         assert reports[0].report_type == "executive_summary"
@@ -148,14 +163,14 @@ class TestBillAnalysisFlow:
     async def test_run_writes_docx_reports(self, sample_bill_file, tmp_path):
         """Both markdown reports are accompanied by Word (.docx) versions."""
         output_dir = tmp_path / "out"
-        flow = BillAnalysisFlow()
+        flow = _flow()
         await flow.run(sample_bill_file, output_dir=output_dir)
         assert (output_dir / "bill_executive_summary.docx").exists()
         assert (output_dir / "bill_article_by_article.docx").exists()
 
     @pytest.mark.asyncio
     async def test_run_with_article_selection(self, sample_bill_file, tmp_path):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path, articles="2")
         assert flow.state == WorkflowState.DONE
         # All emitted findings must belong to the selected article.
@@ -164,7 +179,7 @@ class TestBillAnalysisFlow:
 
     @pytest.mark.asyncio
     async def test_reports_have_content(self, sample_bill_file, tmp_path):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
         for report in reports:
             md = report.to_markdown()
@@ -173,20 +188,20 @@ class TestBillAnalysisFlow:
 
     @pytest.mark.asyncio
     async def test_suggestions_property(self, sample_bill_file, tmp_path):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         await flow.run(sample_bill_file, output_dir=tmp_path)
         assert len(flow.suggestions) > 0
 
     @pytest.mark.asyncio
     async def test_preview_returns_overview_with_all_articles(self, sample_bill_file):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         overview = await flow.preview(sample_bill_file)
         assert overview.article_ids() == ["1", "2"]
         assert flow.overview is overview
 
     @pytest.mark.asyncio
     async def test_preview_then_run_completes(self, sample_bill_file, tmp_path):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         await flow.preview(sample_bill_file)
         findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
         assert flow.state == WorkflowState.DONE
@@ -194,7 +209,7 @@ class TestBillAnalysisFlow:
 
     @pytest.mark.asyncio
     async def test_run_selected_article_ids_restricts_analysis(self, sample_bill_file, tmp_path):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         overview = await flow.preview(sample_bill_file)
         assert len(overview.articles) == 2
         findings, _ = await flow.run(
@@ -233,7 +248,7 @@ class TestBudgetCheckpoint:
         guard = BudgetGuard(max_tokens=1000, max_cost=1.0)
         guard.record_usage(prompt_tokens=100, completion_tokens=50, model="google/gemini-2.5-flash")
 
-        flow = BillAnalysisFlow(llm=_LLMWithGuard(guard))
+        flow = _flow(llm=_LLMWithGuard(guard))
         await flow.run(sample_bill_file, output_dir=tmp_path, checkpoint_path=checkpoint)
 
         assert checkpoint.exists()
@@ -260,7 +275,7 @@ class TestBudgetCheckpoint:
         )
 
         guard = BudgetGuard(max_tokens=1000, max_cost=1.0)
-        flow = BillAnalysisFlow(llm=_LLMWithGuard(guard))
+        flow = _flow(llm=_LLMWithGuard(guard))
         await flow.run(sample_bill_file, output_dir=tmp_path, checkpoint_path=checkpoint)
 
         # Prior spend (900) plus whatever this run recorded must exceed the
@@ -272,7 +287,7 @@ class TestBudgetCheckpoint:
         from leggie.infrastructure.budget_guard import BudgetGuard
 
         guard = BudgetGuard()
-        flow = BillAnalysisFlow(llm=_LLMWithGuard(guard))
+        flow = _flow(llm=_LLMWithGuard(guard))
         findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
         assert flow.state == WorkflowState.DONE
 
@@ -324,7 +339,7 @@ class TestDedupInFlow:
     """Tests for _dedup_findings (FX2)."""
 
     def test_dedup_removes_near_duplicates(self):
-        flow = BillAnalysisFlow(dedup_threshold=0.5)
+        flow = _flow(dedup_threshold=0.5)
         f1 = _make_finding("Άρθρο 1: alpha beta gamma", confidence=0.9)
         f2 = _make_finding("Άρθρο 1: alpha beta delta", confidence=0.7)
         f3 = _make_finding("Άρθρο 2: different topic", confidence=0.8)
@@ -334,21 +349,21 @@ class TestDedupInFlow:
         assert 0.9 in scores  # kept higher confidence
 
     def test_dedup_respects_article_boundary(self):
-        flow = BillAnalysisFlow(dedup_threshold=0.5)
+        flow = _flow(dedup_threshold=0.5)
         f1 = _make_finding("Άρθρο 1: delegation limits exceeded", confidence=0.9)
         f2 = _make_finding("Άρθρο 5: delegation limits exceeded", confidence=0.8)
         result = flow._dedup_findings([f1, f2])
         assert len(result) == 2  # Different articles, both kept
 
     def test_dedup_respects_different_types(self):
-        flow = BillAnalysisFlow(dedup_threshold=0.5)
+        flow = _flow(dedup_threshold=0.5)
         f1 = _make_finding("alpha beta", finding_type=FindingType.CONSTITUTIONAL)
         f2 = _make_finding("alpha beta", finding_type=FindingType.ECONOMIC)
         result = flow._dedup_findings([f1, f2])
         assert len(result) == 2
 
     def test_dedup_empty_list(self):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         assert flow._dedup_findings([]) == []
 
     def test_dedup_groups_by_article_id_not_regex(self):
@@ -356,7 +371,7 @@ class TestDedupInFlow:
         extract different (or no) article numbers under the old regex must
         still be grouped correctly — the whole point of consolidating on
         article_number_of()."""
-        flow = BillAnalysisFlow(dedup_threshold=0.5)
+        flow = _flow(dedup_threshold=0.5)
         f1 = _make_finding("delegation limits exceeded", confidence=0.9, article_id="1")
         f2 = _make_finding("Άρθρο 99: delegation limits exceeded", confidence=0.7, article_id="1")
         result = flow._dedup_findings([f1, f2])
@@ -364,7 +379,7 @@ class TestDedupInFlow:
         assert result[0].confidence.score == 0.9
 
     def test_dedup_idempotent(self):
-        flow = BillAnalysisFlow(dedup_threshold=0.5)
+        flow = _flow(dedup_threshold=0.5)
         findings = [
             _make_finding("Άρθρο 1: alpha beta", confidence=0.9),
             _make_finding("Άρθρο 1: alpha beta gamma", confidence=0.7),
@@ -386,7 +401,7 @@ class TestResumeAfterCrash:
         checkpoint = tmp_path / "resume.checkpoint.json"
 
         # 1. First run: crash after execution completes (checkpoint saved at AGGREGATING).
-        flow1 = BillAnalysisFlow()
+        flow1 = _flow()
         original_transition = flow1._transition
         crashed_state: WorkflowState | None = None
 
@@ -408,11 +423,11 @@ class TestResumeAfterCrash:
         assert saved["document"]
 
         # 2. Non-crashing fresh run for comparison.
-        fresh_flow = BillAnalysisFlow()
+        fresh_flow = _flow()
         fresh_findings, _ = await fresh_flow.run(sample_bill_file, output_dir=tmp_path)
 
         # 3. Resume with a new flow and count stage executions.
-        flow2 = BillAnalysisFlow()
+        flow2 = _flow()
         calls = {"ingest": 0, "parse": 0, "decompose": 0, "analyze": 0}
 
         orig_do_ingest = flow2._do_ingest
@@ -468,7 +483,7 @@ class TestDegradationEvent:
         def record(e: Event) -> None:
             events.append(e)
 
-        flow = BillAnalysisFlow(on_degradation=record)
+        flow = _flow(on_degradation=record)
         flow._on_degradation(
             Event(
                 event_type=EventType.DEGRADED,
@@ -481,7 +496,7 @@ class TestDegradationEvent:
         assert "test error" in events[0].data["error"]
 
     def test_default_degradation_uses_record_event(self):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         from leggie.domain.models import Event
 
         flow._on_degradation(
@@ -503,9 +518,7 @@ class TestParseIntegrityGate:
         """A clean parse should not raise ParseIntegrityError."""
         from pathlib import Path
 
-        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
-
-        flow = BillAnalysisFlow()
+        flow = _flow()
         text = "Άρθρο 1 Σκοπός\n1. Κείμενο.\nΆρθρο 2 Ορισμοί\n1. Κείμενο.\n"
         doc = flow._do_parse(text, Path("test.txt"))
         assert len(doc.articles) == 2
@@ -515,11 +528,10 @@ class TestParseIntegrityGate:
         from pathlib import Path
 
         from leggie.application.workflow.bill_analysis_flow import (
-            BillAnalysisFlow,
             ParseIntegrityError,
         )
 
-        flow = BillAnalysisFlow()
+        flow = _flow()
         # Two duplicate runs of the same article headings without a TOC marker
         text = (
             "Άρθρο 1 A\n1. Πρώτο κείμενο.\n"
@@ -536,7 +548,6 @@ class TestSelectionStrictness:
 
     def test_selection_mismatch_raises(self):
         """Selecting 1-10 when only 2 articles exist should raise."""
-        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
         from leggie.domain.models import Article, Document, Paragraph
 
         doc = Document(
@@ -552,7 +563,7 @@ class TestSelectionStrictness:
                 ),
             ],
         )
-        flow = BillAnalysisFlow()
+        flow = _flow()
         with pytest.raises(ValueError, match="requested 10 articles, matched 2"):
             flow._filter_document(doc, "1-10")
 
@@ -560,7 +571,6 @@ class TestSelectionStrictness:
         """model_copy(update=...) skips validators, so both subset paths must
         pass a tuple themselves — otherwise .articles comes back a mutable list
         and the DH-34 frozen-collection invariant is silently broken."""
-        from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
         from leggie.domain.models import Article, Document, Paragraph
 
         doc = Document(
@@ -574,7 +584,7 @@ class TestSelectionStrictness:
                 for i in (1, 2, 3)
             ],
         )
-        flow = BillAnalysisFlow()
+        flow = _flow()
 
         assert type(flow._filter_document(doc, "1-2").articles) is tuple
         assert type(flow._select_article_ids(doc, ["1", "3"]).articles) is tuple
@@ -591,7 +601,7 @@ class TestTransitionEventData:
     """
 
     def test_normal_transition_records_real_previous_state(self):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         flow._transition(WorkflowState.INGESTING, "ingest_started")
         events = [e for e in flow.get_event_log() if e.event_type == EventType.STAGE_COMPLETED]
         assert events[-1].data == {"from": "idle", "to": "ingesting", "event": "ingest_started"}
@@ -600,7 +610,7 @@ class TestTransitionEventData:
         """plan_failed/execution_failed pass a target that disagrees with the
         FSM table's actual computed destination (FAILED). The event must
         reflect the real transition, not invert it."""
-        flow = BillAnalysisFlow()
+        flow = _flow()
         flow._state = WorkflowState.EXECUTING
         flow._transition(WorkflowState.FAILED, "execution_failed")
         assert flow.state == WorkflowState.FAILED
@@ -614,7 +624,7 @@ class TestTransitionEventData:
     def test_invalid_transition_is_a_true_noop(self):
         """No-regression: an (state, event) pair absent from the table must
         still be a clean no-op -- state unchanged, nothing recorded."""
-        flow = BillAnalysisFlow()
+        flow = _flow()
         events_before = len(flow.get_event_log())
         flow._transition(WorkflowState.DONE, "bogus_event")
         assert flow.state == WorkflowState.IDLE
@@ -626,7 +636,7 @@ class TestTransitionEventData:
         reaches EXECUTING and its execution_failed shortcut for real."""
         path = tmp_path / "empty.txt"
         path.write_text("No articles here.", encoding="utf-8")
-        flow = BillAnalysisFlow()
+        flow = _flow()
         await flow.run(path, output_dir=tmp_path)
         assert flow.state == WorkflowState.FAILED
         stage_events = [
@@ -654,7 +664,7 @@ class TestPreviewReuseSafety:
     async def test_preview_after_run_updates_state_not_stuck_at_done(
         self, sample_bill_file, tmp_path
     ):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         await flow.run(sample_bill_file, output_dir=tmp_path)
         assert flow.state == WorkflowState.DONE
         events_before = len(flow.get_event_log())
@@ -667,7 +677,7 @@ class TestPreviewReuseSafety:
 
     @pytest.mark.asyncio
     async def test_preview_called_twice_on_same_instance(self, sample_bill_file):
-        flow = BillAnalysisFlow()
+        flow = _flow()
         await flow.preview(sample_bill_file)
         overview2 = await flow.preview(sample_bill_file)
         assert overview2.article_ids() == ["1", "2"]
@@ -702,7 +712,7 @@ class TestCheckpointFailureIsLogged:
             def load(self):
                 return None
 
-        flow = BillAnalysisFlow(checkpoint_store=ExplodingStore())
+        flow = _flow(checkpoint_store=ExplodingStore())
         findings, reports = await flow.run(sample_bill_file, output_dir=tmp_path)
 
         assert flow.state == WorkflowState.DONE  # a save failure must not abort the run
@@ -731,7 +741,7 @@ class TestCheckpointFailureIsLogged:
         checkpoint.write_text("not json at all {{{", encoding="utf-8")
 
         guard = BudgetGuard(max_tokens=1000, max_cost=1.0)
-        flow = BillAnalysisFlow(llm=_LLMWithGuard(guard), checkpoint_path=checkpoint)
+        flow = _flow(llm=_LLMWithGuard(guard), checkpoint_path=checkpoint)
 
         flow._load_legacy_budget_checkpoint()  # must not raise
 
@@ -772,7 +782,7 @@ class TestCheckpointFailureIsLogged:
         )
 
         guard = BudgetGuard(max_tokens=1000, max_cost=1.0)
-        flow = BillAnalysisFlow(llm=_LLMWithGuard(guard), checkpoint_store=store)
+        flow = _flow(llm=_LLMWithGuard(guard), checkpoint_store=store)
         # Must not raise AttributeError -- best-effort budget restore only.
         flow._load_checkpoint(sample_bill_file)
 

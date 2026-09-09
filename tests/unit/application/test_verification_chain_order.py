@@ -23,6 +23,16 @@ from leggie.application.services.blackboard_aggregator import BlackboardAggregat
 from leggie.application.services.cove_verifier import CoVeResult, CoVeVerifier
 from leggie.application.workflow.bill_analysis_flow import BillAnalysisFlow
 from leggie.domain.models import IRAC, Confidence, Finding, FindingType, Severity
+from leggie.infrastructure.ingest_adapter import IngestAdapter
+from leggie.infrastructure.parse_adapter import ParseAdapter
+
+
+def _flow(**kw) -> BillAnalysisFlow:
+    """ARCH-05: the flow no longer default-constructs its ingest/parse adapters,
+    so tests inject the same two the container binds. Both are offline."""
+    kw.setdefault("ingester", IngestAdapter())
+    kw.setdefault("parser", ParseAdapter())
+    return BillAnalysisFlow(**kw)
 
 
 def _make(issue: str, confidence: float, severity: str = "medium") -> Finding:
@@ -191,7 +201,7 @@ class TestInlinePathMatchesBlackboardPath:
             _make("Άρθρο 1: alpha", confidence=0.9),
             _make("Άρθρο 2: beta", confidence=0.5),
         ]
-        flow = BillAnalysisFlow(
+        flow = _flow(
             skeptic=CalibratedSkeptic(gates=[_DowngradeGate("alpha", -0.8)]),
             use_blackboard=False,
         )
@@ -214,7 +224,7 @@ class TestInlinePathMatchesBlackboardPath:
             skeptic=CalibratedSkeptic(gates=[_DowngradeGate("alpha", -0.7)]),
         ).aggregate(_fresh())
 
-        flow = BillAnalysisFlow(
+        flow = _flow(
             skeptic=CalibratedSkeptic(gates=[_DowngradeGate("alpha", -0.7)]),
             use_blackboard=False,
         )

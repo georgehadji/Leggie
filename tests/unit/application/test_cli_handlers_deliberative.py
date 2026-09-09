@@ -14,9 +14,13 @@ import pytest
 from leggie.application.cqrs.commands.cli_commands import AnalyzeBillCommand
 from leggie.application.cqrs.handlers import cli_handlers
 from leggie.application.ports.citation_parser import CitationParserPort
+from leggie.application.ports.ingest import IngestPort
+from leggie.application.ports.parse import ParsePort
 from leggie.application.ports.reasoner import ReasonerPort
 from leggie.config.settings import ReasonerSettings, Settings
 from leggie.infrastructure.container import Container
+from leggie.infrastructure.ingest_adapter import IngestAdapter
+from leggie.infrastructure.parse_adapter import ParseAdapter
 
 
 class FakeDeliberativeFlow:
@@ -30,6 +34,8 @@ class FakeDeliberativeFlow:
         stage1_preset,
         stage2_preset,
         server_manager=None,
+        ingester=None,
+        parser=None,
         citation_parser=None,
         max_tokens_per_run=None,
     ):
@@ -37,6 +43,8 @@ class FakeDeliberativeFlow:
         self.stage1_preset = stage1_preset
         self.stage2_preset = stage2_preset
         self.server_manager = server_manager
+        self.ingester = ingester
+        self.parser = parser
         self.citation_parser = citation_parser
         self.max_tokens_per_run = max_tokens_per_run
         self.run_calls: list[dict[str, Any]] = []
@@ -100,6 +108,10 @@ def patch_deliberative_collaborators(monkeypatch) -> Container:
         lambda: FakeReasonerAdapter(base_url="http://fake", api_key="", request_timeout=1.0),
     )
     container.register(CitationParserPort, lambda: FakeGreekCitationParser())
+    # ARCH-05: the handler now injects the ingest/parse ports too — the flow no
+    # longer default-constructs adapters for itself.
+    container.register(IngestPort, lambda: IngestAdapter())
+    container.register(ParsePort, lambda: ParseAdapter())
     return container
 
 
