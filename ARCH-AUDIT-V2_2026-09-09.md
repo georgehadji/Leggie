@@ -76,7 +76,7 @@ credential literals found. `.env.example` ships placeholders.
 | `application/workflow/ingest_parse.py` | Imports `ingest_adapter`, `parse_adapter` | Should receive ports | **YES** | 2 whitelisted violations | **HIGH** | same [VERIFIED] |
 | `application/workflow/bill_analysis_flow.py` | Imports `checkpoint_store` concretely | Should use `StatePort` | **YES** | 1 whitelisted violation | **HIGH** | same [VERIFIED] |
 | `application/workflow/bill_analysis_flow.py` | 830 lines, 26 methods, `run()` spans 223 | Coordinator | **YES** | God module | **MEDIUM** | `wc -l`, method census [VERIFIED] |
-| `application/ports/manifest.py` | `ManifestPort` | Port with adapter | **YES** | **Zero implementations** | **MEDIUM** | grep across `leggie/` [VERIFIED] |
+| `application/services/run_manifest.py` + `ports/manifest.py` + `infrastructure/manifest_sink.py` | PROD-22 run manifest | Emitted every run | **YES** | **Zero production call sites** — port, builder and `JsonManifestSink` adapter all exist and are unit-tested, but nothing outside those tests constructs a `RunManifestBuilder`, the container binds no `ManifestSinkPort`, and no flow writes a manifest. No run has ever produced one | **MEDIUM** | `grep -rn "RunManifestBuilder\|JsonManifestSink\|Manifest" leggie/` [VERIFIED, corrected 2026-09-09 — see Audit-of-the-audit] |
 | `application/agents/lens.py` ↔ `services/lens_vs.py` | Mutual dependency | Acyclic | **YES** | Cycle, deferred by function-local import at `lens.py:145` | **LOW** | AST scan [VERIFIED] |
 | `domain/` | Pure | Pure | NO | none | — | `domain-purity` contract [VERIFIED] |
 | `infrastructure/llm/` | Adapter + 5 decorators behind `LLMPort` | Ports/adapters | NO | none | — | 6 implementors [VERIFIED] |
@@ -226,7 +226,8 @@ structured generation only.
 |---|---|---|---|
 | **God module** | **YES** | `bill_analysis_flow.py` — 830 lines, 26 methods, `run()` 223 lines; owns ingest, parse, filtering, 3 aggregation strategies, checkpointing, events, state, dedup, reports [VERIFIED] | MEDIUM |
 | **Orchestrator bottleneck** | **YES** | every execution path routes through `BillAnalysisFlow.run()`; stateful, single-process [VERIFIED] | MEDIUM |
-| **Premature abstraction** | **YES** | `ManifestPort` — a port ABC with **zero implementations** anywhere in `leggie/` [VERIFIED]. `BlackboardPort` has exactly one [VERIFIED] — defensible, it is a genuine seam |
+| **Premature abstraction** | **NO** (claim withdrawn) | This row asserted `ManifestPort` was a port ABC with zero implementations. That was **false** — `JsonManifestSink` implements it (`infrastructure/manifest_sink.py:17`). The real defect is unwired delivery, not premature abstraction; it is now recorded in the Phase 2 table and below. `BlackboardPort` has exactly one implementation [VERIFIED] — defensible, it is a genuine seam |
+| **Declared-done-but-unwired** | **YES** | PROD-22 is marked "✅ Complete" in `docs/implementation_audit_report_phase3.md:34` on the strength of four files existing with five passing tests. No run emits a manifest, so the reproducibility guarantee the plan describes (`PRODUCTION_READINESS_PLAN.md:255`) does not hold for any run performed to date. PROD-40 (stage wall-clock) is blocked behind the same integration [VERIFIED] |
 | **Infrastructure leakage into application** | **YES** | the 7 whitelisted imports (Phase 2) [VERIFIED] | HIGH |
 | **Temporal coupling** | **YES** | verification chain order is load-bearing and undeclared in types: rerank MUST run after skeptic+CoVe because they rewrite `Finding.confidence`. Guarded only by `test_verification_chain_order.py` [VERIFIED] | MEDIUM |
 | **Anemic domain model** | NO | domain carries real logic — `clustering.deduplicate`, `pricing.estimate_cost`, `Confidence.from_score`, parse-integrity specs [VERIFIED] |
@@ -302,13 +303,18 @@ change that most reduces the cost of every subsequent live run.
 
 ### IMMEDIATE (before next feature)
 
-- **[Phase 5 / premature abstraction]** Delete `ManifestPort` → removes a port
-  ABC with zero implementations → the port list stops lying about the system's
-  seams. Precedent: `RetrievalPort` deletion, ADR-0004. If it is a placeholder
-  for planned work, an ADR should say so.
-- **[Phase 2 / `ingest_parse`]** Route `ingest_parse.py` through `IngestPort`
-  and `ParsePort` instead of importing both adapters → removes 2 of 7 waivers →
-  the two most mechanical entries on the register.
+- ~~**[Phase 5 / premature abstraction]** Delete `ManifestPort`.~~ **WITHDRAWN
+  2026-09-09 — the premise was false.** `JsonManifestSink` implements the port.
+  Deleting it would have destroyed a working, tested feature. The real item is
+  the opposite: **wire PROD-22** so a run actually emits
+  `Outputs/<run_id>_manifest.json`. Not started — it is a delivery change, not a
+  cleanup, so it needs its own decision. PROD-40 rides on the same integration.
+- ~~**[Phase 2 / `ingest_parse`]** Route `ingest_parse.py` through the ports.~~
+  **DONE 2026-09-09 (ARCH-05).** `ingest_parse.py` deleted; the composition root
+  injects `IngestPort`/`ParsePort` at all four production sites; both flows raise
+  a named error rather than defaulting. Waivers 7 → 5. The deferral note in
+  `pyproject.toml` estimated ~57 test edits; the real cost was 73 call sites
+  behind four one-line test helpers, plus two container fixtures.
 
 ### HIGH-IMPACT (next sprint)
 
@@ -366,3 +372,23 @@ any service wrapper a correctness hazard.
 [VERIFIED] I reported "lint-imports 2/2 kept" in five commit messages and
 several summaries during this session without stating that the layers contract
 carries seven waivers. The claim was true and incomplete. Corrected here.
+
+**[2026-09-09] The `ManifestPort` finding was wrong, and it was the audit's
+headline IMMEDIATE item.** I wrote "zero implementations anywhere" and marked it
+[VERIFIED]. `JsonManifestSink` implements the port at
+`infrastructure/manifest_sink.py:17`, has five passing tests, and sits one
+directory away. The evidence line said "grep across `leggie/`" — a grep for
+`ManifestSinkPort` returns that file on the first screen. The check either was
+not run or was run and misread; either way the label was unearned.
+
+Acting on it would have deleted a working feature. The corrected finding inverts
+the prescription: PROD-22 is built and unwired, so the fix is to emit the
+manifest, not to remove the ability to.
+
+The general lesson, and the reason the row is left visible rather than quietly
+edited: *"has no implementations"* and *"has no callers"* are different claims
+needing different greps, and I collapsed them. A port's implementors are found by
+searching the port's name; a feature's reach is found by searching its entry
+point. Every remaining [VERIFIED] label in this document that rests on absence —
+rather than on a command whose output is quoted — carries the same risk and
+should be re-checked before anyone deletes anything on its authority.
