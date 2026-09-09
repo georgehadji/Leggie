@@ -73,8 +73,8 @@ credential literals found. `.env.example` ships placeholders.
 | Module | Detected | Intended | Drift | Violations | Severity | Evidence |
 |---|---|---|---|---|---|---|
 | `application/cqrs/handlers/cli_handlers.py` | Handler importing infrastructure directly | Application depends inward only | **YES** | 4 whitelisted `application → infrastructure` imports | **HIGH** | `pyproject.toml` `ignore_imports` [VERIFIED] |
-| `application/workflow/ingest_parse.py` | Imports `ingest_adapter`, `parse_adapter` | Should receive ports | **YES** | 2 whitelisted violations | **HIGH** | same [VERIFIED] |
-| `application/workflow/bill_analysis_flow.py` | Imports `checkpoint_store` concretely | Should use `StatePort` | **YES** | 1 whitelisted violation | **HIGH** | same [VERIFIED] |
+| ~~`application/workflow/ingest_parse.py`~~ | Imported `ingest_adapter`, `parse_adapter` | Should receive ports | **RESOLVED 2026-09-09 (ARCH-05)** | ~~2 whitelisted violations~~ → 0; module deleted, ports injected by the composition root | — | `858de57` |
+| `application/workflow/bill_analysis_flow.py` | Imports `checkpoint_store` concretely | Recorded as permanent, not debt | **NO** (severity withdrawn) | 1 whitelisted import, deliberately retained: `CheckpointStore(path)` takes a per-request `--checkpoint-path` a zero-arg container factory cannot supply (IMPL-1 Group B, reasoning inline in `pyproject.toml`). This audit rated it HIGH without engaging that decision | **LOW** | `pyproject.toml` waiver comment [VERIFIED 2026-09-09] |
 | `application/workflow/bill_analysis_flow.py` | 830 lines, 26 methods, `run()` spans 223 | Coordinator | **YES** | God module | **MEDIUM** | `wc -l`, method census [VERIFIED] |
 | `application/services/run_manifest.py` + `ports/manifest.py` + `infrastructure/manifest_sink.py` | PROD-22 run manifest | Emitted every run | **YES** | **Zero production call sites** — port, builder and `JsonManifestSink` adapter all exist and are unit-tested, but nothing outside those tests constructs a `RunManifestBuilder`, the container binds no `ManifestSinkPort`, and no flow writes a manifest. No run has ever produced one | **MEDIUM** | `grep -rn "RunManifestBuilder\|JsonManifestSink\|Manifest" leggie/` [VERIFIED, corrected 2026-09-09 — see Audit-of-the-audit] |
 | `application/agents/lens.py` ↔ `services/lens_vs.py` | Mutual dependency | Acyclic | **YES** | Cycle, deferred by function-local import at `lens.py:145` | **LOW** | AST scan [VERIFIED] |
@@ -118,9 +118,11 @@ import-linter, so nothing prevents the next cycle. [VERIFIED]
 
 **Layer leaks** [VERIFIED]: the seven entries above. Concretely — the
 application layer knows `checkpoint_store`, `eval_harness`, `server_manager`,
-`ingest_adapter` and `parse_adapter` by name. `checkpoint_store` appears twice,
-from two different modules, which makes it the highest-value single fix:
-routing it through `StatePort` removes 2 of 7.
+`ingest_adapter` and `parse_adapter` by name. **Corrected 2026-09-09:**
+`ingest_adapter`/`parse_adapter` are gone (ARCH-05), leaving five. The claim
+that `checkpoint_store` was "the highest-value single fix" is withdrawn — its
+two entries are recorded as permanent by design (IMPL-1 Group B), so the
+remaining five are not a ranked worklist at all.
 
 **Shared mutable state** [VERIFIED]:
 - `get_settings()` module-level singleton, mutated only by `reload_settings()`.
@@ -175,10 +177,16 @@ routing it through `StatePort` removes 2 of 7.
 - Explicit [VERIFIED]. `article_index: dict[str, str]` is threaded into CoVe;
   no implicit ambient context, no global conversation object.
 - Workflow state transitions only through `FlowStateMachine` [VERIFIED].
-- **Resume is incomplete** [VERIFIED] — D10. `checkpoint_store.py` exists and
-  `_save_checkpoint`/`_load_checkpoint`/`_load_legacy_budget_checkpoint` are
-  implemented, but completed stages are not restored: a crash re-runs and
-  re-bills prior stages. This is the single largest cost risk in the design.
+- ~~**Resume is incomplete** — D10.~~ **FALSE, withdrawn 2026-09-09.**
+  `_save_checkpoint` persists the full run state — findings, events, document,
+  source_text, suggestions, reports, budget_state — keyed by stage on every
+  `_transition()`, and `_load_checkpoint` restores all of it and re-enters at
+  the saved stage. `TestResumeAfterCrash::test_resume_after_crash` asserts that
+  after a crash at AGGREGATING, `_do_ingest`, `_do_parse`, `decompose` and
+  `analyze_document` are each called **0** times on resume and the findings
+  match a fresh run. Completed stages are restored and are not re-billed.
+  `_load_legacy_budget_checkpoint` — the compat branch for pre-`02c3ac6`
+  files — is the only budget-only path, and I mistook it for the live one.
 
 **FAILURE SEMANTICS**
 
@@ -200,8 +208,9 @@ structured generation only.
   itself.** It is a stateful, single-process coordinator holding the entire
   findings list and event log in memory for the whole run. A 10× bill (910
   articles × 5 lenses) multiplies in-memory findings, LLM calls and wall-clock
-  linearly with no partitioning and no resume — and D10 means a failure at
-  minute 50 restarts from zero.
+  linearly with no partitioning. Resume does work (see the D10 correction
+  above), so a failure at minute 50 re-enters at the last completed stage;
+  what is missing at 10× is *partitioning*, not resume.
 - **The orchestrator is NOT stateless** [VERIFIED] — `self._findings`,
   `self._events`, `self._state`, `self._overview` are instance state.
   Appropriate for a batch CLI, disqualifying for a service.
@@ -255,8 +264,10 @@ CI with mypy strict, ruff, bandit, pip-audit and an 85% coverage floor;
 hash-pinned, digest-pinned container build; eight ADRs recording *why*.
 
 What costs it: application→infrastructure leakage in three modules; a
-stateful 830-line God coordinator that is also the 10× bottleneck; incomplete
-resume (D10) that makes any long-run failure expensive; one dead port.
+stateful 830-line God coordinator that is also the 10× bottleneck; no run
+partitioning at 10× scale. (The first published version of this line also
+blamed incomplete resume and a dead port; both were my errors — see
+Audit-of-the-audit.)
 
 ### MATURITY LEVEL: Early Production
 
@@ -268,9 +279,12 @@ the product.
 
 ### PRIMARY RISKS (ranked)
 
-1. **[VERIFIED] Incomplete resume (D10) × no run partitioning.** A failure late
-   in a paid run discards all prior work and re-bills from zero. The $5 cap
-   makes this a hard stop, not a slowdown.
+1. ~~**Incomplete resume (D10) × no run partitioning.**~~ **WITHDRAWN — the
+   resume half is false.** A failure late in a paid run re-enters at the last
+   completed stage and does not re-bill it. What remains true, and is a
+   materially smaller risk: there is no run *partitioning*, so a single run is
+   still all-or-nothing against the $5 cap at full-bill scale. Demoted; it is
+   no longer risk #1.
 2. **[VERIFIED] `BillAnalysisFlow` is stateful and total.** Every path goes
    through it; it holds the full findings list in memory; it cannot be
    horizontally split without a rewrite.
@@ -294,8 +308,9 @@ managed register, not CRITICAL by this rubric's definition.
 
 The seven layer violations are stable, itemised and cannot silently expand, so
 nothing is on fire. But two of them name `checkpoint_store`, which is also risk
-#1 — fixing resume and removing those imports is the same work, and it is the
-change that most reduces the cost of every subsequent live run.
+#1. **That reasoning is withdrawn**: resume is not broken, and those two
+waivers are recorded as permanent by design. The urgency rating stands on the
+God module and the cycle contract alone.
 
 ---
 
@@ -318,10 +333,18 @@ change that most reduces the cost of every subsequent live run.
 
 ### HIGH-IMPACT (next sprint)
 
-- **[Risk 1 + Phase 2]** Complete D10 resume behind `StatePort`: persist
-  completed stages, restore on load, and delete the direct
-  `checkpoint_store` imports from `bill_analysis_flow` and `cli_handlers` →
-  removes 2 more waivers **and** closes the largest cost risk in one change.
+- ~~**[Risk 1 + Phase 2]** Complete D10 resume behind `StatePort`.~~
+  **WITHDRAWN 2026-09-09 — wrong on both halves.** (a) Resume is already
+  complete and tested, so there is nothing to "complete". (b) The two
+  `checkpoint_store` waivers were deliberately reassessed as **permanent, not
+  debt** in IMPL-1 Group B (2026-08-10); the reasoning is recorded inline in
+  `pyproject.toml` — `CheckpointStore(path)` takes a per-request runtime value
+  (`--checkpoint-path`) that a zero-arg container factory cannot supply. This
+  audit proposed deleting those imports without engaging that recorded
+  decision at all. `StatePort` is meanwhile fully live — two adapters
+  (`SqliteStateStore`, `InMemoryStateStore`), bound in `container.py:237-241`.
+  Moving checkpointing onto it would be a redesign of a working feature with a
+  user-facing flag, not a waiver cleanup, and needs its own justification.
 - **[Phase 5 / God module]** Extract from `BillAnalysisFlow`: (a) the three
   `_aggregate_*` strategies into an aggregation strategy object — ADR-0007
   already names the trigger; (b) checkpoint I/O into the store; (c) article
@@ -385,7 +408,32 @@ Acting on it would have deleted a working feature. The corrected finding inverts
 the prescription: PROD-22 is built and unwired, so the fix is to emit the
 manifest, not to remove the ability to.
 
-The general lesson, and the reason the row is left visible rather than quietly
+**[2026-09-09] The D10 resume finding was also wrong — and it was risk #1.** I
+wrote that "completed stages are not restored: a crash re-runs and re-bills
+prior stages" and called it "the single largest cost risk in the design".
+`_save_checkpoint` has persisted the full run state since `02c3ac6`
+(2026-07-11), and `TestResumeAfterCrash::test_resume_after_crash` — a test that
+was already green in the suite I ran for this audit — asserts `analyze_document`
+is called **0** times on resume. I read `_load_legacy_budget_checkpoint`, the
+pre-`02c3ac6` compatibility branch, and reported it as the live path.
+
+This one is worse than the manifest error, because the correction was already
+written down. `docs/DEFECT_HUNT_PLAN.md:169` recorded on **2026-09-05**, four
+days before this audit, that D10 is "**not** 'PARTIAL... only budget spend' as
+leggie-architecture-contract / leggie-failure-archaeology / this region's own
+brief all describe it", citing the same commit and the same test. I inherited
+the stale claim from those two skill files, marked it [VERIFIED], and ranked a
+non-existent defect as the project's top risk — while a correction sat in the
+repo. Both skill files and the debugging playbook are fixed in the same commit
+as this note, so the claim stops propagating.
+
+Two of this audit's three top-ranked action items were false, both in the same
+way: an absence asserted from a stale secondary source rather than from the
+code. A third — "route `checkpoint_store` through `StatePort`" — was not false
+but was uninformed: it proposed reversing a decision recorded inline in
+`pyproject.toml` without mentioning that the decision existed.
+
+The general lesson, and the reason the rows are left visible rather than quietly
 edited: *"has no implementations"* and *"has no callers"* are different claims
 needing different greps, and I collapsed them. A port's implementors are found by
 searching the port's name; a feature's reach is found by searching its entry

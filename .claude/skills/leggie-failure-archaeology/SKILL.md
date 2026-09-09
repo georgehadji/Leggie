@@ -108,10 +108,16 @@ working tree has uncommitted changes — re-verify statuses via Provenance.
 - `docs/ARCH_UPGRADE_PLAN.md` (8/10 → target 9.5): G3/G4/G5/G6/G7/G8/G10
   landed (commits 08c5875, 8d79951): budget checkpoint (--checkpoint), lens
   isolation, LLM module split, ports, trace_id, rate limiter registration.
-- G1 resume-from-stage = REMEDIATION D10: **PARTIAL** —
-  `infrastructure/persistence/checkpoint_store.py` exists, but
-  `BillAnalysisFlow` checkpoints only budget spend; completed stages re-run
-  (and re-bill) after a crash.
+- G1 resume-from-stage = REMEDIATION D10: **CLOSED** — and this entry was
+  itself a long-lived false claim, corrected 2026-09-09. `_save_checkpoint`
+  persists the full run state (findings, events, document, source_text,
+  suggestions, reports, budget_state) keyed by stage on every `_transition()`;
+  `_load_checkpoint` restores it and re-enters at the saved stage. Landed in
+  `02c3ac6` (2026-07-11) — three days BEFORE this skill's own snapshot date,
+  so the claim was stale on the day it was written. "Only budget spend"
+  correctly describes `_load_legacy_budget_checkpoint`, the compatibility
+  branch for pre-`02c3ac6` checkpoint files, and that is most likely the
+  source of the confusion.
 
 ### 13. Deliberately rejected/deferred approaches — FENCED (do not re-propose without new evidence)
 From `tasks/todo.md` §0 ("What changed vs the initial spec"):
@@ -213,7 +219,7 @@ From `tasks/todo.md` §0 ("What changed vs the initial spec"):
 | D22 | deliberative pipeline's `cli_handlers.py` hand-constructed a second, unindexed `GreekCitationParser()` — every deliberative-report citation read "unverified" regardless of validity | CLOSED 2026-08-10 (IMPL-1 Group A, commit `28e10aa`) — both paths now resolve `CitationParserPort` from the container. ADR-0003. |
 | D8 | cli_handlers container/ad-hoc duplication | CLOSED — no `_try_get_*` fallbacks remain in `cli_handlers.py` |
 | D9 | rate limiter | LIKELY FIXED (constructed in LLMAdapter → OpenRouterProvider) — verify consumption |
-| D10 | resume-from-stage | PARTIAL (store exists, flow checkpoints only budget spend) |
+| D10 | resume-from-stage | **CLOSED (2026-09-09 correction; behaviour landed `02c3ac6`, 2026-07-11)** — full-state checkpoint + resume, proven by `TestResumeAfterCrash::test_resume_after_crash`, which asserts `analyze_document` is called 0 times on resume. The old "only budget spend" text described the legacy compat branch, not the live path |
 | DH-37 | citation index treated *presence* of a few seeded entries as *exhaustiveness*, so a genuine ΦΕΚ outside the seeded three was "disproven" and CoVe hard-dropped its finding | CLOSED 2026-09-08 (commit `1be4e49`) — authority is declared by the index, never counted; ADR-0008, §17 above. **Live-unproven**: the 2026-09-08 smoke produced zero citations, so the fixed path never executed. The offline end-to-end test is the only positive evidence. |
 | DH-42 | verification chain eats 93% of findings: 27 reach the skeptic → 19 refuted (70%, vs 47% in v5) → 6 of the remaining 8 dropped by CoVe as `cove_quote_fail` → 2 survive. 0.02 findings/article vs v5's 0.14 | **PARTIAL** — CoVe half FIXED 2026-09-08: the "fabricated" quotes were not fabricated. `_normalize` folded only case/whitespace then demanded an exact substring, while a model retypes a quote in its own typography — the reference bill carries 89 `’`, 11 `–`, 4,265 final sigmas. Now NFC + punctuation + sigma + invisible folding, shared by CoVe and all five lenses. Skeptic half FIXED 2026-09-09, and it was **not** the policy question it was first filed as. Decoding all 23 refutations showed ~12 were calibration complaints ("κάνει λογικό άλμα", "υπερβάλλει στη σοβαρότητα"), not falsification — yet the critic's prompt solicited refutation on those grounds and `review()` executes every `refutes` as deletion. Prompt now splits the two: falsification refutes and deletes, overstatement returns `neutral` with a negative adjustment so the finding survives at lower rank. Measured on three live probe runs, one variable each: findings 0 → 1 → 2, refute rate 4/4 → 1/4, cost flat at ~$0.017. Evidence: `docs/POST_DH36_REVIEW_PLAN.md` §12.1-12.2. |
 | — | verification layer (LLM CoVe + skeptic gate): single-lens smoke PASSED (v5, 2026-07-11) and re-ran clean at 91 articles 2026-09-08 (200 calls, $0.58, 0 parse failures) though with the DH-42 yield collapse; 5-lens smoke PASSED on a 10-article subset, replicated (2026-07-28); **the 91-article 5-lens run has never completed** | THE current campaign — **leggie-remediation-campaign** |
